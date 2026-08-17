@@ -1,0 +1,182 @@
+{
+	"info": {
+		"_postman_id": "402d2d09-b6cb-4a6c-9a4c-53f7f8f9024f",
+		"name": "SEO Intelligence Platform",
+		"description": "Complete API endpoints for the SEO Intelligence Platform",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Projects",
+			"item": [
+				{
+					"name": "Get All Projects",
+					"request": {
+						"method": "GET",
+						"url": "http://127.0.0.1:8000/api/projects"
+					}
+				},
+				{
+					"name": "Create Project",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"UIS Digital\",\n  \"domain\": \"https://uisdigital.com/\"\n}"
+						},
+						"url": "http://127.0.0.1:8000/api/projects"
+					}
+				}
+			]
+		},
+		{
+			"name": "Crawler",
+			"item": [
+				{
+					"name": "Start Crawl",
+					"request": {
+						"method": "POST",
+						"header": [{"key": "Content-Type", "value": "application/json"}],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"url\": \"https://uisdigital.com/\"\n}"
+						},
+						"url": "http://127.0.0.1:8000/api/projects/1/crawl"
+					}
+				},
+				{
+					"name": "Get Crawl Status",
+					"request": {
+						"method": "GET",
+						"url": "http://127.0.0.1:8000/api/projects/1/crawl/<SESSION_ID>"
+					}
+				}
+			]
+		},
+		{
+			"name": "Pages",
+			"item": [
+				{
+					"name": "Get Pages",
+					"request": {
+						"method": "GET",
+						"url": "http://127.0.0.1:8000/api/projects/1/pages?limit=50&offset=0"
+					}
+				},
+				{
+					"name": "Get Single Page",
+					"request": {
+						"method": "GET",
+						"url": "http://127.0.0.1:8000/api/projects/1/pages/<PAGE_ID>"
+					}
+				},
+				{
+					"name": "Get Page SEO",
+					"request": {
+						"method": "GET",
+						"url": "http://127.0.0.1:8000/api/projects/1/pages/<PAGE_ID>/seo"
+					}
+				}
+			]
+		},
+		{
+			"name": "Keywords",
+			"item": [
+				{
+					"name": "Get Keywords",
+					"request": {
+						"method": "GET",
+						"url": "http://127.0.0.1:8000/api/projects/1/keywords?limit=50&offset=0"
+					}
+				},
+				{
+					"name": "Get Single Keyword",
+					"request": {
+						"method": "GET",
+						"url": "http://127.0.0.1:8000/api/projects/1/keywords/<KEYWORD_ID>"
+					}
+				},
+				{
+					"name": "Get Keyword Page Analysis",
+					"request": {
+						"method": "GET",
+						"url": "http://127.0.0.1:8000/api/projects/1/keywords/keyword-page-analysis"
+					}
+				}
+			]
+		},
+		{
+			"name": "Rankings",
+			"item": [
+				{
+					"name": "Get Rankings",
+					"request": {
+						"method": "GET",
+						"url": "http://127.0.0.1:8000/api/projects/1/rankings"
+					}
+				}
+			]
+		},
+		{
+			"name": "Backlinks",
+			"item": [
+				{
+					"name": "Get Backlinks",
+					"request": {
+						"method": "GET",
+						"url": "http://127.0.0.1:8000/api/projects/1/backlinks"
+					}
+				}
+			]
+		},
+		{
+			"name": "Internal Links",
+			"item": [
+				{
+					"name": "Get Internal Links",
+					"request": {
+						"method": "GET",
+						"url": "http://127.0.0.1:8000/api/projects/1/internal-links"
+					}
+				}
+			]
+		},
+		{
+			"name": "Technical SEO",
+			"item": [
+				{
+					"name": "Get Technical Issues",
+					"request": {
+						"method": "GET",
+						"url": "http://127.0.0.1:8000/api/projects/1/technical"
+					}
+				}
+			]
+		},
+		{
+			"name": "Competitors",
+			"item": [
+				{
+					"name": "Get Competitors",
+					"request": {
+						"method": "GET",
+						"url": "http://127.0.0.1:8000/api/projects/1/competitors"
+					}
+				}
+			]
+		},
+		{
+			"name": "Health",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"url": "http://127.0.0.1:8000/api/health"
+					}
+				}
+			]
+		}
+	]
+}

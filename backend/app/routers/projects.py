@@ -1,24 +1,59 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
 from app.config.database import get_db
-from app.schemas.project import ProjectCreate, ProjectResponse
-from app.services import project_service
+from app.models.project import Project
+import os
+import json
 
 router = APIRouter()
 
-@router.post("/", response_model=ProjectResponse)
-def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
-    return project_service.create_project(db=db, project=project)
+@router.get("/")
+def get_projects(db: Session = Depends(get_db)):
+    return db.query(Project).all()
 
-@router.get("/", response_model=List[ProjectResponse])
-def read_projects(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    projects = project_service.get_projects(db, skip=skip, limit=limit)
-    return projects
+@router.post("/")
+def create_project(project: dict, db: Session = Depends(get_db)):
+    domain_val = project.get('domain') or project.get('url') or 'https://uisdigital.com/'
+    name_val = project.get('name') or 'UIS Digital'
+    new_proj = Project(name=name_val, url=domain_val)
+    db.add(new_proj)
+    db.commit()
+    db.refresh(new_proj)
+    return new_proj
 
-@router.get("/{project_id}", response_model=ProjectResponse)
-def read_project(project_id: str, db: Session = Depends(get_db)):
-    db_project = project_service.get_project(db, project_id=project_id)
-    if db_project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return db_project
+@router.get("/{project_id}/summary")
+def get_project_summary(project_id: str, db: Session = Depends(get_db)):
+    domain = "uisdigital.com"
+    try:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if project and project.domain:
+            domain = project.domain
+    except Exception as e:
+        print(f"[PROJECTS API] DB query exception: {e}", flush=True)
+
+    safe_domain = domain.replace("https://", "").replace("http://", "").replace("www.", "")
+    safe_domain = "".join([c if c.isalnum() else "_" for c in safe_domain])
+    
+    latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+    
+    if not os.path.exists(latest_path):
+        return {"status": "empty", "message": "No crawl data available yet."}
+        
+    try:
+        with open(latest_path, "r") as f:
+            latest = json.load(f)
+            
+        crawl_dir = latest.get("path")
+        metadata_path = os.path.join(crawl_dir, "metadata.json")
+        
+        if os.path.exists(metadata_path):
+            with open(metadata_path, "r") as mf:
+                metadata = json.load(mf)
+                return {
+                    "status": "success",
+                    "latest_crawl": metadata
+                }
+    except Exception as e:
+        print(f"[PROJECTS API] Exception reading snapshot: {e}", flush=True)
+        
+    return {"status": "error", "message": "Failed to read crawl data"}

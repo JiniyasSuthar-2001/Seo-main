@@ -1,0 +1,59 @@
+/* Application Shell Layout */
+#app-root {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--bg-workspace);
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+}
+
+#sidebar-container {
+  width: 260px;
+  flex-shrink: 0;
+  height: 100vh;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  background-color: var(--sidebar-bg);
+  border-right: 1px solid var(--sidebar-border);
+}
+
+.workspace-area {
+  flex: 1;
+  margin-left: 260px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 100vh;
+}
+
+#topbar-container {
+  height: 60px;
+  position: sticky;
+  top: 0;
+  z-index: 90;
+  background-color: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-xs);
+}
+
+.view-container {
+  flex: 1;
+  padding: 28px 36px 60px;
+  max-width: 1440px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 1024px) {
+  #sidebar-container {
+    width: 220px;
+  }
+  .workspace-area {
+    margin-left: 220px;
+  }
+  .view-container {
+    padding: 20px 24px 40px;
+  }
+}

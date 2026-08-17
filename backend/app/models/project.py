@@ -16,3 +16,11 @@ class Project(Base):
     datasets = relationship("Dataset", back_populates="project", cascade="all, delete-orphan")
     pages = relationship("Page", back_populates="project", cascade="all, delete-orphan")
     keywords = relationship("Keyword", back_populates="project", cascade="all, delete-orphan")
+
+    @property
+    def domain(self):
+        return self.url or "uisdigital.com"
+
+    @domain.setter
+    def domain(self, value):
+        self.url = value

@@ -156,17 +156,20 @@ seo-intelligence/
 
 ### Running Locally
 
-**Backend**
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-*API available at http://localhost:8000*
+### Running Locally
 
-**Frontend**
+**Development Launcher (Recommended):**
+To start the entire application for development, run the unified startup script from the root directory:
+
 ```bash
-cd frontend
-python -m http.server 8001
+python start_dev.py
 ```
-*UI available at http://localhost:8001*
+
+This command will:
+- Start the backend FastAPI server on port 8000
+- Start the frontend SPA server on port 8020
+- Stream logs from both services concurrently into your terminal
+- Wait until both services are ready before automatically opening your browser
+- Gracefully shut down all services and child processes when you press `CTRL+C`
+
+*Note: Ensure you have your virtual environment activated (if you are using one) before running the command.*

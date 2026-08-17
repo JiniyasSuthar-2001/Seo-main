@@ -1,0 +1,9 @@
+[
+    {
+        "severity": "Critical",
+        "issue_type": "HTTP Error",
+        "affected_url": "https://uisdigital.com/",
+        "details": "Page returned HTTP status code 403",
+        "recommendation": "Investigate server errors or update broken internal links."
+    }
+]

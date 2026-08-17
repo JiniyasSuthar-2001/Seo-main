@@ -1,0 +1,13 @@
+{
+    "crawl_id": "f9549a76-698a-4267-8a7b-28ce4f0324e2",
+    "website": "https://uisdigital.com/",
+    "timestamp": "2026-08-17_150406",
+    "status": "completed",
+    "pages_crawled": 1,
+    "total_issues": 1,
+    "critical_issues": 1,
+    "warning_issues": 0,
+    "notice_issues": 0,
+    "internal_links_count": 0,
+    "external_links_count": 0
+}

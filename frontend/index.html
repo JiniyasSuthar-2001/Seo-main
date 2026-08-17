@@ -4,19 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SEO Intelligence Platform</title>
+  <link rel="stylesheet" href="styles/design-tokens.css">
   <link rel="stylesheet" href="styles/base.css">
   <link rel="stylesheet" href="styles/layout.css">
   <link rel="stylesheet" href="styles/components.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div id="app-shell">
-    <div id="sidebar-container"></div>
-    <div class="workspace-area">
-      <div id="header-container"></div>
-      <main class="view-container" id="view-container"></main>
-    </div>
-  </div>
-
-  <script type="module" src="src/main.js"></script>
+  <!-- Application Entry -->
+  <div id="app-root"></div>
+  <script type="module" src="/src/main.js"></script>
 </body>
 </html>

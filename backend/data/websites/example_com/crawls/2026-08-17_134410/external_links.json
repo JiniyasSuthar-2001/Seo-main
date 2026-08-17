@@ -1,0 +1,7 @@
+[
+    {
+        "source": "https://example.com",
+        "target": "https://iana.org/domains/example",
+        "anchor_text": "Learn more"
+    }
+]

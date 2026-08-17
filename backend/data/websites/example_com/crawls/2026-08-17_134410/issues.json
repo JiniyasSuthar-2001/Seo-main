@@ -1,0 +1,23 @@
+[
+    {
+        "severity": "Warning",
+        "issue_type": "Missing Meta Description",
+        "affected_url": "https://example.com",
+        "details": "Page is missing a meta description tag.",
+        "recommendation": "Add a compelling meta description (150-160 characters) to improve CTR."
+    },
+    {
+        "severity": "Notice",
+        "issue_type": "Missing Canonical Tag",
+        "affected_url": "https://example.com",
+        "details": "Page does not declare a canonical URL tag.",
+        "recommendation": "Add <link rel='canonical' href='...'> to prevent duplicate content issues."
+    },
+    {
+        "severity": "Notice",
+        "issue_type": "Thin Content",
+        "affected_url": "https://example.com",
+        "details": "Page text content is low (19 words).",
+        "recommendation": "Expand body text to provide substantial value for visitors and search engines."
+    }
+]

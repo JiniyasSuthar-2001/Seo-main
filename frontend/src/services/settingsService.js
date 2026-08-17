@@ -1,5 +1,6 @@
 import { apiClient } from './apiClient.js';
 import { API_BASE_URL } from '../config/api.js';
+import { projectStore } from '../core/projectStore.js';
 
 export const settingsService = {
     async checkHealth() {
@@ -11,9 +12,11 @@ export const settingsService = {
         }
     },
     
-    async getProjectSummary(projectId = '1') {
+    async getProjectSummary(projectId) {
+        const id = projectId || projectStore.getSelectedProjectId();
+        if (!id) return { status: 'empty' };
         try {
-            return await apiClient.get(`/api/projects/${projectId}/summary`);
+            return await apiClient.get(`/api/projects/${id}/summary`);
         } catch (e) {
             return { status: 'empty' };
         }

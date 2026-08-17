@@ -1,7 +1,10 @@
 import { apiClient } from './apiClient.js';
+import { projectStore } from '../core/projectStore.js';
 
 export const technicalService = {
-    async getIssues(projectId = '1', limit = 50, offset = 0) {
-        return await apiClient.get(`/api/projects/${projectId}/technical?limit=${limit}&offset=${offset}`);
+    async getIssues(projectId, limit = 50, offset = 0) {
+        const id = projectId || projectStore.getSelectedProjectId();
+        if (!id) return [];
+        return await apiClient.get(`/api/projects/${id}/technical?limit=${limit}&offset=${offset}`);
     }
 };

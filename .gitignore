@@ -1,0 +1,27 @@
+# Python Caches & Environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+venv/
+
+# SQLite Database
+*.db
+backend/seo.db
+seo.db
+
+# Crawl Artifacts Data Storage
+backend/data/websites/*
+!backend/data/websites/.gitkeep
+
+# Environment Files & Secret Keys
+.env
+.env.local
+
+# IDE & OS Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

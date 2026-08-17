@@ -1,11 +1,16 @@
 import { apiClient } from './apiClient.js';
+import { projectStore } from '../core/projectStore.js';
 
 export const aiService = {
-    async getInsights(projectId = '1') {
-        return await apiClient.get(`/api/projects/${projectId}/ai/insights`);
+    async getInsights(projectId) {
+        const id = projectId || projectStore.getSelectedProjectId();
+        if (!id) return { insights: [] };
+        return await apiClient.get(`/api/projects/${id}/ai/insights`);
     },
     
-    async askChat(projectId = '1', query = '') {
-        return await apiClient.post(`/api/projects/${projectId}/ai/chat`, { query: query });
+    async askChat(projectId, query = '') {
+        const id = projectId || projectStore.getSelectedProjectId();
+        if (!id) return { answer: "No project selected." };
+        return await apiClient.post(`/api/projects/${id}/ai/chat`, { query: query });
     }
 };

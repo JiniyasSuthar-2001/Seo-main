@@ -1,4 +1,5 @@
 import { settingsService } from '../services/settingsService.js';
+import { projectStore } from '../core/projectStore.js';
 
 export class Settings {
     constructor() {
@@ -78,11 +79,11 @@ export class Settings {
                     <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
                         <tr style="border-bottom: 1px solid var(--border-subtle);">
                             <td style="padding: 12px 0; color: var(--text-secondary); width: 240px;">Maximum Pages per Crawl</td>
-                            <td style="padding: 12px 0; font-weight: 500;">100 pages</td>
+                            <td style="padding: 12px 0; font-weight: 500;">1000 pages</td>
                         </tr>
                         <tr style="border-bottom: 1px solid var(--border-subtle);">
                             <td style="padding: 12px 0; color: var(--text-secondary);">HTTP Request Timeout</td>
-                            <td style="padding: 12px 0; font-weight: 500;">10.0 seconds</td>
+                            <td style="padding: 12px 0; font-weight: 500;">20.0 seconds</td>
                         </tr>
                         <tr style="border-bottom: 1px solid var(--border-subtle);">
                             <td style="padding: 12px 0; color: var(--text-secondary);">Batch Size & Throttle</td>
@@ -167,27 +168,39 @@ export class Settings {
             if (errBanner) errBanner.style.display = 'block';
         }
 
-        // 2. Fetch Project Info
+        // 2. Fetch Active Project Info
         const projContent = document.getElementById('project-settings-content');
         if (!projContent) return;
 
-        const summary = await settingsService.getProjectSummary('1');
-        
+        await projectStore.fetchProjects();
+        const selectedProj = projectStore.getSelectedProject();
+
+        if (!selectedProj) {
+            projContent.innerHTML = `
+                <div style="color: var(--text-secondary); font-size: 14px;">No active project selected or created yet. Create a project from the Dashboard.</div>
+            `;
+            return;
+        }
+
+        const summary = await settingsService.getProjectSummary(selectedProj.id);
+        const domainStr = selectedProj.domain || selectedProj.url || 'No domain configured';
+        const safeDomain = domainStr.replace("https://", "").replace("http://", "").replace("www.", "").replace(/[^a-zA-Z0-9]/g, "_");
+
         if (summary.status === 'success' && summary.latest_crawl) {
             const crawl = summary.latest_crawl;
             projContent.innerHTML = `
                 <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
                     <tr style="border-bottom: 1px solid var(--border-subtle);">
                         <td style="padding: 12px 0; color: var(--text-secondary); width: 240px;">Project Name</td>
-                        <td style="padding: 12px 0; font-weight: 600;">UIS Digital</td>
+                        <td style="padding: 12px 0; font-weight: 600;">${selectedProj.name}</td>
                     </tr>
                     <tr style="border-bottom: 1px solid var(--border-subtle);">
                         <td style="padding: 12px 0; color: var(--text-secondary);">Target Domain</td>
-                        <td style="padding: 12px 0;"><a href="${crawl.website}" target="_blank" style="color: var(--primary); text-decoration: none;">${crawl.website}</a></td>
+                        <td style="padding: 12px 0;"><a href="${domainStr}" target="_blank" style="color: var(--primary); text-decoration: none;">${domainStr}</a></td>
                     </tr>
                     <tr style="border-bottom: 1px solid var(--border-subtle);">
                         <td style="padding: 12px 0; color: var(--text-secondary);">Project ID</td>
-                        <td style="padding: 12px 0; font-family: monospace;">1</td>
+                        <td style="padding: 12px 0; font-family: monospace;">${selectedProj.id}</td>
                     </tr>
                     <tr style="border-bottom: 1px solid var(--border-subtle);">
                         <td style="padding: 12px 0; color: var(--text-secondary);">Latest Crawl Snapshot</td>
@@ -195,7 +208,7 @@ export class Settings {
                     </tr>
                     <tr>
                         <td style="padding: 12px 0; color: var(--text-secondary);">Project Folder Path</td>
-                        <td style="padding: 12px 0; font-family: monospace;">data/websites/uisdigital/</td>
+                        <td style="padding: 12px 0; font-family: monospace;">data/websites/${safeDomain}/</td>
                     </tr>
                 </table>
             `;
@@ -204,15 +217,19 @@ export class Settings {
                 <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
                     <tr style="border-bottom: 1px solid var(--border-subtle);">
                         <td style="padding: 12px 0; color: var(--text-secondary); width: 240px;">Project Name</td>
-                        <td style="padding: 12px 0; font-weight: 600;">UIS Digital</td>
+                        <td style="padding: 12px 0; font-weight: 600;">${selectedProj.name}</td>
                     </tr>
                     <tr style="border-bottom: 1px solid var(--border-subtle);">
                         <td style="padding: 12px 0; color: var(--text-secondary);">Target Domain</td>
-                        <td style="padding: 12px 0;">https://uisdigital.com/</td>
+                        <td style="padding: 12px 0;"><a href="${domainStr}" target="_blank" style="color: var(--primary); text-decoration: none;">${domainStr}</a></td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border-subtle);">
+                        <td style="padding: 12px 0; color: var(--text-secondary);">Project ID</td>
+                        <td style="padding: 12px 0; font-family: monospace;">${selectedProj.id}</td>
                     </tr>
                     <tr>
                         <td style="padding: 12px 0; color: var(--text-secondary);">Latest Crawl Snapshot</td>
-                        <td style="padding: 12px 0; color: var(--text-secondary);">No crawl snapshots available yet.</td>
+                        <td style="padding: 12px 0; color: var(--text-secondary);">No crawl snapshots available yet for this project.</td>
                     </tr>
                 </table>
             `;

@@ -1,7 +1,10 @@
 import { apiClient } from './apiClient.js';
+import { projectStore } from '../core/projectStore.js';
 
 export const internalLinksService = {
-    async getInternalLinks(projectId = '1', limit = 50, offset = 0) {
-        return await apiClient.get(`/api/projects/${projectId}/internal-links?limit=${limit}&offset=${offset}`);
+    async getInternalLinks(projectId, limit = 50, offset = 0) {
+        const id = projectId || projectStore.getSelectedProjectId();
+        if (!id) return [];
+        return await apiClient.get(`/api/projects/${id}/internal-links?limit=${limit}&offset=${offset}`);
     }
 };

@@ -1,20 +1,28 @@
 import { dashboardService } from '../services/dashboard.js';
 import { crawlService } from '../services/crawlService.js';
 import { aiService } from '../services/aiService.js';
+import { projectStore } from '../core/projectStore.js';
 
 window.startCrawl = async () => {
+    const selectedProj = projectStore.getSelectedProject();
     const urlInput = document.getElementById('project-url');
-    const url = urlInput ? urlInput.value : 'https://uisdigital.com/';
+    const url = urlInput ? urlInput.value : (selectedProj ? selectedProj.domain || selectedProj.url : null);
     
+    if (!url) {
+        alert("Please enter a valid website URL to crawl.");
+        return;
+    }
+
     const progressDiv = document.getElementById('crawl-progress');
     if (progressDiv) progressDiv.style.display = 'block';
     
     try {
-        const data = await crawlService.startCrawl('1', url);
+        const projectId = selectedProj ? selectedProj.id : null;
+        const data = await crawlService.startCrawl(projectId, url);
         
         const interval = setInterval(async () => {
             try {
-                const statusData = await crawlService.getCrawlStatus('1', data.session_id);
+                const statusData = await crawlService.getCrawlStatus(projectId, data.session_id);
                 
                 const statsEl = document.getElementById('crawl-stats');
                 if (statsEl) statsEl.innerText = `${statusData.pages_crawled} / ${statusData.pages_discovered} pages`;
@@ -51,7 +59,25 @@ window.startCrawl = async () => {
         }, 1000);
         
     } catch(e) {
-        alert("Backend unavailable. Please check that the server is running on port 8000.");
+        alert("Backend unavailable or crawl failed to start. Ensure the server is running on port 8000.");
+    }
+};
+
+window.createFirstProject = async (e) => {
+    e.preventDefault();
+    const name = document.getElementById('new-proj-name').value.trim();
+    const domain = document.getElementById('new-proj-domain').value.trim();
+
+    if (!name || !domain) {
+        alert("Please enter project name and website URL.");
+        return;
+    }
+
+    try {
+        await projectStore.createProject(name, domain);
+        window.location.reload();
+    } catch (err) {
+        alert("Failed to create project. Please check backend connection.");
     }
 };
 
@@ -64,7 +90,8 @@ window.askAIChat = async () => {
     responseBox.innerHTML = '<span style="color: var(--text-secondary);">Analyzing project crawl evidence...</span>';
     
     try {
-        const res = await aiService.askChat('1', input.value.trim());
+        const projectId = projectStore.getSelectedProjectId();
+        const res = await aiService.askChat(projectId, input.value.trim());
         responseBox.innerHTML = `
             <div style="font-weight: 600; margin-bottom: 6px; color: var(--primary);">AI SEO Analyst Answer:</div>
             <div style="line-height: 1.6; font-size: 14px;">${res.answer.replace(/\n/g, '<br/>')}</div>
@@ -90,25 +117,54 @@ export class Dashboard {
 
   async mounted() {
       try {
-          const summary = await dashboardService.getSummary('1');
+          await projectStore.fetchProjects();
+          const selectedProj = projectStore.getSelectedProject();
+
+          // NO PROJECT CREATED YET FORMS
+          if (!selectedProj) {
+              this.element.innerHTML = `
+                <div class="hero-banner">
+                    <div>
+                        <div class="hero-title">Welcome to SEO Intelligence</div>
+                        <div class="hero-subtitle">Create your first website project to begin automated crawlers, technical audits, and AI analysis.</div>
+                    </div>
+                </div>
+
+                <div class="card" style="padding: 32px; max-width: 560px; margin: 0 auto;">
+                    <h3 style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">Create Your First Project</h3>
+                    <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 24px;">Enter your target business or website details to set up your workspace.</p>
+                    <form onsubmit="window.createFirstProject(event)">
+                        <div style="margin-bottom: 16px;">
+                            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Project Name</label>
+                            <input id="new-proj-name" type="text" placeholder="e.g. UIS Digital" required style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px;">
+                        </div>
+                        <div style="margin-bottom: 24px;">
+                            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Website URL</label>
+                            <input id="new-proj-domain" type="url" placeholder="e.g. https://uisdigital.com/" required style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px;">
+                        </div>
+                        <button type="submit" class="btn btn-primary" style="width: 100%;">Create Project Workspace</button>
+                    </form>
+                </div>
+              `;
+              return;
+          }
+
+          const summary = await dashboardService.getSummary(selectedProj.id);
+          const targetUrl = selectedProj.domain || selectedProj.url || 'https://uisdigital.com/';
           
           if (summary.status === 'empty' || !summary.latest_crawl) {
-              // BEAUTIFUL INTENTIONAL EMPTY STATE DASHBOARD
+              // BEAUTIFUL INTENTIONAL EMPTY STATE DASHBOARD FOR ACTIVE PROJECT
               this.element.innerHTML = `
                 <!-- HERO BANNER -->
                 <div class="hero-banner">
                     <div>
-                        <div class="hero-title">Welcome to SEO Intelligence</div>
-                        <div class="hero-subtitle">Analyze, monitor, and optimize your website search performance with evidence-backed SEO data.</div>
+                        <div class="hero-title">Project Workspace: ${selectedProj.name}</div>
+                        <div class="hero-subtitle">Target domain: <strong>${targetUrl}</strong>. Run your first website crawl to generate SEO findings.</div>
                         <div style="display: flex; gap: 12px; margin-top: 20px;">
                             <button class="btn btn-primary" onclick="window.startCrawl()">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
-                                <span>Analyze Website</span>
+                                <span>Analyze Website (${targetUrl})</span>
                             </button>
-                            <a href="/import" data-link class="btn btn-secondary">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                                <span>Import Datasets</span>
-                            </a>
                         </div>
                     </div>
                 </div>
@@ -153,9 +209,13 @@ export class Dashboard {
                         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
                     </div>
                     <div class="empty-state-title">No Crawl Data Available</div>
-                    <div class="empty-state-desc">Start your first website crawl to discover pages, extract HTML metadata, identify technical SEO findings, and build your internal link graph.</div>
-                    <button class="btn btn-primary" onclick="window.startCrawl()">Start Website Crawl</button>
+                    <div class="empty-state-desc">Start your first website crawl to discover pages, extract HTML metadata, identify technical SEO findings, and build your internal link graph for <strong>${targetUrl}</strong>.</div>
                     
+                    <div style="display: flex; gap: 12px; justify-content: center; max-width: 440px; margin: 0 auto 16px;">
+                        <input id="project-url" type="url" value="${targetUrl}" style="flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px;">
+                        <button class="btn btn-primary" onclick="window.startCrawl()">Start Crawl</button>
+                    </div>
+
                     <div id="crawl-progress" style="display: none; margin: 24px auto 0; max-width: 440px; text-align: left;">
                         <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
                             <span>Crawling...</span>
@@ -173,7 +233,7 @@ export class Dashboard {
               // Load AI insights for project
               let aiInsightsHtml = '';
               try {
-                  const aiRes = await aiService.getInsights('1');
+                  const aiRes = await aiService.getInsights(selectedProj.id);
                   if (aiRes.insights && aiRes.insights.length > 0) {
                       let cards = aiRes.insights.map(ins => `
                           <div class="card" style="padding: 20px; border-left: 4px solid var(--primary);">
@@ -207,7 +267,7 @@ export class Dashboard {
                 <!-- HERO BANNER WITH RECENT CRAWL -->
                 <div class="hero-banner">
                     <div>
-                        <div class="hero-title">SEO Overview: ${crawl.website}</div>
+                        <div class="hero-title">SEO Overview: ${selectedProj.name} (${crawl.website})</div>
                         <div class="hero-subtitle">Snapshot analyzed on <strong>${crawl.timestamp}</strong>. All data backed by actual crawl evidence.</div>
                         <div style="display: flex; gap: 12px; margin-top: 16px;">
                             <button class="btn btn-primary btn-sm" onclick="window.startCrawl()">Run New Crawl</button>
@@ -255,7 +315,7 @@ export class Dashboard {
                 <!-- INTERACTIVE AI ANALYST PANEL -->
                 <div class="card" style="padding: 24px; margin-top: 32px; background: linear-gradient(to right, var(--bg-card), var(--bg-subtle));">
                     <h2 style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">AI SEO Analyst Assistant</h2>
-                    <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 16px;">Ask questions directly against your actual website crawl evidence and technical audit findings.</p>
+                    <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 16px;">Ask questions directly against your actual website crawl evidence and technical audit findings for ${selectedProj.name}.</p>
                     <div style="display: flex; gap: 12px;">
                         <input id="ai-chat-input" type="text" placeholder="e.g. Which pages have critical technical issues?" style="flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px;" onkeypress="if(event.key==='Enter') window.askAIChat()">
                         <button class="btn btn-primary" onclick="window.askAIChat()">Ask AI Analyst</button>

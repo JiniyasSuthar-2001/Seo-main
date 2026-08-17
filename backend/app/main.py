@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import projects, pages, keywords, crawl, technical, internal_links, ai
+from app.routers import projects, pages, keywords, crawl, technical, internal_links, ai, backlinks, rankings, datasources
 from app.config.database import engine, Base
 
 # Import all models to ensure they are registered with Base
@@ -27,8 +27,11 @@ app.include_router(pages.router, prefix="/api/projects/{project_id}/pages", tags
 app.include_router(keywords.router, prefix="/api/projects/{project_id}/keywords", tags=["keywords"])
 app.include_router(technical.router, prefix="/api/projects/{project_id}/technical", tags=["technical"])
 app.include_router(internal_links.router, prefix="/api/projects/{project_id}/internal-links", tags=["internal-links"])
+app.include_router(backlinks.router, prefix="/api/projects/{project_id}/backlinks", tags=["backlinks"])
+app.include_router(rankings.router, prefix="/api/projects/{project_id}/rankings", tags=["rankings"])
+app.include_router(datasources.router, prefix="/api/projects/{project_id}/datasources", tags=["datasources"])
 app.include_router(ai.router, prefix="/api/projects", tags=["ai"])
 
 @app.get("/api/health", tags=["System"])
 def health_check():
-    return {"status": "ok", "message": "Clean architecture active"}
+    return {"status": "ok", "message": "Clean open-source architecture active"}

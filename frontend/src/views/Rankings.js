@@ -1,22 +1,104 @@
-export class Rankings {
-    render() {
-        const element = document.createElement('div');
-        element.className = 'rankings-view';
-        element.innerHTML = `
-            <div class="header" style="margin-bottom: 24px;">
-                <h1 style="font-size: 24px; font-weight: 600;">Ranking Tracker</h1>
-                <p style="color: var(--text-secondary); margin-top: 4px;">Monitor keyword position distribution, SERP movements, and historical ranking trends.</p>
-            </div>
+import { projectStore } from '../core/projectStore.js';
+import { API_BASE_URL } from '../config/api.js';
+import { renderBackendOfflineState } from '../components/ErrorState.js';
 
-            <div class="empty-state">
-                <div class="empty-state-icon">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+export class Rankings {
+    constructor() {
+        this.element = document.createElement('div');
+        this.element.className = 'rankings-view';
+    }
+
+    render() {
+        this.element.innerHTML = `
+            <div class="header" style="margin-bottom: 24px;">
+                <h1 style="font-size: 24px; font-weight: 600;">Rank Tracking & SERP Positions</h1>
+                <p style="color: var(--text-secondary); margin-top: 4px;">Monitor real-time Google search positions, SERP movements, and ranking URLs.</p>
+            </div>
+            <div id="rankings-content">
+                <div class="card" style="padding: 32px; text-align: center; color: var(--text-secondary);">
+                    Loading rank tracking data...
                 </div>
-                <div class="empty-state-title">No Ranking Data Available</div>
-                <div class="empty-state-desc">Import position tracking data to monitor SERP position improvements, declines, top gains, and target URL rankings.</div>
-                <a href="/import" data-link class="btn btn-primary">Import Rankings CSV</a>
             </div>
         `;
-        return element;
+        return this.element;
+    }
+
+    async mounted() {
+        const container = document.getElementById('rankings-content');
+        if (!container) return;
+
+        try {
+            const selectedProj = projectStore.getSelectedProject();
+            const projectId = projectStore.getSelectedProjectId();
+
+            if (!selectedProj || !projectId) {
+                container.innerHTML = `<div class="card" style="padding: 32px; text-align: center;">Please select or create a project workspace.</div>`;
+                return;
+            }
+
+            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/rankings`);
+            if (!res.ok) throw new Error("API response error");
+            const data = await res.json();
+
+            const rankings = data.rankings || [];
+
+            if (rankings.length === 0) {
+                container.innerHTML = `
+                    <div class="card" style="padding: 32px; border-left: 4px solid var(--primary);">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                            <div>
+                                <span style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.04em;">DATA SOURCE STATUS</span>
+                                <h3 style="font-size: 18px; font-weight: 600; margin-top: 4px;">Search Console & Rank Tracker Not Connected</h3>
+                            </div>
+                            <span class="badge badge-info">Connect Source</span>
+                        </div>
+                        <p style="color: var(--text-secondary); font-size: 14px; line-height: 1.6; margin-bottom: 20px; max-width: 680px;">
+                            Rank position tracking requires connecting your Google Search Console account or configuring a SERP rank provider adapter to query Google/Bing SERP positions for your target domain (<strong>${selectedProj.domain || selectedProj.url}</strong>).
+                        </p>
+                        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                            <a href="/settings" data-link class="btn btn-primary btn-sm">Connect Search Console</a>
+                            <a href="/settings" data-link class="btn btn-secondary btn-sm">Configure Rank Tracking</a>
+                            <a href="/import" data-link class="btn btn-secondary btn-sm">Import Ranking CSV</a>
+                        </div>
+                    </div>
+                `;
+            } else {
+                const rows = rankings.map(r => `
+                    <tr>
+                        <td style="font-weight: 600;">${r.keyword}</td>
+                        <td style="font-weight: 700; color: var(--primary);">#${r.position}</td>
+                        <td>${r.change ? (r.change > 0 ? `+${r.change}` : r.change) : '-'}</td>
+                        <td style="font-size: 12px; font-family: monospace;">${r.url || '-'}</td>
+                        <td><span class="badge badge-info">${r.source || 'SERP Tracker'}</span></td>
+                    </tr>
+                `).join('');
+
+                container.innerHTML = `
+                    <div class="card" style="padding: 0; overflow: hidden;">
+                        <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                            <h3 style="font-size: 15px; font-weight: 600;">Tracked Keyword Rankings (${rankings.length})</h3>
+                            <span class="badge badge-success">Live Tracking Active</span>
+                        </div>
+                        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                            <thead>
+                                <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
+                                    <th style="padding: 12px 20px;">Keyword</th>
+                                    <th style="padding: 12px;">Position</th>
+                                    <th style="padding: 12px;">Movement</th>
+                                    <th style="padding: 12px;">Ranking URL</th>
+                                    <th style="padding: 12px 20px;">Data Source</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${rows}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+
+        } catch (e) {
+            renderBackendOfflineState(container, "Unable to load rank tracking data from backend.");
+        }
     }
 }

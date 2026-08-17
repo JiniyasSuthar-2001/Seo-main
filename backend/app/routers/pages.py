@@ -28,6 +28,7 @@ def get_latest_pages_from_storage(domain: str) -> list:
         
     return []
 
+@router.get("")
 @router.get("/")
 def get_pages(project_id: str, limit: int = Query(50), offset: int = Query(0), db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()

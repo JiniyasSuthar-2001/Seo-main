@@ -19,6 +19,9 @@ export class Router {
     const path = window.location.pathname;
     const ViewComponent = this.routes[path] || this.routes['/'];
     
+    // Dispatch global routechange event for active navbar highlighting
+    window.dispatchEvent(new CustomEvent('routechange', { detail: { path } }));
+
     if (ViewComponent) {
       const view = new ViewComponent();
       this.viewContainer.innerHTML = '';
@@ -37,12 +40,10 @@ export class Router {
     
     // Intercept all internal links
     document.body.addEventListener('click', e => {
-      if (e.target.matches('[data-link]')) {
+      const linkEl = e.target.matches('[data-link]') ? e.target : e.target.closest('[data-link]');
+      if (linkEl) {
         e.preventDefault();
-        this.navigate(e.target.getAttribute('href'));
-      } else if (e.target.closest('[data-link]')) {
-        e.preventDefault();
-        this.navigate(e.target.closest('[data-link]').getAttribute('href'));
+        this.navigate(linkEl.getAttribute('href'));
       }
     });
   }

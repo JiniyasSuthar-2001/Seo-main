@@ -8,10 +8,12 @@ import json
 
 router = APIRouter()
 
+@router.get("")
 @router.get("/")
 def get_projects(db: Session = Depends(get_db)):
     return db.query(Project).all()
 
+@router.post("")
 @router.post("/")
 def create_project(project: dict, db: Session = Depends(get_db)):
     domain_val = project.get('domain') or project.get('url') or ''

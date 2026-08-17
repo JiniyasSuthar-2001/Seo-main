@@ -13,8 +13,12 @@ def get_projects(db: Session = Depends(get_db)):
 
 @router.post("/")
 def create_project(project: dict, db: Session = Depends(get_db)):
-    domain_val = project.get('domain') or project.get('url') or 'https://uisdigital.com/'
-    name_val = project.get('name') or 'UIS Digital'
+    domain_val = project.get('domain') or project.get('url') or ''
+    name_val = project.get('name') or 'New SEO Project'
+    
+    if not domain_val:
+        raise HTTPException(status_code=400, detail="Website domain/URL is required.")
+
     new_proj = Project(name=name_val, url=domain_val)
     db.add(new_proj)
     db.commit()
@@ -23,14 +27,11 @@ def create_project(project: dict, db: Session = Depends(get_db)):
 
 @router.get("/{project_id}/summary")
 def get_project_summary(project_id: str, db: Session = Depends(get_db)):
-    domain = "uisdigital.com"
-    try:
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if project and project.domain:
-            domain = project.domain
-    except Exception as e:
-        print(f"[PROJECTS API] DB query exception: {e}", flush=True)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        return {"status": "empty", "message": "Project not found or website domain unconfigured."}
 
+    domain = project.domain
     safe_domain = domain.replace("https://", "").replace("http://", "").replace("www.", "")
     safe_domain = "".join([c if c.isalnum() else "_" for c in safe_domain])
     

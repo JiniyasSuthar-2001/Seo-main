@@ -1,5 +1,69 @@
 import { projectStore } from '../core/projectStore.js';
 
+window.showCreateProjectModal = () => {
+  let modal = document.getElementById('create-project-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'create-project-modal';
+    modal.style.cssText = `
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px);
+      display: flex; align-items: center; justify-content: center; z-index: 9999;
+    `;
+    modal.innerHTML = `
+      <div style="background: var(--bg-card); width: 100%; max-width: 480px; padding: 28px; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 style="font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 0;">Add New SEO Project</h3>
+          <button onclick="window.closeCreateProjectModal()" style="background: none; border: none; font-size: 20px; color: var(--text-tertiary); cursor: pointer;">&times;</button>
+        </div>
+        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 20px;">
+          Create an independent SEO workspace for another website domain.
+        </p>
+        <form onsubmit="window.submitNewProject(event)">
+          <div style="margin-bottom: 16px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">Project Name</label>
+            <input id="modal-proj-name" type="text" placeholder="e.g. Acme Corporation" required style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--bg-workspace); color: var(--text-primary);">
+          </div>
+          <div style="margin-bottom: 24px;">
+            <label style="display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">Target Website URL</label>
+            <input id="modal-proj-domain" type="url" placeholder="https://example.com/" required style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--bg-workspace); color: var(--text-primary);">
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button type="button" class="btn btn-secondary" onclick="window.closeCreateProjectModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary">Create Project</button>
+          </div>
+        </form>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'flex';
+};
+
+window.closeCreateProjectModal = () => {
+  const modal = document.getElementById('create-project-modal');
+  if (modal) modal.style.display = 'none';
+};
+
+window.submitNewProject = async (e) => {
+  e.preventDefault();
+  const name = document.getElementById('modal-proj-name').value.trim();
+  const domain = document.getElementById('modal-proj-domain').value.trim();
+
+  if (!name || !domain) {
+    alert("Please enter both Project Name and Target Website URL.");
+    return;
+  }
+
+  try {
+    await projectStore.createProject(name, domain);
+    window.closeCreateProjectModal();
+    window.location.reload();
+  } catch (err) {
+    alert("Failed to create project. Please verify the URL and backend server status.");
+  }
+};
+
 export class TopBar {
   constructor() {
     this.element = document.createElement('header');
@@ -10,15 +74,22 @@ export class TopBar {
     this.element.innerHTML = `
       <div style="height: 100%; padding: 0 32px; display: flex; align-items: center; justify-content: space-between;">
         
-        <!-- PROJECT SWITCHER DROPDOWN & COMMAND SEARCH -->
-        <div style="display: flex; align-items: center; gap: 16px; flex: 1; max-width: 650px;">
+        <!-- PROJECT SWITCHER DROPDOWN, (+) ADD BUTTON & COMMAND SEARCH -->
+        <div style="display: flex; align-items: center; gap: 12px; flex: 1; max-width: 680px;">
           
-          <!-- PROJECT SELECTOR -->
-          <div style="display: flex; align-items: center; gap: 8px; background: var(--bg-subtle); padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border);">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--primary);"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-            <select id="header-project-select" style="background: transparent; border: none; font-size: 13px; font-weight: 600; color: var(--text-primary); cursor: pointer; outline: none;">
-              <option value="">Loading projects...</option>
-            </select>
+          <!-- PROJECT SELECTOR CONTAINER WITH (+) BUTTON -->
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 8px; background: var(--bg-subtle); padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border);">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--primary);"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+              <select id="header-project-select" style="background: transparent; border: none; font-size: 13px; font-weight: 600; color: var(--text-primary); cursor: pointer; outline: none; max-width: 220px; text-overflow: ellipsis;">
+                <option value="">Loading projects...</option>
+              </select>
+            </div>
+
+            <!-- (+) ADD PROJECT BUTTON -->
+            <button onclick="window.showCreateProjectModal()" title="Add New Project" style="width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-subtle); color: var(--primary); font-weight: 700; font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s ease;">
+              +
+            </button>
           </div>
 
           <!-- COMMAND SEARCH INPUT -->
@@ -83,7 +154,6 @@ export class TopBar {
         const val = e.target.value;
         if (val) {
           projectStore.setSelectedProjectId(val);
-          // Refresh window location or view so all components reload data for new project
           window.location.reload();
         }
       });

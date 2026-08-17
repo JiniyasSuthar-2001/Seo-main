@@ -1,14 +1,14 @@
 import os
 import json
 from typing import Dict, Any, List, Optional
+from app.config.utils import get_sanitized_domain
 
 class LLMContextBuilder:
     def __init__(self, base_dir: str = "data/websites"):
         self.base_dir = base_dir
 
     def get_website_folder(self, domain: str) -> str:
-        safe_domain = domain.replace("https://", "").replace("http://", "").replace("www.", "")
-        safe_domain = "".join([c if c.isalnum() else "_" for c in safe_domain])
+        safe_domain = get_sanitized_domain(domain)
         return os.path.join(self.base_dir, safe_domain)
 
     def build_project_context(self, domain: str) -> Dict[str, Any]:

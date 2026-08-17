@@ -1,4 +1,6 @@
 import { technicalService } from '../services/technical.js';
+import { projectStore } from '../core/projectStore.js';
+import { renderBackendOfflineState } from '../components/ErrorState.js';
 
 export class Technical {
     constructor() {
@@ -26,7 +28,7 @@ export class Technical {
         if (!container) return;
 
         try {
-            const issues = await technicalService.getIssues('1', 100, 0);
+            const issues = await technicalService.getIssues(projectStore.getSelectedProjectId(), 100, 0);
 
             if (!issues || issues.length === 0) {
                 container.innerHTML = `
@@ -72,7 +74,6 @@ export class Technical {
             }).join('');
 
             container.innerHTML = `
-                <!-- SEVERITY BREAKDOWN CARDS -->
                 <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;">
                     <div class="card" style="padding: 20px; text-align: center; border-top: 3px solid var(--critical);">
                         <span style="font-size: 12px; font-weight: 600; color: var(--text-secondary);">CRITICAL ISSUES</span>
@@ -93,7 +94,7 @@ export class Technical {
                 </div>
             `;
         } catch (e) {
-            container.innerHTML = `<div class="card" style="padding: 24px; color: red;">Failed to load technical issues.</div>`;
+            renderBackendOfflineState(container, "Unable to load technical audit issues.");
         }
     }
 }

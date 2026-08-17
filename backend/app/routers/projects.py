@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.config.database import get_db
 from app.models.project import Project
+from app.config.utils import get_sanitized_domain
 import os
 import json
 
@@ -32,8 +33,7 @@ def get_project_summary(project_id: str, db: Session = Depends(get_db)):
         return {"status": "empty", "message": "Project not found or website domain unconfigured."}
 
     domain = project.domain
-    safe_domain = domain.replace("https://", "").replace("http://", "").replace("www.", "")
-    safe_domain = "".join([c if c.isalnum() else "_" for c in safe_domain])
+    safe_domain = get_sanitized_domain(domain)
     
     latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
     

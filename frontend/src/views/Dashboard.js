@@ -2,6 +2,7 @@ import { dashboardService } from '../services/dashboard.js';
 import { crawlService } from '../services/crawlService.js';
 import { aiService } from '../services/aiService.js';
 import { projectStore } from '../core/projectStore.js';
+import { renderBackendOfflineState } from '../components/ErrorState.js';
 
 window.startCrawl = async () => {
     const selectedProj = projectStore.getSelectedProject();
@@ -49,7 +50,7 @@ window.startCrawl = async () => {
                     
                 } else if (statusData.status === 'failed') {
                     clearInterval(interval);
-                    alert('Crawl failed. Please check the backend logs.');
+                    alert('Crawl failed. Please check backend terminal logs for error details.');
                     if (progressDiv) progressDiv.style.display = 'none';
                 }
             } catch (pollError) {
@@ -59,7 +60,7 @@ window.startCrawl = async () => {
         }, 1000);
         
     } catch(e) {
-        alert("Backend unavailable or crawl failed to start. Ensure the server is running on port 8000.");
+        alert("Backend API unavailable. Please ensure the server is running on http://127.0.0.1:8000.");
     }
 };
 
@@ -77,7 +78,7 @@ window.createFirstProject = async (e) => {
         await projectStore.createProject(name, domain);
         window.location.reload();
     } catch (err) {
-        alert("Failed to create project. Please check backend connection.");
+        alert("Failed to create project. Please check backend API server status.");
     }
 };
 
@@ -97,7 +98,7 @@ window.askAIChat = async () => {
             <div style="line-height: 1.6; font-size: 14px;">${res.answer.replace(/\n/g, '<br/>')}</div>
         `;
     } catch(e) {
-        responseBox.innerHTML = '<span style="color: #ef4444;">AI Analyst unavailable. Ensure backend is running.</span>';
+        responseBox.innerHTML = '<span style="color: #ef4444;">AI Analyst unavailable. Ensure backend server is running on port 8000.</span>';
     }
 };
 
@@ -120,7 +121,6 @@ export class Dashboard {
           await projectStore.fetchProjects();
           const selectedProj = projectStore.getSelectedProject();
 
-          // NO PROJECT CREATED YET FORMS
           if (!selectedProj) {
               this.element.innerHTML = `
                 <div class="hero-banner">
@@ -136,11 +136,11 @@ export class Dashboard {
                     <form onsubmit="window.createFirstProject(event)">
                         <div style="margin-bottom: 16px;">
                             <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Project Name</label>
-                            <input id="new-proj-name" type="text" placeholder="e.g. UIS Digital" required style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px;">
+                            <input id="new-proj-name" type="text" placeholder="e.g. Acme Corporation" required style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--bg-card); color: var(--text-primary);">
                         </div>
                         <div style="margin-bottom: 24px;">
                             <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">Website URL</label>
-                            <input id="new-proj-domain" type="url" placeholder="e.g. https://uisdigital.com/" required style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px;">
+                            <input id="new-proj-domain" type="url" placeholder="https://example.com/" required style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--bg-card); color: var(--text-primary);">
                         </div>
                         <button type="submit" class="btn btn-primary" style="width: 100%;">Create Project Workspace</button>
                     </form>
@@ -150,10 +150,9 @@ export class Dashboard {
           }
 
           const summary = await dashboardService.getSummary(selectedProj.id);
-          const targetUrl = selectedProj.domain || selectedProj.url || 'https://uisdigital.com/';
+          const targetUrl = selectedProj.domain || selectedProj.url || 'https://example.com/';
           
           if (summary.status === 'empty' || !summary.latest_crawl) {
-              // BEAUTIFUL INTENTIONAL EMPTY STATE DASHBOARD FOR ACTIVE PROJECT
               this.element.innerHTML = `
                 <!-- HERO BANNER -->
                 <div class="hero-banner">
@@ -212,7 +211,7 @@ export class Dashboard {
                     <div class="empty-state-desc">Start your first website crawl to discover pages, extract HTML metadata, identify technical SEO findings, and build your internal link graph for <strong>${targetUrl}</strong>.</div>
                     
                     <div style="display: flex; gap: 12px; justify-content: center; max-width: 440px; margin: 0 auto 16px;">
-                        <input id="project-url" type="url" value="${targetUrl}" style="flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px;">
+                        <input id="project-url" type="url" value="${targetUrl}" style="flex: 1; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--bg-card); color: var(--text-primary);">
                         <button class="btn btn-primary" onclick="window.startCrawl()">Start Crawl</button>
                     </div>
 
@@ -230,7 +229,6 @@ export class Dashboard {
           } else {
               const crawl = summary.latest_crawl;
               
-              // Load AI insights for project
               let aiInsightsHtml = '';
               try {
                   const aiRes = await aiService.getInsights(selectedProj.id);
@@ -317,7 +315,7 @@ export class Dashboard {
                     <h2 style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">AI SEO Analyst Assistant</h2>
                     <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 16px;">Ask questions directly against your actual website crawl evidence and technical audit findings for ${selectedProj.name}.</p>
                     <div style="display: flex; gap: 12px;">
-                        <input id="ai-chat-input" type="text" placeholder="e.g. Which pages have critical technical issues?" style="flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px;" onkeypress="if(event.key==='Enter') window.askAIChat()">
+                        <input id="ai-chat-input" type="text" placeholder="e.g. Which pages have critical technical issues?" style="flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--bg-card); color: var(--text-primary);" onkeypress="if(event.key==='Enter') window.askAIChat()">
                         <button class="btn btn-primary" onclick="window.askAIChat()">Ask AI Analyst</button>
                     </div>
                     <div id="ai-chat-response" style="display: none; margin-top: 16px; padding: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px;">
@@ -336,7 +334,7 @@ export class Dashboard {
               `;
           }
       } catch (e) {
-          this.element.innerHTML = `<div class="card" style="padding: 24px; color: red;">Failed to load dashboard data. Ensure backend is running.</div>`;
+          renderBackendOfflineState(this.element, "Unable to load dashboard metrics from backend API.");
       }
   }
 }

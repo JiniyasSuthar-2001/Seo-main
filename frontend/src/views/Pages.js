@@ -1,4 +1,6 @@
 import { pagesService } from '../services/pages.js';
+import { projectStore } from '../core/projectStore.js';
+import { renderBackendOfflineState } from '../components/ErrorState.js';
 
 export class Pages {
     constructor() {
@@ -26,7 +28,7 @@ export class Pages {
         if (!container) return;
 
         try {
-            const pages = await pagesService.getPages('1', 100, 0);
+            const pages = await pagesService.getPages(projectStore.getSelectedProjectId(), 100, 0);
 
             if (!pages || pages.length === 0) {
                 container.innerHTML = `
@@ -71,7 +73,6 @@ export class Pages {
             `).join('');
 
             container.innerHTML = `
-                <!-- FILTER BAR -->
                 <div style="display: flex; gap: 12px; margin-bottom: 20px;">
                     <input type="text" placeholder="Filter by URL or title..." style="flex: 1; max-width: 360px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--bg-card);">
                     <button class="btn btn-secondary btn-sm">All Statuses (${pages.length})</button>
@@ -97,7 +98,7 @@ export class Pages {
                 </div>
             `;
         } catch (e) {
-            container.innerHTML = `<div class="card" style="padding: 24px; color: red;">Failed to load pages data.</div>`;
+            renderBackendOfflineState(container, "Unable to load crawled pages data.");
         }
     }
 }

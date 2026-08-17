@@ -5,6 +5,7 @@ from app.models.project import Project
 from app.models.crawl_session import CrawlSession
 from app.crawler.crawler import SEOCrawler
 from app.services.crawl_storage import CrawlStorage
+from app.config.utils import get_sanitized_domain
 from pydantic import BaseModel
 from typing import Optional
 import asyncio
@@ -35,7 +36,7 @@ async def run_crawl_task(session_id: str, start_url: str, db: Session):
         crawl_session.pages_discovered = len(crawler.queue_status)
         crawl_session.issues_found = len(results.get("issues", []))
         db.commit()
-        print(f"[CRAWL SUCCESS] Session {session_id} COMPLETED cleanly.", flush=True)
+        print(f"[CRAWL SUCCESS] Session {session_id} COMPLETED cleanly. Output: {crawl_dir}", flush=True)
         
     except Exception as e:
         print(f"[CRAWL ERROR] Session {session_id} FAILED: {e}", flush=True)
@@ -46,7 +47,7 @@ async def run_crawl_task(session_id: str, start_url: str, db: Session):
 async def start_crawl(project_id: str, request: CrawlRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     
-    # 1. Determine target URL without ever defaulting to hardcoded example.com
+    # Determine target URL
     target_url = request.url
     if not target_url and project and project.domain:
         target_url = project.domain
@@ -59,7 +60,7 @@ async def start_crawl(project_id: str, request: CrawlRequest, background_tasks: 
 
     print(f"[CRAWL REQUEST] Project ID: {project_id}, Target URL: {target_url}", flush=True)
 
-    # 2. Create session
+    # Create session
     new_session = CrawlSession(
         project_id=project_id,
         status="running",
@@ -71,7 +72,7 @@ async def start_crawl(project_id: str, request: CrawlRequest, background_tasks: 
     db.commit()
     db.refresh(new_session)
 
-    # 3. Add background crawl task
+    # Add background crawl task
     background_tasks.add_task(run_crawl_task, new_session.id, target_url, db)
     return {"message": "Crawl started", "session_id": new_session.id, "target_url": target_url}
 
@@ -91,8 +92,10 @@ async def get_crawl_status(project_id: str, session_id: str, db: Session = Depen
 @router.get("/{project_id}/crawl-history")
 async def get_crawl_history(project_id: str, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
-    domain = project.domain if project else "uisdigital.com"
-    
+    if not project or not project.domain:
+        return []
+        
+    domain = project.domain
     storage = CrawlStorage()
     history = storage.get_crawl_history(domain)
     return history

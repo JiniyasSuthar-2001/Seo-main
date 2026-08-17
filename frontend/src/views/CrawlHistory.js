@@ -1,4 +1,6 @@
 import { crawlService } from '../services/crawlService.js';
+import { projectStore } from '../core/projectStore.js';
+import { renderBackendOfflineState } from '../components/ErrorState.js';
 
 export class CrawlHistory {
     constructor() {
@@ -26,7 +28,8 @@ export class CrawlHistory {
         if (!container) return;
 
         try {
-            const history = await crawlService.getCrawlHistory('1');
+            const selectedProj = projectStore.getSelectedProject();
+            const history = await crawlService.getCrawlHistory(projectStore.getSelectedProjectId());
 
             if (!history || history.length === 0) {
                 container.innerHTML = `
@@ -41,6 +44,9 @@ export class CrawlHistory {
                 `;
                 return;
             }
+
+            const domainStr = selectedProj ? (selectedProj.domain || selectedProj.url || 'website') : 'website';
+            const safeDomain = domainStr.replace("https://", "").replace("http://", "").replace("www.", "").replace(/[^a-zA-Z0-9]/g, "_");
 
             let cards = history.map((snap, idx) => `
                 <div class="card" style="padding: 24px;">
@@ -76,7 +82,7 @@ export class CrawlHistory {
                     </div>
 
                     <div style="margin-top: 16px; font-size: 12px; font-family: monospace; color: var(--text-secondary);">
-                        Storage Path: data/websites/uisdigital/crawls/${snap.folder_name}/
+                        Storage Path: data/websites/${safeDomain}/crawls/${snap.folder_name}/
                     </div>
                 </div>
             `).join('');
@@ -87,7 +93,7 @@ export class CrawlHistory {
                 </div>
             `;
         } catch (e) {
-            container.innerHTML = `<div class="card" style="padding: 24px; color: red;">Failed to load crawl history.</div>`;
+            renderBackendOfflineState(container, "Unable to load crawl history.");
         }
     }
 }

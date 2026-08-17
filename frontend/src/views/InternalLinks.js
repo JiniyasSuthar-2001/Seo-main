@@ -1,4 +1,6 @@
 import { internalLinksService } from '../services/internalLinks.js';
+import { projectStore } from '../core/projectStore.js';
+import { renderBackendOfflineState } from '../components/ErrorState.js';
 
 export class InternalLinks {
     constructor() {
@@ -26,7 +28,7 @@ export class InternalLinks {
         if (!container) return;
 
         try {
-            const links = await internalLinksService.getInternalLinks('1', 100, 0);
+            const links = await internalLinksService.getInternalLinks(projectStore.getSelectedProjectId(), 100, 0);
 
             if (!links || links.length === 0) {
                 container.innerHTML = `
@@ -76,7 +78,7 @@ export class InternalLinks {
                 </div>
             `;
         } catch (e) {
-            container.innerHTML = `<div class="card" style="padding: 24px; color: red;">Failed to load internal link graph.</div>`;
+            renderBackendOfflineState(container, "Unable to load internal link graph.");
         }
     }
 }

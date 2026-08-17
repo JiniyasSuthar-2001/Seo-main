@@ -2,14 +2,14 @@ import os
 import json
 from datetime import datetime
 from typing import Dict, Any, List
+from app.config.utils import get_sanitized_domain
 
 class CrawlStorage:
     def __init__(self, base_dir: str = "data/websites"):
         self.base_dir = base_dir
 
     def _get_website_folder(self, domain: str) -> str:
-        safe_domain = domain.replace("https://", "").replace("http://", "").replace("www.", "")
-        safe_domain = "".join([c if c.isalnum() else "_" for c in safe_domain])
+        safe_domain = get_sanitized_domain(domain)
         return os.path.join(self.base_dir, safe_domain)
 
     def save_crawl_snapshot(self, domain: str, session_id: str, results: Dict[str, Any]) -> str:

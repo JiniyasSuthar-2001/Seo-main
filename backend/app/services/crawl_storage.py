@@ -53,34 +53,48 @@ class CrawlStorage:
             "external_links_count": len(external_links)
         }
 
-        with open(os.path.join(crawl_dir, "metadata.json"), "w") as f:
-            json.dump(metadata, f, indent=4)
+        # Write files
+        files_to_write = {
+            "metadata.json": metadata,
+            "pages.json": pages,
+            "issues.json": issues,
+            "internal_links.json": internal_links,
+            "external_links.json": external_links,
+            "summary.json": metadata
+        }
 
-        with open(os.path.join(crawl_dir, "pages.json"), "w") as f:
-            json.dump(pages, f, indent=4)
+        for fname, content in files_to_write.items():
+            fpath = os.path.join(crawl_dir, fname)
+            with open(fpath, "w") as f:
+                json.dump(content, f, indent=4)
 
-        with open(os.path.join(crawl_dir, "issues.json"), "w") as f:
-            json.dump(issues, f, indent=4)
+        # Storage Verification Step
+        required_artifacts = ["metadata.json", "pages.json", "issues.json", "internal_links.json", "external_links.json", "summary.json"]
+        missing_artifacts = [f for f in required_artifacts if not os.path.exists(os.path.join(crawl_dir, f))]
+        
+        if missing_artifacts:
+            raise RuntimeError(f"Storage Verification Failed. Missing artifacts: {missing_artifacts}")
 
-        with open(os.path.join(crawl_dir, "internal_links.json"), "w") as f:
-            json.dump(internal_links, f, indent=4)
-
-        with open(os.path.join(crawl_dir, "external_links.json"), "w") as f:
-            json.dump(external_links, f, indent=4)
-
-        with open(os.path.join(crawl_dir, "summary.json"), "w") as f:
-            json.dump(metadata, f, indent=4)
+        print(f"[STORAGE VERIFIED] All 6 snapshot artifacts written successfully to {crawl_dir}", flush=True)
 
         # 3. Generate Crawl Comparison if previous snapshot exists
-        if prev_snapshot_path and os.path.exists(os.path.join(prev_snapshot_path, "pages.json")):
+        if prev_snapshot_path and os.path.exists(prev_snapshot_path):
             try:
                 comp_dir = os.path.join(website_dir, "comparisons")
                 os.makedirs(comp_dir, exist_ok=True)
-                
-                with open(os.path.join(prev_snapshot_path, "pages.json"), "r") as pf:
-                    prev_pages = json.load(pf)
-                with open(os.path.join(prev_snapshot_path, "issues.json"), "r") as pf:
-                    prev_issues = json.load(pf)
+
+                prev_pages_path = os.path.join(prev_snapshot_path, "pages.json")
+                prev_issues_path = os.path.join(prev_snapshot_path, "issues.json")
+
+                prev_pages = []
+                if os.path.exists(prev_pages_path):
+                    with open(prev_pages_path, "r") as pf:
+                        prev_pages = json.load(pf)
+
+                prev_issues = []
+                if os.path.exists(prev_issues_path):
+                    with open(prev_issues_path, "r") as pf:
+                        prev_issues = json.load(pf)
 
                 prev_urls = set(p.get("url") for p in prev_pages)
                 curr_urls = set(p.get("url") for p in pages)
@@ -88,11 +102,11 @@ class CrawlStorage:
                 new_pages = list(curr_urls - prev_urls)
                 removed_pages = list(prev_urls - curr_urls)
 
-                prev_issue_keys = set(f"{i['issue_type']}:{i['affected_url']}" for i in prev_issues)
-                curr_issue_keys = set(f"{i['issue_type']}:{i['affected_url']}" for i in issues)
+                prev_issue_keys = set(f"{i.get('issue_type')}:{i.get('affected_url')}" for i in prev_issues)
+                curr_issue_keys = set(f"{i.get('issue_type')}:{i.get('affected_url')}" for i in issues)
 
-                new_issues = [i for i in issues if f"{i['issue_type']}:{i['affected_url']}" not in prev_issue_keys]
-                resolved_issues = [i for i in prev_issues if f"{i['issue_type']}:{i['affected_url']}" not in curr_issue_keys]
+                new_issues = [i for i in issues if f"{i.get('issue_type')}:{i.get('affected_url')}" not in prev_issue_keys]
+                resolved_issues = [i for i in prev_issues if f"{i.get('issue_type')}:{i.get('affected_url')}" not in curr_issue_keys]
 
                 prev_ts = os.path.basename(prev_snapshot_path)
                 comp_data = {
@@ -115,7 +129,7 @@ class CrawlStorage:
                 print(f"[STORAGE] Generated crawl comparison: {comp_file}", flush=True)
 
             except Exception as ce:
-                print(f"[STORAGE] Failed to generate crawl comparison: {ce}", flush=True)
+                print(f"[STORAGE] Failed to generate crawl comparison safely: {ce}", flush=True)
 
         # 4. Update latest pointer
         latest_pointer = {

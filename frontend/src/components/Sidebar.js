@@ -11,6 +11,7 @@ export class Sidebar {
     const element = document.createElement('aside');
     element.className = 'sidebar-nav';
     element.innerHTML = `
+      <!-- BRAND HEADER -->
       <div style="padding: 24px 20px 16px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--sidebar-border);">
         <div style="width: 34px; height: 34px; border-radius: 8px; background: linear-gradient(135deg, #2563eb, #3b82f6); display: flex; align-items: center; justify-content: center; color: #fff; box-shadow: 0 2px 8px rgba(37,99,235,0.4);">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -23,6 +24,7 @@ export class Sidebar {
         </div>
       </div>
 
+      <!-- NAVIGATION GROUPS -->
       <div style="padding: 16px 12px; display: flex; flex-direction: column; gap: 20px; flex: 1; overflow-y: auto;">
         
         <!-- PRIMARY SECTION -->
@@ -54,7 +56,7 @@ export class Sidebar {
               <span>Internal Links</span>
             </a>
             <a href="/competitors" data-link class="nav-item ${isActive('/competitors')}">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 1 0 7.75"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
               <span>Competitors</span>
             </a>
             <a href="/technical" data-link class="nav-item ${isActive('/technical')}">
@@ -102,18 +104,6 @@ export class Sidebar {
           </nav>
         </div>
 
-      </div>
-
-      <!-- ACTIVE PROJECT FOOTER -->
-      <div style="padding: 14px 16px; border-top: 1px solid var(--sidebar-border); background: var(--sidebar-card);">
-        <div style="font-size: 11px; font-weight: 600; color: var(--sidebar-text); text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.03em;">ACTIVE PROJECT</div>
-        <div style="display: flex; align-items: center; justify-content: space-between;">
-          <div style="overflow: hidden;">
-            <div style="font-weight: 600; font-size: 13px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">UIS Digital</div>
-            <div style="font-size: 11px; color: var(--sidebar-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">https://uisdigital.com/</div>
-          </div>
-          <span style="width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 6px var(--success);"></span>
-        </div>
       </div>
 
       <style>

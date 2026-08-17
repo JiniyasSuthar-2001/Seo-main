@@ -1,21 +1,31 @@
 import httpx
 import asyncio
 import time
+import re
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
-from typing import Set, Dict, Any, List
+from typing import Set, Dict, Any, List, Optional
 
 class SEOCrawler:
-    def __init__(self, start_url: str, max_pages: int = 100):
-        self.start_url = start_url
+    def __init__(self, start_url: str, max_pages: int = 1000, request_timeout: float = 20.0):
+        if not start_url or not start_url.startswith(("http://", "https://")):
+            raise ValueError("Crawler requires a valid HTTP or HTTPS start URL.")
+
+        self.start_url = self.normalize_url(start_url, start_url)
         self.max_pages = max_pages
+        self.request_timeout = request_timeout
         
-        parsed_url = urlparse(start_url)
-        self.domain = parsed_url.netloc
+        parsed_url = urlparse(self.start_url)
+        self.domain = parsed_url.netloc.lower()
         self.scheme = parsed_url.scheme
         
+        # State Queue tracking: PENDING, CRAWLING, CRAWLED, FAILED, SKIPPED
+        self.queue_status: Dict[str, str] = {self.start_url: "PENDING"}
         self.visited: Set[str] = set()
-        self.to_visit: Set[str] = {start_url}
+        self.to_visit: List[str] = [self.start_url]
+        
+        self.disallowed_paths: List[str] = []
+        self.sitemap_urls: List[str] = []
         
         # Results collections
         self.pages: List[Dict[str, Any]] = []
@@ -30,12 +40,68 @@ class SEOCrawler:
         parsed = urlparse(url)
         netloc = parsed.netloc.lower()
         dom = self.domain.lower()
-        return netloc == dom or netloc == f"www.{dom}" or dom == f"www.{netloc}"
+        clean_netloc = netloc.replace("www.", "")
+        clean_dom = dom.replace("www.", "")
+        return clean_netloc == clean_dom
 
     def normalize_url(self, url: str, base_url: str) -> str:
         full_url = urljoin(base_url, url)
         parsed = urlparse(full_url)
-        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}".rstrip("/") if parsed.path != "/" else f"{parsed.scheme}://{parsed.netloc}/"
+        path = parsed.path
+        if not path:
+            path = "/"
+        elif path != "/" and path.endswith("/"):
+            path = path.rstrip("/")
+            
+        return f"{parsed.scheme}://{parsed.netloc}{path}".lower()
+
+    async def fetch_robots_txt(self, client: httpx.AsyncClient):
+        robots_url = f"{self.scheme}://{self.domain}/robots.txt"
+        print(f"[ROBOTS] Requesting {robots_url}", flush=True)
+        try:
+            resp = await client.get(robots_url, timeout=10.0, follow_redirects=True)
+            if resp.status_code == 200:
+                print(f"[ROBOTS] Found robots.txt ({len(resp.text)} bytes)", flush=True)
+                for line in resp.text.splitlines():
+                    line = line.strip()
+                    if line.lower().startswith("disallow:"):
+                        path = line.split(":", 1)[1].strip()
+                        if path:
+                            self.disallowed_paths.append(path)
+                    elif line.lower().startswith("sitemap:"):
+                        sm_url = line.split(":", 1)[1].strip()
+                        if sm_url:
+                            self.sitemap_urls.append(sm_url)
+        except Exception as e:
+            print(f"[ROBOTS] robots.txt not available: {e}", flush=True)
+
+    async def fetch_sitemap_xml(self, client: httpx.AsyncClient):
+        sitemaps_to_check = self.sitemap_urls if self.sitemap_urls else [f"{self.scheme}://{self.domain}/sitemap.xml"]
+        for sm_url in sitemaps_to_check:
+            print(f"[SITEMAP] Inspecting sitemap {sm_url}", flush=True)
+            try:
+                resp = await client.get(sm_url, timeout=10.0, follow_redirects=True)
+                if resp.status_code == 200 and "xml" in resp.headers.get("content-type", ""):
+                    soup = BeautifulSoup(resp.text, "xml")
+                    locs = [loc.text.strip() for loc in soup.find_all("loc") if loc.text.strip()]
+                    discovered_count = 0
+                    for loc in locs:
+                        norm = self.normalize_url(loc, sm_url)
+                        if self.is_same_domain(norm) and norm not in self.queue_status:
+                            self.queue_status[norm] = "PENDING"
+                            self.to_visit.append(norm)
+                            discovered_count += 1
+                    print(f"[SITEMAP] Discovered {discovered_count} URLs from {sm_url}", flush=True)
+            except Exception as e:
+                print(f"[SITEMAP] Failed to parse sitemap {sm_url}: {e}", flush=True)
+
+    def is_disallowed(self, url: str) -> bool:
+        parsed = urlparse(url)
+        path = parsed.path
+        for dis in self.disallowed_paths:
+            if dis == "/" or path.startswith(dis):
+                return True
+        return False
 
     def evaluate_page_issues(self, page_data: Dict[str, Any]):
         url = page_data["url"]
@@ -101,7 +167,7 @@ class SEOCrawler:
                 "issue_type": "Thin Content",
                 "affected_url": url,
                 "details": f"Page text content is low ({page_data['word_count']} words).",
-                "recommendation": "Expand body text to provide substantial value for visitors and search engines."
+                "recommendation": "Expand body text to provide substantial value for visitors and search crawlers."
             })
 
         if page_data.get("images_missing_alt", 0) > 0:
@@ -117,16 +183,23 @@ class SEOCrawler:
         if url in self.visited or len(self.visited) >= self.max_pages:
             return
             
+        if self.is_disallowed(url):
+            print(f"[ROBOTS] Skipping disallowed URL: {url}", flush=True)
+            self.queue_status[url] = "SKIPPED"
+            return
+
         self.visited.add(url)
+        self.queue_status[url] = "CRAWLING"
         print(f"[HTTP] GET {url}", flush=True)
         
         start_time = time.time()
         try:
             headers = {"User-Agent": self.user_agent}
-            response = await client.get(url, headers=headers, timeout=10.0, follow_redirects=True)
+            response = await client.get(url, headers=headers, timeout=self.request_timeout, follow_redirects=True)
             elapsed_ms = int((time.time() - start_time) * 1000)
             
             print(f"[HTTP] {response.status_code} {url} ({elapsed_ms}ms)", flush=True)
+            self.queue_status[url] = "CRAWLED"
             
             content_type = response.headers.get("content-type", "")
             if "text/html" not in content_type:
@@ -135,7 +208,7 @@ class SEOCrawler:
             html = response.text
             soup = BeautifulSoup(html, "html.parser")
             
-            # 1. Basic Metadata Extraction
+            # Metadata Extraction
             title_tag = soup.title.string.strip() if soup.title and soup.title.string else None
             
             meta_desc_tag = soup.find("meta", attrs={"name": "description"})
@@ -147,23 +220,23 @@ class SEOCrawler:
             robots_tag = soup.find("meta", attrs={"name": "robots"})
             robots_meta = robots_tag["content"].strip() if robots_tag and robots_tag.get("content") else "index, follow"
 
-            # 2. Headings
+            # Headings
             h1_tags = [h.text.strip() for h in soup.find_all("h1") if h.text.strip()]
             h1 = h1_tags[0] if h1_tags else None
             
             h2_tags = soup.find_all("h2")
             h3_tags = soup.find_all("h3")
 
-            # 3. Word Count
+            # Word Count
             body_text = soup.body.get_text(separator=" ", strip=True) if soup.body else ""
             words = body_text.split()
             word_count = len(words)
 
-            # 4. Images
+            # Images
             images = soup.find_all("img")
             images_missing_alt = sum(1 for img in images if not img.get("alt") or not img["alt"].strip())
 
-            # 5. Extract Links
+            # Extract Links
             discovered_internal = set()
             a_tags = soup.find_all("a", href=True)
             
@@ -183,8 +256,9 @@ class SEOCrawler:
                         "target": normalized,
                         "anchor_text": anchor_text
                     })
-                    if normalized not in self.visited and len(self.visited) + len(self.to_visit) < self.max_pages:
-                        self.to_visit.add(normalized)
+                    if normalized not in self.visited and normalized not in self.to_visit and len(self.visited) + len(self.to_visit) < self.max_pages:
+                        self.queue_status[normalized] = "PENDING"
+                        self.to_visit.append(normalized)
                 else:
                     self.external_links.append({
                         "source": url,
@@ -192,7 +266,7 @@ class SEOCrawler:
                         "anchor_text": anchor_text
                     })
 
-            print(f"[DISCOVERY] Found {len(discovered_internal)} internal links on {url}", flush=True)
+            print(f"[PARSE] Extracted {len(discovered_internal)} internal links from {url}", flush=True)
 
             page_record = {
                 "url": url,
@@ -218,6 +292,7 @@ class SEOCrawler:
         except Exception as e:
             elapsed_ms = int((time.time() - start_time) * 1000)
             print(f"[ERROR] Failed to fetch {url}: {e}", flush=True)
+            self.queue_status[url] = "FAILED"
             page_record = {
                 "url": url,
                 "status_code": 0,
@@ -232,16 +307,21 @@ class SEOCrawler:
         print(f"[CRAWL] Starting real Internet crawl for {self.start_url}", flush=True)
         
         async with httpx.AsyncClient(verify=False) as client:
+            # 1. Fetch robots.txt and sitemap.xml first
+            await self.fetch_robots_txt(client)
+            await self.fetch_sitemap_xml(client)
+
+            # 2. Main Crawl Queue Loop
             while self.to_visit and len(self.visited) < self.max_pages:
-                batch = list(self.to_visit)[:5] 
-                self.to_visit.difference_update(batch)
+                batch = self.to_visit[:5] 
+                self.to_visit = self.to_visit[5:]
                 
                 tasks = [self.crawl_page(client, url) for url in batch]
                 await asyncio.gather(*tasks)
                 await asyncio.sleep(0.5)
 
         self.is_running = False
-        print(f"[CRAWL] Finished crawling {self.start_url}. Total pages: {len(self.pages)}, Total issues: {len(self.issues)}", flush=True)
+        print(f"[CRAWL] Finished crawling {self.start_url}. Discovered: {len(self.queue_status)}, Crawled: {len(self.pages)}, Issues: {len(self.issues)}", flush=True)
         
         return {
             "pages": self.pages,

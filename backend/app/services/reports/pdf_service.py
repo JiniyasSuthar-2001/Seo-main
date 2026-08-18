@@ -319,9 +319,10 @@ class PDFReportGenerator:
         return buffer.getvalue()
 
     def generate_crawl_report(self, metadata: Dict[str, Any], pages: List[Dict[str, Any]], issues: List[Dict[str, Any]]) -> bytes:
+        website = metadata.get("website")
         return self.generate_full_project_pdf(
-            project_name=metadata.get("website", "Website SEO Audit"),
-            project_url=metadata.get("website", "https://uisdigital.com/"),
+            project_name=website or "Website SEO Audit",
+            project_url=website or "Not available",
             metadata=metadata,
             pages=pages,
             keywords=[],

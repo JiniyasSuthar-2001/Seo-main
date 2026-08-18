@@ -10,30 +10,33 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     query: str
 
+
+def _get_project_or_404(project_id: str, db: Session) -> Project:
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.domain:
+        raise HTTPException(status_code=400, detail="This project has no website URL configured.")
+    return project
+
+
 @router.post("/{project_id}/ai/analyze")
 def analyze_project_ai(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    domain = project.domain if (project and project.domain) else "uisdigital.com"
-    
+    project = _get_project_or_404(project_id, db)
     agent = SEOAnalystAgent()
-    analysis = agent.analyze_project(domain)
-    return analysis
+    return agent.analyze_project(project.domain)
 
 @router.get("/{project_id}/ai/insights")
 def get_project_insights(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    domain = project.domain if (project and project.domain) else "uisdigital.com"
-    
+    project = _get_project_or_404(project_id, db)
     agent = SEOAnalystAgent()
-    return agent.analyze_project(domain)
+    return agent.analyze_project(project.domain)
 
 @router.post("/{project_id}/ai/chat")
 def chat_with_project_ai(project_id: str, request: ChatRequest, db: Session = Depends(get_db)):
     if not request.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
-        
-    project = db.query(Project).filter(Project.id == project_id).first()
-    domain = project.domain if (project and project.domain) else "uisdigital.com"
-    
+
+    project = _get_project_or_404(project_id, db)
     agent = SEOAnalystAgent()
-    return agent.chat_with_data(domain, request.query)
+    return agent.chat_with_data(project.domain, request.query)

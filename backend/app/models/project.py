@@ -22,7 +22,11 @@ class Project(Base):
 
     @property
     def domain(self):
-        return self.url or "uisdigital.com"
+        # No fallback - a project's domain is either its real url or nothing.
+        # Every route depends on 'if not project.domain' to correctly reject
+        # projects with no website configured; a hard-coded fallback here
+        # would make that check silently never fire.
+        return self.url or None
 
     @domain.setter
     def domain(self, value):

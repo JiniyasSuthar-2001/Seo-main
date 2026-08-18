@@ -66,35 +66,65 @@ export class Technical {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                         Download PDF
                     </a>
-                    <button class="btn btn-secondary btn-sm" onclick="window.exportTechnicalCSV()">Export CSV</button>
+                    <a href="${API_BASE_URL}/api/projects/${projectId}/technical/export.csv" target="_blank" class="btn btn-secondary btn-sm">Export CSV</a>
                 `;
             }
 
-            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/technical?limit=100&offset=0`);
+            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/technical?limit=200&offset=0`);
             if (!res.ok) throw new Error("API response error");
-            const issues = await res.json();
+            const rawIssues = await res.json();
 
-            if (!issues || issues.length === 0) {
+            // Extract severity query param e.g. /technical?severity=critical
+            const urlParams = new URLSearchParams(window.location.search);
+            const activeSeverityFilter = (urlParams.get('severity') || '').toLowerCase();
+
+            const hasCrawled = selectedProj.has_crawled || (selectedProj.pages_count && selectedProj.pages_count > 0);
+
+            if (!hasCrawled && (!rawIssues || rawIssues.length === 0)) {
                 container.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
                         </div>
-                        <div class="empty-state-title">No Technical Issues Detected</div>
-                        <div class="empty-state-desc">Your latest website crawl snapshot completed with zero detected technical SEO issues.</div>
+                        <div class="empty-state-title">Technical SEO Has Not Been Analyzed Yet</div>
+                        <div class="empty-state-desc">No crawl snapshot exists for <strong>${selectedProj.name}</strong>. Run a website crawl from the header or Dashboard to detect technical SEO findings.</div>
+                        <button class="btn btn-primary" onclick="window.location.href='/'">Run Website Crawl</button>
                     </div>
                 `;
                 return;
             }
 
-            const criticals = issues.filter(i => i.severity === 'Critical');
-            const warnings = issues.filter(i => i.severity === 'Warning');
-            const notices = issues.filter(i => i.severity === 'Notice');
+            if (hasCrawled && (!rawIssues || rawIssues.length === 0)) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon" style="color: var(--success);">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                        </div>
+                        <div class="empty-state-title">No Technical Issues Detected</div>
+                        <div class="empty-state-desc">Your website crawl snapshot for <strong>${selectedProj.name}</strong> completed with zero detected technical SEO issues.</div>
+                    </div>
+                `;
+                return;
+            }
 
-            let rows = issues.map(iss => {
+            const criticals = rawIssues.filter(i => (i.severity || '').toLowerCase() === 'critical');
+            const warnings = rawIssues.filter(i => (i.severity || '').toLowerCase() === 'warning');
+            const notices = rawIssues.filter(i => (i.severity || '').toLowerCase() === 'notice');
+
+            let filteredIssues = rawIssues;
+            if (activeSeverityFilter === 'critical') {
+                filteredIssues = criticals;
+            } else if (activeSeverityFilter === 'warning') {
+                filteredIssues = warnings;
+            } else if (activeSeverityFilter === 'notice') {
+                filteredIssues = notices;
+            }
+
+            let rows = filteredIssues.map(iss => {
                 let badgeClass = 'badge-info';
-                if (iss.severity === 'Critical') badgeClass = 'badge-critical';
-                else if (iss.severity === 'Warning') badgeClass = 'badge-warning';
+                const sev = (iss.severity || '').toLowerCase();
+                if (sev === 'critical') badgeClass = 'badge-critical';
+                else if (sev === 'warning') badgeClass = 'badge-warning';
 
                 return `
                     <tr>
@@ -110,30 +140,37 @@ export class Technical {
             }).join('');
 
             container.innerHTML = `
-                <!-- SUMMARY KPI CARDS -->
+                <!-- SUMMARY KPI CARDS & SEVERITY FILTER TOGGLES -->
                 <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;">
-                    <div class="kpi-card">
+                    <a href="/technical" data-link class="kpi-card" style="text-decoration: none; cursor: pointer; border: 1px solid ${!activeSeverityFilter ? 'var(--primary)' : 'var(--border)'};">
                         <div class="kpi-label">TOTAL ISSUES</div>
-                        <div class="kpi-value">${issues.length}</div>
-                    </div>
-                    <div class="kpi-card">
+                        <div class="kpi-value">${rawIssues.length}</div>
+                        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Show All</div>
+                    </a>
+                    <a href="/technical?severity=critical" data-link class="kpi-card" style="text-decoration: none; cursor: pointer; border: 1px solid ${activeSeverityFilter === 'critical' ? 'var(--critical)' : 'var(--border)'};">
                         <div class="kpi-label">CRITICAL</div>
                         <div class="kpi-value" style="color: var(--critical);">${criticals.length}</div>
-                    </div>
-                    <div class="kpi-card">
+                        <div style="font-size: 11px; color: var(--critical); margin-top: 4px;">Filter Critical &rarr;</div>
+                    </a>
+                    <a href="/technical?severity=warning" data-link class="kpi-card" style="text-decoration: none; cursor: pointer; border: 1px solid ${activeSeverityFilter === 'warning' ? 'var(--warning)' : 'var(--border)'};">
                         <div class="kpi-label">WARNINGS</div>
                         <div class="kpi-value" style="color: var(--warning);">${warnings.length}</div>
-                    </div>
-                    <div class="kpi-card">
+                        <div style="font-size: 11px; color: var(--warning); margin-top: 4px;">Filter Warnings &rarr;</div>
+                    </a>
+                    <a href="/technical?severity=notice" data-link class="kpi-card" style="text-decoration: none; cursor: pointer; border: 1px solid ${activeSeverityFilter === 'notice' ? 'var(--primary)' : 'var(--border)'};">
                         <div class="kpi-label">NOTICES</div>
                         <div class="kpi-value">${notices.length}</div>
-                    </div>
+                        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Filter Notices &rarr;</div>
+                    </a>
                 </div>
 
                 <!-- ISSUES TABLE -->
                 <div class="card" style="padding: 0; overflow: hidden;">
                     <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
-                        <h3 style="font-size: 15px; font-weight: 600;">Evidence-Backed Findings (${issues.length})</h3>
+                        <h3 style="font-size: 15px; font-weight: 600;">
+                            Evidence-Backed Findings (${filteredIssues.length})
+                            ${activeSeverityFilter ? `<span class="badge badge-info" style="margin-left: 8px; text-transform: uppercase;">Filter: ${activeSeverityFilter}</span>` : ''}
+                        </h3>
                         <span style="font-size: 12px; color: var(--text-secondary);">Rule Engine Output</span>
                     </div>
                     <div style="overflow-x: auto;">
@@ -148,7 +185,7 @@ export class Technical {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${rows}
+                                ${rows.length > 0 ? rows : `<tr><td colspan="5" style="padding: 24px; text-align: center; color: var(--text-secondary);">No issues found for filter '${activeSeverityFilter}'.</td></tr>`}
                             </tbody>
                         </table>
                     </div>

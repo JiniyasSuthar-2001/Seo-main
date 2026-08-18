@@ -2,22 +2,31 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import projects, pages, keywords, crawl, technical, internal_links, ai, backlinks, rankings, datasources, reports
 from app.config.database import engine, Base
+from app.config.migration import run_schema_migrations
 
 # Import all models to ensure they are registered with Base
 from app.models import project, dataset, page, keyword, crawl_session
 
-# Create database tables
+# Run idempotent column migrations & create missing database tables
+run_schema_migrations(engine)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="SEO Intelligence API")
 
+origins = [
+    "http://localhost:8030",
+    "http://127.0.0.1:8030",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
 # Configure CORS for frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allow all origins for development
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept", "*"],
 )
 
 # Register routers

@@ -10,6 +10,9 @@ class Project(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     name = Column(String, index=True)
     url = Column(String)
+    description = Column(String, nullable=True)
+    industry = Column(String, nullable=True)
+    notes = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

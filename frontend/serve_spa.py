@@ -3,7 +3,7 @@ import socketserver
 import os
 import sys
 
-PORT = 8020
+PORT = 8030
 FRONTEND_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class SPAHandler(http.server.SimpleHTTPRequestHandler):

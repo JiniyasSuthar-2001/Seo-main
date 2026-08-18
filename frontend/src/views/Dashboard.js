@@ -60,7 +60,7 @@ window.startCrawl = async () => {
         }, 1000);
         
     } catch(e) {
-        alert("Backend API unavailable. Please ensure the server is running on http://127.0.0.1:8000.");
+        alert("Backend API unavailable. Please ensure the server is running on http://127.0.0.1:8020.");
     }
 };
 
@@ -75,7 +75,7 @@ window.createFirstProject = async (e) => {
     }
 
     try {
-        await projectStore.createProject(name, domain);
+        await projectStore.createProject({ name, url: domain });
         window.location.reload();
     } catch (err) {
         alert("Failed to create project. Please check backend API server status.");
@@ -98,7 +98,7 @@ window.askAIChat = async () => {
             <div style="line-height: 1.6; font-size: 14px;">${res.answer.replace(/\n/g, '<br/>')}</div>
         `;
     } catch(e) {
-        responseBox.innerHTML = '<span style="color: #ef4444;">AI Analyst unavailable. Ensure backend server is running on port 8000.</span>';
+        responseBox.innerHTML = '<span style="color: #ef4444;">AI Analyst unavailable. Ensure backend server is running on port 8020.</span>';
     }
 };
 
@@ -168,38 +168,38 @@ export class Dashboard {
                     </div>
                 </div>
 
-                <!-- 6 KPI CARDS (DATA-FIRST EMPTY STATE) -->
+                <!-- 6 KPI CARDS (INTERACTIVE DATA-FIRST NAVIGATION) -->
                 <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px;">
-                    <div class="kpi-card">
+                    <a href="/pages" data-link class="kpi-card interactive-kpi" title="Click to view Crawled Pages">
                         <div class="kpi-header"><span class="kpi-label">Crawled Pages</span></div>
                         <div class="kpi-value">0</div>
-                        <div class="kpi-status">No crawl data yet</div>
-                    </div>
-                    <div class="kpi-card">
+                        <div class="kpi-status">No crawl data yet &rarr;</div>
+                    </a>
+                    <a href="/technical" data-link class="kpi-card interactive-kpi" title="Click to view All Technical Issues">
                         <div class="kpi-header"><span class="kpi-label">Total Issues</span></div>
                         <div class="kpi-value">0</div>
-                        <div class="kpi-status">No audit run yet</div>
-                    </div>
-                    <div class="kpi-card">
+                        <div class="kpi-status">No audit run yet &rarr;</div>
+                    </a>
+                    <a href="/technical?severity=critical" data-link class="kpi-card interactive-kpi" title="Click to view Critical Issues filter">
                         <div class="kpi-header"><span class="kpi-label">Critical Issues</span></div>
                         <div class="kpi-value" style="color: var(--text-primary);">0</div>
-                        <div class="kpi-status">No data yet</div>
-                    </div>
-                    <div class="kpi-card">
+                        <div class="kpi-status">No data yet &rarr;</div>
+                    </a>
+                    <a href="/technical?severity=warning" data-link class="kpi-card interactive-kpi" title="Click to view Warning Issues filter">
                         <div class="kpi-header"><span class="kpi-label">Warnings</span></div>
                         <div class="kpi-value">0</div>
-                        <div class="kpi-status">No data yet</div>
-                    </div>
-                    <div class="kpi-card">
+                        <div class="kpi-status">No data yet &rarr;</div>
+                    </a>
+                    <a href="/internal-links" data-link class="kpi-card interactive-kpi" title="Click to view Internal Link Graph">
                         <div class="kpi-header"><span class="kpi-label">Internal Links</span></div>
                         <div class="kpi-value">0</div>
-                        <div class="kpi-status">Link graph unmapped</div>
-                    </div>
-                    <div class="kpi-card">
+                        <div class="kpi-status">Link graph unmapped &rarr;</div>
+                    </a>
+                    <a href="/keywords" data-link class="kpi-card interactive-kpi" title="Click to view Keywords Tracked">
                         <div class="kpi-header"><span class="kpi-label">Keywords Tracked</span></div>
                         <div class="kpi-value">0</div>
-                        <div class="kpi-status">No dataset imported</div>
-                    </div>
+                        <div class="kpi-status">No dataset imported &rarr;</div>
+                    </a>
                 </div>
 
                 <!-- ELEGANT EMPTY STATE CARD -->
@@ -267,45 +267,47 @@ export class Dashboard {
                     <div>
                         <div class="hero-title">SEO Overview: ${selectedProj.name} (${crawl.website})</div>
                         <div class="hero-subtitle">Snapshot analyzed on <strong>${crawl.timestamp}</strong>. All data backed by actual crawl evidence.</div>
-                        <div style="display: flex; gap: 12px; margin-top: 16px;">
+                        <div style="display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap;">
                             <button class="btn btn-primary btn-sm" onclick="window.startCrawl()">Run New Crawl</button>
+                            <a href="${API_BASE_URL}/api/projects/${selectedProj.id}/report.pdf" target="_blank" class="btn btn-secondary btn-sm">Download PDF Report</a>
+                            <a href="${API_BASE_URL}/api/projects/${selectedProj.id}/export" target="_blank" class="btn btn-secondary btn-sm">Download Project Data</a>
                             <a href="/pages" data-link class="btn btn-secondary btn-sm">View Pages</a>
                         </div>
                     </div>
                 </div>
                 
-                <!-- 6 REAL KPI CARDS -->
+                <!-- 6 REAL INTERACTIVE KPI CARDS -->
                 <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px;">
-                    <div class="kpi-card">
+                    <a href="/pages" data-link class="kpi-card interactive-kpi" title="Click to open Crawled Pages view">
                         <div class="kpi-header"><span class="kpi-label">Crawled Pages</span></div>
                         <div class="kpi-value">${crawl.pages_crawled}</div>
-                        <div class="kpi-status">Discovered & parsed</div>
-                    </div>
-                    <div class="kpi-card">
+                        <div class="kpi-status">Discovered & parsed &rarr;</div>
+                    </a>
+                    <a href="/technical" data-link class="kpi-card interactive-kpi" title="Click to open Technical SEO view">
                         <div class="kpi-header"><span class="kpi-label">Total Issues</span></div>
                         <div class="kpi-value">${crawl.total_issues || 0}</div>
-                        <div class="kpi-status">Evidence-backed findings</div>
-                    </div>
-                    <div class="kpi-card">
+                        <div class="kpi-status">Evidence-backed findings &rarr;</div>
+                    </a>
+                    <a href="/technical?severity=critical" data-link class="kpi-card interactive-kpi" title="Click to view Critical Technical Issues">
                         <div class="kpi-header"><span class="kpi-label">Critical Issues</span></div>
                         <div class="kpi-value" style="color: ${crawl.critical_issues > 0 ? 'var(--critical)' : 'inherit'};">${crawl.critical_issues || 0}</div>
-                        <div class="kpi-status">Requires immediate fix</div>
-                    </div>
-                    <div class="kpi-card">
+                        <div class="kpi-status">Requires immediate fix &rarr;</div>
+                    </a>
+                    <a href="/technical?severity=warning" data-link class="kpi-card interactive-kpi" title="Click to view Technical Warnings">
                         <div class="kpi-header"><span class="kpi-label">Warnings</span></div>
                         <div class="kpi-value" style="color: ${crawl.warning_issues > 0 ? 'var(--warning)' : 'inherit'};">${crawl.warning_issues || 0}</div>
-                        <div class="kpi-status">Audit recommendations</div>
-                    </div>
-                    <div class="kpi-card">
+                        <div class="kpi-status">Audit recommendations &rarr;</div>
+                    </a>
+                    <a href="/internal-links" data-link class="kpi-card interactive-kpi" title="Click to open Internal Links graph view">
                         <div class="kpi-header"><span class="kpi-label">Internal Links</span></div>
                         <div class="kpi-value">${crawl.internal_links_count || 0}</div>
-                        <div class="kpi-status">Mapped relationships</div>
-                    </div>
-                    <div class="kpi-card">
+                        <div class="kpi-status">Mapped relationships &rarr;</div>
+                    </a>
+                    <a href="/keywords" data-link class="kpi-card interactive-kpi" title="Click to open Keywords dataset view">
                         <div class="kpi-header"><span class="kpi-label">Keywords Tracked</span></div>
                         <div class="kpi-value">0</div>
-                        <div class="kpi-status">Import CSV dataset</div>
-                    </div>
+                        <div class="kpi-status">Import CSV dataset &rarr;</div>
+                    </a>
                 </div>
 
                 ${aiInsightsHtml}
@@ -331,6 +333,19 @@ export class Dashboard {
                         <div id="crawl-bar" style="width: 0%; height: 100%; background: var(--primary); transition: width 0.3s ease;"></div>
                     </div>
                 </div>
+
+                <style>
+                    .interactive-kpi {
+                        text-decoration: none;
+                        display: block;
+                        transition: all 0.2s ease;
+                    }
+                    .interactive-kpi:hover {
+                        transform: translateY(-2px);
+                        border-color: var(--primary) !important;
+                        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+                    }
+                </style>
               `;
           }
       } catch (e) {

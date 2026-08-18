@@ -10,9 +10,12 @@ export class Rankings {
 
     render() {
         this.element.innerHTML = `
-            <div class="header" style="margin-bottom: 24px;">
-                <h1 style="font-size: 24px; font-weight: 600;">Rank Tracking & SERP Positions</h1>
-                <p style="color: var(--text-secondary); margin-top: 4px;">Monitor real-time Google search positions, SERP movements, and ranking URLs.</p>
+            <div class="header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start;">
+                <div>
+                    <h1 style="font-size: 24px; font-weight: 600;">Rank Tracking & SERP Positions</h1>
+                    <p style="color: var(--text-secondary); margin-top: 4px;">Monitor real-time Google search positions, SERP movements, and ranking URLs.</p>
+                </div>
+                <div id="rankings-actions" style="display: flex; gap: 10px;"></div>
             </div>
             <div id="rankings-content">
                 <div class="card" style="padding: 32px; text-align: center; color: var(--text-secondary);">
@@ -25,6 +28,7 @@ export class Rankings {
 
     async mounted() {
         const container = document.getElementById('rankings-content');
+        const actionsContainer = document.getElementById('rankings-actions');
         if (!container) return;
 
         try {
@@ -34,6 +38,12 @@ export class Rankings {
             if (!selectedProj || !projectId) {
                 container.innerHTML = `<div class="card" style="padding: 32px; text-align: center;">Please select or create a project workspace.</div>`;
                 return;
+            }
+
+            if (actionsContainer) {
+                actionsContainer.innerHTML = `
+                    <a href="${API_BASE_URL}/api/projects/${projectId}/rankings/export.csv" target="_blank" class="btn btn-secondary btn-sm">Export CSV</a>
+                `;
             }
 
             const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/rankings`);

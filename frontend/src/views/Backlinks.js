@@ -10,9 +10,12 @@ export class Backlinks {
 
     render() {
         this.element.innerHTML = `
-            <div class="header" style="margin-bottom: 24px;">
-                <h1 style="font-size: 24px; font-weight: 600;">Link Graph & Backlink Intelligence</h1>
-                <p style="color: var(--text-secondary); margin-top: 4px;">Outbound external links mapped by your site crawler, and inbound web-wide backlink intelligence.</p>
+            <div class="header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start;">
+                <div>
+                    <h1 style="font-size: 24px; font-weight: 600;">Link Graph & Backlink Intelligence</h1>
+                    <p style="color: var(--text-secondary); margin-top: 4px;">Outbound external links mapped by your site crawler, and inbound web-wide backlink intelligence.</p>
+                </div>
+                <div id="backlinks-actions" style="display: flex; gap: 10px;"></div>
             </div>
             <div id="backlinks-content">
                 <div class="card" style="padding: 32px; text-align: center; color: var(--text-secondary);">
@@ -25,6 +28,7 @@ export class Backlinks {
 
     async mounted() {
         const container = document.getElementById('backlinks-content');
+        const actionsContainer = document.getElementById('backlinks-actions');
         if (!container) return;
 
         try {
@@ -34,6 +38,12 @@ export class Backlinks {
             if (!selectedProj || !projectId) {
                 container.innerHTML = `<div class="card" style="padding: 32px; text-align: center;">Please select or create a project workspace.</div>`;
                 return;
+            }
+
+            if (actionsContainer) {
+                actionsContainer.innerHTML = `
+                    <a href="${API_BASE_URL}/api/projects/${projectId}/backlinks/export.csv" target="_blank" class="btn btn-secondary btn-sm">Export CSV</a>
+                `;
             }
 
             const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/backlinks`);

@@ -56,11 +56,11 @@ window.submitNewProject = async (e) => {
   }
 
   try {
-    await projectStore.createProject(name, domain);
+    await projectStore.createProject({ name, url: domain });
     window.closeCreateProjectModal();
     window.location.reload();
   } catch (err) {
-    alert("Failed to create project. Please verify the URL and backend server status.");
+    alert(`Failed to create project: ${err.message || "Please check backend server status."}`);
   }
 };
 

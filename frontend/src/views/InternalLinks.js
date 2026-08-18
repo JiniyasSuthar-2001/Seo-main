@@ -66,11 +66,11 @@ export class InternalLinks {
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                         Download PDF
                     </a>
-                    <button class="btn btn-secondary btn-sm" onclick="window.exportInternalLinksCSV()">Export CSV</button>
+                    <a href="${API_BASE_URL}/api/projects/${projectId}/internal-links/export.csv" target="_blank" class="btn btn-secondary btn-sm">Export CSV</a>
                 `;
             }
 
-            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/internal-links?limit=100&offset=0`);
+            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/internal-links?limit=200&offset=0`);
             if (!res.ok) throw new Error("API response error");
             const links = await res.json();
 
@@ -81,11 +81,15 @@ export class InternalLinks {
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle></svg>
                         </div>
                         <div class="empty-state-title">No Internal Links Mapped</div>
-                        <div class="empty-state-desc">Start a crawl from the Dashboard to extract HTML link relationships across pages.</div>
+                        <div class="empty-state-desc">Start a crawl from the Dashboard to extract HTML link relationships across pages for <strong>${selectedProj.name}</strong>.</div>
+                        <button class="btn btn-primary" onclick="window.location.href='/'">Run Website Crawl</button>
                     </div>
                 `;
                 return;
             }
+
+            const uniqueSources = new Set(links.map(l => l.source)).size;
+            const uniqueTargets = new Set(links.map(l => l.target)).size;
 
             let rows = links.map(l => `
                 <tr>
@@ -101,10 +105,29 @@ export class InternalLinks {
             `).join('');
 
             container.innerHTML = `
+                <!-- SUMMARY KPI METRICS -->
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
+                    <div class="kpi-card">
+                        <div class="kpi-label">TOTAL INTERNAL LINKS</div>
+                        <div class="kpi-value">${links.length}</div>
+                        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Source: Website Crawl</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">UNIQUE SOURCE PAGES</div>
+                        <div class="kpi-value">${uniqueSources}</div>
+                        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Linking URLs</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-label">UNIQUE TARGET PAGES</div>
+                        <div class="kpi-value">${uniqueTargets}</div>
+                        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Destination URLs</div>
+                    </div>
+                </div>
+
                 <div class="card" style="padding: 0; overflow: hidden;">
                     <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
                         <h3 style="font-size: 15px; font-weight: 600;">Mapped Internal Links (${links.length})</h3>
-                        <span style="font-size: 12px; color: var(--text-secondary);">Showing page-to-page relationships</span>
+                        <span class="badge badge-info">Source: Website Crawl</span>
                     </div>
                     <div style="overflow-x: auto;">
                         <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">

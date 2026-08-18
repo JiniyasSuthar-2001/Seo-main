@@ -4,6 +4,7 @@ import { TopBar } from './components/TopBar.js';
 
 // Views
 import { Dashboard } from './views/Dashboard.js';
+import { Projects } from './views/Projects.js';
 import { Pages } from './views/Pages.js';
 import { Keywords } from './views/Keywords.js';
 import { Rankings } from './views/Rankings.js';
@@ -45,6 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const router = new Router(viewContainer);
   
   router.addRoute('/', Dashboard);
+  router.addRoute('/projects', Projects);
   router.addRoute('/pages', Pages);
   router.addRoute('/keywords', Keywords);
   router.addRoute('/rankings', Rankings);

@@ -56,7 +56,7 @@ class EvidenceReasoningProvider(BaseLLMProvider):
             })
 
         # 3. Thin Content Detection
-        thin_pages = [p for p in pages if p.get("word_count", 0) < 150 and p.get("status_code") == 200]
+        thin_pages = [p for p in pages if (p.get("word_count") or 0) < 150 and p.get("status_code") == 200]
         if thin_pages:
             findings.append({
                 "finding": f"Thin Body Content Warning ({len(thin_pages)} pages below 150 words)",

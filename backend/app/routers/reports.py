@@ -1,3 +1,7 @@
+import os
+import json
+import re
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from app.config.database import get_db
@@ -5,13 +9,22 @@ from app.models.project import Project
 from app.config.utils import get_sanitized_domain
 from app.services.reports.pdf_service import PDFReportGenerator
 from app.providers.nlp_keywords import NLPKeywordExtractor
-import os
-import json
 
 router = APIRouter()
 pdf_gen = PDFReportGenerator()
 nlp_extractor = NLPKeywordExtractor()
 
+def get_export_timestamp() -> str:
+    return datetime.now().strftime("%d-%m-%y-%I-%M-%p")
+
+def sanitize_filename_part(name: str) -> str:
+    if not name:
+        return "SEO-Project"
+    cleaned = re.sub(r'[^\w\s-]', '', name).strip()
+    result = re.sub(r'[-\s]+', '-', cleaned)
+    return result or "SEO-Project"
+
+@router.get("/report.pdf")
 @router.get("/crawl/{crawl_id}/report.pdf")
 @router.get("/reports/crawl")
 def get_crawl_pdf_report(project_id: str, crawl_id: str = "latest", db: Session = Depends(get_db)):
@@ -37,7 +50,53 @@ def get_crawl_pdf_report(project_id: str, crawl_id: str = "latest", db: Session 
     issues = json.load(open(issues_path)) if os.path.exists(issues_path) else []
 
     pdf_bytes = pdf_gen.generate_crawl_report(metadata, pages, issues)
-    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"inline; filename=SEO_Crawl_Report_{safe_domain}.pdf"})
+    proj_name = sanitize_filename_part(project.name)
+    ts = get_export_timestamp()
+    safe_filename = f"{proj_name}-SEO-Crawl-Report-{ts}.pdf"
+    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""})
+
+@router.get("/export")
+def export_project_data(project_id: str, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    safe_domain = get_sanitized_domain(project.domain)
+    latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+    
+    export_payload = {
+        "project": {
+            "id": project.id,
+            "name": project.name,
+            "domain": project.domain,
+            "created_at": str(project.created_at) if hasattr(project, 'created_at') else None
+        },
+        "snapshot": None
+    }
+
+    if os.path.exists(latest_path):
+        try:
+            latest = json.load(open(latest_path))
+            crawl_dir = latest.get("path")
+            meta_path = os.path.join(crawl_dir, "metadata.json")
+            pages_path = os.path.join(crawl_dir, "pages.json")
+            issues_path = os.path.join(crawl_dir, "issues.json")
+            links_path = os.path.join(crawl_dir, "internal_links.json")
+
+            export_payload["snapshot"] = {
+                "metadata": json.load(open(meta_path)) if os.path.exists(meta_path) else {},
+                "pages": json.load(open(pages_path)) if os.path.exists(pages_path) else [],
+                "issues": json.load(open(issues_path)) if os.path.exists(issues_path) else [],
+                "internal_links": json.load(open(links_path)) if os.path.exists(links_path) else []
+            }
+        except Exception as e:
+            print(f"[EXPORT ERROR] {e}", flush=True)
+
+    proj_name = sanitize_filename_part(project.name)
+    ts = get_export_timestamp()
+    safe_filename = f"{proj_name}-Data-Export-{ts}.json"
+    json_bytes = json.dumps(export_payload, indent=4).encode('utf-8')
+    return Response(content=json_bytes, media_type="application/json", headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""})
 
 @router.get("/pages/report.pdf")
 @router.get("/reports/pages")
@@ -65,7 +124,10 @@ def get_pages_pdf_report(project_id: str, db: Session = Depends(get_db)):
         rows,
         [180, 50, 160, 50, 60]
     )
-    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"inline; filename=Pages_Report_{safe_domain}.pdf"})
+    proj_name = sanitize_filename_part(project.name)
+    ts = get_export_timestamp()
+    safe_filename = f"{proj_name}-SEO-Pages-{ts}.pdf"
+    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""})
 
 @router.get("/technical/report.pdf")
 @router.get("/reports/technical")
@@ -93,7 +155,10 @@ def get_technical_pdf_report(project_id: str, db: Session = Depends(get_db)):
         rows,
         [70, 120, 180, 130]
     )
-    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"inline; filename=Technical_Report_{safe_domain}.pdf"})
+    proj_name = sanitize_filename_part(project.name)
+    ts = get_export_timestamp()
+    safe_filename = f"{proj_name}-SEO-Technical-Issues-{ts}.pdf"
+    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""})
 
 @router.get("/keywords/report.pdf")
 @router.get("/reports/keywords")
@@ -122,7 +187,10 @@ def get_keywords_pdf_report(project_id: str, db: Session = Depends(get_db)):
         rows,
         [140, 110, 80, 70, 100]
     )
-    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"inline; filename=Keywords_Report_{safe_domain}.pdf"})
+    proj_name = sanitize_filename_part(project.name)
+    ts = get_export_timestamp()
+    safe_filename = f"{proj_name}-SEO-Keywords-{ts}.pdf"
+    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""})
 
 @router.get("/internal-links/report.pdf")
 @router.get("/reports/internal-links")
@@ -150,4 +218,7 @@ def get_internal_links_pdf_report(project_id: str, db: Session = Depends(get_db)
         rows,
         [200, 200, 100]
     )
-    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"inline; filename=Internal_Links_Report_{safe_domain}.pdf"})
+    proj_name = sanitize_filename_part(project.name)
+    ts = get_export_timestamp()
+    safe_filename = f"{proj_name}-SEO-Internal-Links-{ts}.pdf"
+    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""})

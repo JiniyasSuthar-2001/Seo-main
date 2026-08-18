@@ -30,6 +30,7 @@ class ProjectStore {
             } else {
                 this.selectedProjectId = null;
                 localStorage.removeItem('seo_selected_project_id');
+                this.notify();
             }
         } catch (e) {
             console.error("[ProjectStore] Failed to fetch projects:", e);
@@ -48,14 +49,20 @@ class ProjectStore {
     }
 
     setSelectedProjectId(id) {
-        this.selectedProjectId = String(id);
-        localStorage.setItem('seo_selected_project_id', this.selectedProjectId);
+        this.selectedProjectId = id ? String(id) : null;
+        if (this.selectedProjectId) {
+            localStorage.setItem('seo_selected_project_id', this.selectedProjectId);
+        } else {
+            localStorage.removeItem('seo_selected_project_id');
+        }
         this.notify();
     }
 
-    async createProject(name, domain) {
+    async createProject(payload) {
         try {
-            const newProj = await apiClient.post('/api/projects', { name, domain });
+            // Handle both object payload or legacy (name, domain) signature
+            const body = typeof payload === 'object' ? payload : { name: arguments[0], url: arguments[1] };
+            const newProj = await apiClient.post('/api/projects', body);
             await this.fetchProjects();
             if (newProj && newProj.id) {
                 this.setSelectedProjectId(newProj.id);
@@ -63,6 +70,29 @@ class ProjectStore {
             return newProj;
         } catch (e) {
             console.error("[ProjectStore] Failed to create project:", e);
+            throw e;
+        }
+    }
+
+    async updateProject(id, payload) {
+        try {
+            const updated = await apiClient.put(`/api/projects/${id}`, payload);
+            await this.fetchProjects();
+            this.notify();
+            return updated;
+        } catch (e) {
+            console.error("[ProjectStore] Failed to update project:", e);
+            throw e;
+        }
+    }
+
+    async deleteProject(id) {
+        try {
+            const res = await apiClient.delete(`/api/projects/${id}`);
+            await this.fetchProjects();
+            return res;
+        } catch (e) {
+            console.error("[ProjectStore] Failed to delete project:", e);
             throw e;
         }
     }

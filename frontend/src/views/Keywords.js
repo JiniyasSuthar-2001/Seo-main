@@ -38,9 +38,12 @@ export class Keywords {
 
     render() {
         this.element.innerHTML = `
-            <div class="header" style="margin-bottom: 24px;">
-                <h1 style="font-size: 24px; font-weight: 600;">Keyword & Topic Intelligence</h1>
-                <p style="color: var(--text-secondary); margin-top: 4px;">Content-extracted topics, entity terms, and live Google autocomplete suggestions.</p>
+            <div class="header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start;">
+                <div>
+                    <h1 style="font-size: 24px; font-weight: 600;">Keyword & Topic Intelligence</h1>
+                    <p style="color: var(--text-secondary); margin-top: 4px;">Content-extracted topics, entity terms, and live Google autocomplete suggestions.</p>
+                </div>
+                <div id="keywords-actions" style="display: flex; gap: 10px;"></div>
             </div>
             <div id="keywords-content">
                 <div class="card" style="padding: 32px; text-align: center; color: var(--text-secondary);">
@@ -53,6 +56,7 @@ export class Keywords {
 
     async mounted() {
         const container = document.getElementById('keywords-content');
+        const actionsContainer = document.getElementById('keywords-actions');
         if (!container) return;
 
         try {
@@ -62,6 +66,16 @@ export class Keywords {
             if (!selectedProj || !projectId) {
                 container.innerHTML = `<div class="card" style="padding: 32px; text-align: center;">Please select or create a project workspace.</div>`;
                 return;
+            }
+
+            if (actionsContainer) {
+                actionsContainer.innerHTML = `
+                    <a href="${API_BASE_URL}/api/projects/${projectId}/reports/keywords" target="_blank" class="btn btn-secondary btn-sm">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        Download PDF
+                    </a>
+                    <a href="${API_BASE_URL}/api/projects/${projectId}/keywords/export.csv" target="_blank" class="btn btn-secondary btn-sm">Export CSV</a>
+                `;
             }
 
             const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/keywords`);

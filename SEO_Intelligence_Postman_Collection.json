@@ -1,182 +1,189 @@
 {
-	"info": {
-		"_postman_id": "402d2d09-b6cb-4a6c-9a4c-53f7f8f9024f",
-		"name": "SEO Intelligence Platform",
-		"description": "Complete API endpoints for the SEO Intelligence Platform",
-		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-	},
-	"item": [
-		{
-			"name": "Projects",
-			"item": [
-				{
-					"name": "Get All Projects",
-					"request": {
-						"method": "GET",
-						"url": "http://127.0.0.1:8000/api/projects"
-					}
-				},
-				{
-					"name": "Create Project",
-					"request": {
-						"method": "POST",
-						"header": [{"key": "Content-Type", "value": "application/json"}],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"name\": \"UIS Digital\",\n  \"domain\": \"https://uisdigital.com/\"\n}"
-						},
-						"url": "http://127.0.0.1:8000/api/projects"
-					}
-				}
-			]
-		},
-		{
-			"name": "Crawler",
-			"item": [
-				{
-					"name": "Start Crawl",
-					"request": {
-						"method": "POST",
-						"header": [{"key": "Content-Type", "value": "application/json"}],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"url\": \"https://uisdigital.com/\"\n}"
-						},
-						"url": "http://127.0.0.1:8000/api/projects/1/crawl"
-					}
-				},
-				{
-					"name": "Get Crawl Status",
-					"request": {
-						"method": "GET",
-						"url": "http://127.0.0.1:8000/api/projects/1/crawl/<SESSION_ID>"
-					}
-				}
-			]
-		},
-		{
-			"name": "Pages",
-			"item": [
-				{
-					"name": "Get Pages",
-					"request": {
-						"method": "GET",
-						"url": "http://127.0.0.1:8000/api/projects/1/pages?limit=50&offset=0"
-					}
-				},
-				{
-					"name": "Get Single Page",
-					"request": {
-						"method": "GET",
-						"url": "http://127.0.0.1:8000/api/projects/1/pages/<PAGE_ID>"
-					}
-				},
-				{
-					"name": "Get Page SEO",
-					"request": {
-						"method": "GET",
-						"url": "http://127.0.0.1:8000/api/projects/1/pages/<PAGE_ID>/seo"
-					}
-				}
-			]
-		},
-		{
-			"name": "Keywords",
-			"item": [
-				{
-					"name": "Get Keywords",
-					"request": {
-						"method": "GET",
-						"url": "http://127.0.0.1:8000/api/projects/1/keywords?limit=50&offset=0"
-					}
-				},
-				{
-					"name": "Get Single Keyword",
-					"request": {
-						"method": "GET",
-						"url": "http://127.0.0.1:8000/api/projects/1/keywords/<KEYWORD_ID>"
-					}
-				},
-				{
-					"name": "Get Keyword Page Analysis",
-					"request": {
-						"method": "GET",
-						"url": "http://127.0.0.1:8000/api/projects/1/keywords/keyword-page-analysis"
-					}
-				}
-			]
-		},
-		{
-			"name": "Rankings",
-			"item": [
-				{
-					"name": "Get Rankings",
-					"request": {
-						"method": "GET",
-						"url": "http://127.0.0.1:8000/api/projects/1/rankings"
-					}
-				}
-			]
-		},
-		{
-			"name": "Backlinks",
-			"item": [
-				{
-					"name": "Get Backlinks",
-					"request": {
-						"method": "GET",
-						"url": "http://127.0.0.1:8000/api/projects/1/backlinks"
-					}
-				}
-			]
-		},
-		{
-			"name": "Internal Links",
-			"item": [
-				{
-					"name": "Get Internal Links",
-					"request": {
-						"method": "GET",
-						"url": "http://127.0.0.1:8000/api/projects/1/internal-links"
-					}
-				}
-			]
-		},
-		{
-			"name": "Technical SEO",
-			"item": [
-				{
-					"name": "Get Technical Issues",
-					"request": {
-						"method": "GET",
-						"url": "http://127.0.0.1:8000/api/projects/1/technical"
-					}
-				}
-			]
-		},
-		{
-			"name": "Competitors",
-			"item": [
-				{
-					"name": "Get Competitors",
-					"request": {
-						"method": "GET",
-						"url": "http://127.0.0.1:8000/api/projects/1/competitors"
-					}
-				}
-			]
-		},
-		{
-			"name": "Health",
-			"item": [
-				{
-					"name": "Health Check",
-					"request": {
-						"method": "GET",
-						"url": "http://127.0.0.1:8000/api/health"
-					}
-				}
-			]
-		}
-	]
+  "info": {
+    "name": "SEO Intelligence Platform API",
+    "description": "Real Internet crawler + local-first SEO data platform. Every request uses {{base_url}} and {{project_id}} variables instead of hard-coded values - create a project first, then set project_id from the response before running the rest of the collection.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8020", "type": "string" },
+    { "key": "project_id", "value": "", "type": "string" },
+    { "key": "crawl_session_id", "value": "", "type": "string" },
+    { "key": "page_id", "value": "", "type": "string" },
+    { "key": "competitor_id", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "System",
+      "item": [
+        { "name": "Health Check", "request": { "method": "GET", "url": "{{base_url}}/api/health" } }
+      ]
+    },
+    {
+      "name": "Projects",
+      "item": [
+        { "name": "List Projects", "request": { "method": "GET", "url": "{{base_url}}/api/projects/" } },
+        {
+          "name": "Create Project",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/projects/",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Your Company\",\n  \"url\": \"https://your-website.com\"\n}" }
+          }
+        },
+        { "name": "Get Project", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}" } },
+        {
+          "name": "Update Project",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/api/projects/{{project_id}}",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Updated Name\",\n  \"description\": \"\",\n  \"industry\": \"\",\n  \"notes\": \"\"\n}" }
+          }
+        },
+        { "name": "Delete Project", "request": { "method": "DELETE", "url": "{{base_url}}/api/projects/{{project_id}}" } },
+        { "name": "Get Project Summary", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/summary" } },
+        { "name": "Get Project Crawl List", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/crawls" } },
+        { "name": "Export Project PDF Report", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/report.pdf" } },
+        { "name": "Export Project ZIP (all CSVs)", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/export" } },
+        { "name": "Export All Projects PDF", "request": { "method": "GET", "url": "{{base_url}}/api/projects/all/pdf" } },
+        { "name": "Export All Projects ZIP", "request": { "method": "GET", "url": "{{base_url}}/api/projects/all/export" } }
+      ]
+    },
+    {
+      "name": "Crawler",
+      "item": [
+        {
+          "name": "Start Crawl",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/projects/{{project_id}}/crawl",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" },
+            "description": "Body 'url' is optional - defaults to the project's own website_url. Never crawls a different domain unless explicitly overridden here."
+          }
+        },
+        { "name": "Get Crawl Status", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/crawl/{{crawl_session_id}}" } },
+        { "name": "Get Crawl History", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/crawl-history" } }
+      ]
+    },
+    {
+      "name": "Pages",
+      "item": [
+        { "name": "Get Pages", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/pages?limit=50&offset=0" } },
+        { "name": "Get Single Page", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/pages/{{page_id}}" } },
+        { "name": "Export Pages CSV", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/pages/export.csv" } }
+      ]
+    },
+    {
+      "name": "Keywords",
+      "item": [
+        { "name": "Get Keywords (content + GSC)", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/keywords?limit=50&offset=0" } },
+        { "name": "Google Autocomplete Ideas", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/keywords/autocomplete?seed=your keyword" } },
+        { "name": "Export Keywords CSV", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/keywords/export.csv" } }
+      ]
+    },
+    {
+      "name": "Rankings",
+      "item": [
+        { "name": "Get Rankings", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/rankings" } },
+        { "name": "Export Rankings CSV", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/rankings/export.csv" } }
+      ]
+    },
+    {
+      "name": "Backlinks",
+      "item": [
+        { "name": "Get Backlinks", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/backlinks" } },
+        { "name": "Export Backlinks CSV", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/backlinks/export.csv" } }
+      ]
+    },
+    {
+      "name": "Internal Links",
+      "item": [
+        { "name": "Get Internal Links", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/internal-links" } },
+        { "name": "Export Internal Links CSV", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/internal-links/export.csv" } }
+      ]
+    },
+    {
+      "name": "Technical SEO",
+      "item": [
+        { "name": "Get Technical Issues", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/technical?limit=50&offset=0" } },
+        { "name": "Export Technical Issues CSV", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/technical/export.csv" } }
+      ]
+    },
+    {
+      "name": "Competitors",
+      "item": [
+        { "name": "Get Competitors", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/competitors" } },
+        {
+          "name": "Add Competitor",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/projects/{{project_id}}/competitors",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Competitor Name\",\n  \"url\": \"https://competitor.com\",\n  \"notes\": \"\"\n}" }
+          }
+        },
+        { "name": "Delete Competitor", "request": { "method": "DELETE", "url": "{{base_url}}/api/projects/{{project_id}}/competitors/{{competitor_id}}" } },
+        { "name": "Export Competitors CSV", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/competitors/export.csv" } }
+      ]
+    },
+    {
+      "name": "Data Import (CSV)",
+      "item": [
+        { "name": "Get Import History", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/imports/" } },
+        {
+          "name": "Import Keywords CSV (as JSON records)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/projects/{{project_id}}/imports/",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"filename\": \"keywords.csv\",\n  \"source\": \"manual\",\n  \"data_type\": \"keywords\",\n  \"records\": [\n    { \"keyword\": \"example keyword\", \"target_url\": \"https://your-website.com/\", \"search_volume\": 100, \"difficulty\": 20, \"intent\": \"informational\" }\n  ]\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Data Sources",
+      "item": [
+        { "name": "Get Data Sources", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/datasources" } },
+        {
+          "name": "Update Data Source",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/projects/{{project_id}}/datasources/google_search_console",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"Connected\"\n}" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reports",
+      "item": [
+        { "name": "Crawl PDF Report (latest)", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/report.pdf" } },
+        { "name": "Crawl PDF Report (by crawl id)", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/crawl/{{crawl_session_id}}/report.pdf" } },
+        { "name": "Pages PDF Report", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/pages/report.pdf" } },
+        { "name": "Technical PDF Report", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/technical/report.pdf" } },
+        { "name": "Keywords PDF Report", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/keywords/report.pdf" } },
+        { "name": "Internal Links PDF Report", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/internal-links/report.pdf" } }
+      ]
+    },
+    {
+      "name": "AI Analyst",
+      "item": [
+        { "name": "Analyze Project (POST)", "request": { "method": "POST", "url": "{{base_url}}/api/projects/{{project_id}}/ai/analyze" } },
+        { "name": "Get Insights", "request": { "method": "GET", "url": "{{base_url}}/api/projects/{{project_id}}/ai/insights" } },
+        {
+          "name": "Chat With Project Data",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/projects/{{project_id}}/ai/chat",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"query\": \"Which pages have critical technical issues?\"\n}" }
+          }
+        }
+      ]
+    }
+  ]
 }

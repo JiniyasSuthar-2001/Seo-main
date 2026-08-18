@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import projects, pages, keywords, crawl, technical, internal_links, ai, backlinks, rankings, datasources, reports
+from app.routers import projects, pages, keywords, crawl, technical, internal_links, ai, backlinks, rankings, datasources, reports, imports, competitors
 from app.config.database import engine, Base
 from app.config.migration import run_schema_migrations
 
@@ -41,6 +41,8 @@ app.include_router(rankings.router, prefix="/api/projects/{project_id}/rankings"
 app.include_router(datasources.router, prefix="/api/projects/{project_id}/datasources", tags=["datasources"])
 app.include_router(reports.router, prefix="/api/projects/{project_id}", tags=["reports"])
 app.include_router(ai.router, prefix="/api/projects", tags=["ai"])
+app.include_router(imports.router, prefix="/api/projects/{project_id}/imports", tags=["imports"])
+app.include_router(competitors.router, prefix="/api/projects/{project_id}/competitors", tags=["competitors"])
 
 @app.get("/api/health", tags=["System"])
 def health_check():

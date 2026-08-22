@@ -1,4 +1,5 @@
-import { projectStore } from '../stores/projectStore.js';
+import { projectStore } from '../core/projectStore.js';
+
 import { getApiBaseUrl } from '../config/api.js';
 
 export class Import {

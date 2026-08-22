@@ -44,11 +44,9 @@ export class Settings {
             let dsData = {};
             if (projectId) {
                 try {
-                    const dsRes = await fetch(`${API_BASE_URL}/api/projects/${projectId}/datasources`);
-                    if (dsRes.ok) {
-                        const resJson = await dsRes.json();
-                        dsData = resJson.datasources || {};
-                    }
+                    const resJson = await apiClient.get(`/api/projects/${projectId}/datasources`);
+                    dsData = resJson.datasources || {};
+
                 } catch(err) {}
             }
 

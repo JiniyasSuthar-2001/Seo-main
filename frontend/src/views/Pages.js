@@ -73,9 +73,8 @@ export class Pages {
                 `;
             }
 
-            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/pages?limit=100&offset=0`);
-            if (!res.ok) throw new Error("API response error");
-            const pages = await res.json();
+            const pages = await apiClient.get(`/api/projects/${projectId}/pages?limit=100&offset=0`);
+
 
             if (!pages || pages.length === 0) {
                 container.innerHTML = `

@@ -66,9 +66,9 @@ export class InternalLinks {
             }
 
             if (this.activeTab === 'opportunities') {
-                const resOpps = await fetch(`${API_BASE_URL}/api/projects/${projectId}/internal-links/opportunities`);
-                const oppsData = await resOpps.json();
+                const oppsData = await apiClient.get(`/api/projects/${projectId}/internal-links/opportunities`);
                 const oppList = oppsData.opportunities || [];
+
 
                 let rows = oppList.map(o => `
                     <tr>
@@ -106,9 +106,9 @@ export class InternalLinks {
                 return;
             }
 
-            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/internal-links?limit=200&offset=0`);
-            const data = await res.json();
+            const data = await apiClient.get(`/api/projects/${projectId}/internal-links?limit=200&offset=0`);
             const links = data.internal_links || [];
+
             const orphans = data.orphan_pages || [];
             const anchors = data.anchor_texts || [];
 

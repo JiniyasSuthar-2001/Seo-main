@@ -79,11 +79,8 @@ export class Opportunities {
 
     async updateStatus(oppId, newStatus) {
         try {
-            await fetch(`${API_BASE_URL}/api/projects/opportunities/${oppId}/status`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: newStatus })
-            });
+            await apiClient.put(`/api/projects/opportunities/${oppId}/status`, { status: newStatus });
+
             this.mounted();
         } catch (e) {
             alert("Failed to update status: " + e.message);

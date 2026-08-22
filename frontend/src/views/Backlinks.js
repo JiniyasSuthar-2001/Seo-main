@@ -61,8 +61,7 @@ export class Backlinks {
             }
 
             if (this.activeTab === 'gap') {
-                const resGap = await fetch(`${API_BASE_URL}/api/projects/${projectId}/backlinks/gap-analysis`);
-                const gapData = await resGap.json();
+                const gapData = await apiClient.get(`/api/projects/${projectId}/backlinks/gap-analysis`);
 
                 container.innerHTML = `
                     <div class="card" style="padding: 24px;">
@@ -79,10 +78,10 @@ export class Backlinks {
                 return;
             }
 
-            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/backlinks`);
-            const data = await res.json();
+            const data = await apiClient.get(`/api/projects/${projectId}/backlinks`);
             const backlinks = data.backlinks || [];
             const summary = data.summary || {};
+
 
             container.innerHTML = `
                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">

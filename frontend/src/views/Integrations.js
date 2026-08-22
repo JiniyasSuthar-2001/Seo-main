@@ -64,9 +64,9 @@ export class Integrations {
                     <button class="pill-btn" data-cat="Connected">Connected</button>
                     <button class="pill-btn" data-cat="AI & Automation">AI & Automation</button>
                     <button class="pill-btn" data-cat="Search & Analytics">Search & Analytics</button>
-                    <button class="pill-btn" data-cat="Social & Marketing">Social & Marketing</button>
                 </div>
             </div>
+
 
             <!-- MAIN INTEGRATIONS GRID CONTENT -->
             <div id="integrations-content">
@@ -204,15 +204,6 @@ export class Integrations {
                 scopesInfo: ['Profile & Email', 'Search Console Read-Only', 'Business Profile']
             },
             {
-                id: 'meta',
-                name: 'Meta (Facebook & Instagram)',
-                category: 'Social & Marketing',
-                desc: 'Facebook Pages, Instagram Business & Social Engagement.',
-                type: 'oauth',
-                badge: 'OAuth 2.0',
-                scopesInfo: ['Public Profile & Email', 'Facebook Pages List', 'Instagram Business Basic']
-            },
-            {
                 id: 'openai',
                 name: 'OpenAI',
                 category: 'AI & Automation',
@@ -235,37 +226,10 @@ export class Integrations {
                 desc: 'Claude 3.5 Sonnet, Claude 3 Opus & Haiku AI models.',
                 type: 'oauth',
                 badge: 'Account Connection'
-            },
-
-            {
-                id: 'microsoft',
-                name: 'Microsoft',
-                category: 'Search & Analytics',
-                desc: 'Microsoft Graph, Azure Search & Enterprise Workspace.',
-                type: 'oauth',
-                badge: 'OAuth 2.0',
-                scopesInfo: ['User.Read Profile', 'Offline Access']
-            },
-            {
-                id: 'linkedin',
-                name: 'LinkedIn',
-                category: 'Social & Marketing',
-                desc: 'LinkedIn Company Pages & Business Profile publishing.',
-                type: 'oauth',
-                badge: 'OAuth 2.0',
-                scopesInfo: ['OpenID Profile', 'Email Address']
-            },
-            {
-                id: 'twitter',
-                name: 'X (Twitter)',
-                category: 'Social & Marketing',
-                desc: 'SERP Social Signals & X API v2 Tweets engagement.',
-                type: 'oauth',
-                badge: 'OAuth 2.0',
-                scopesInfo: ['Tweet Read', 'User Profile Read']
             }
         ];
     }
+
 
     renderFilteredGrid() {
         const container = this.element.querySelector('#integrations-content');

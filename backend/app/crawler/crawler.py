@@ -365,7 +365,8 @@ class SEOCrawler:
             self.pages.append(page_record)
             self.evaluate_page_issues(page_record)
 
-        except (httpx.SSLError, ssl.SSLError) as ssl_err:
+        except (ssl.SSLError, httpx.ConnectError) as ssl_err:
+
             elapsed_ms = int((time.time() - start_time) * 1000)
             print(f"[SSL ERROR] TLS verification failed for {url}: {ssl_err}", flush=True)
             self.queue_status[url] = "FAILED"

@@ -1,5 +1,7 @@
 import os
+from typing import Any, List
 from urllib.parse import urlparse
+
 
 def normalize_stored_path(path: str) -> str:
     if not path:

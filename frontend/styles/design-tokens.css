@@ -5,13 +5,13 @@
   --primary-light: #eff6ff;
   --primary-glow: rgba(37, 99, 235, 0.15);
 
-  /* Sidebar Navy Palette */
-  --sidebar-bg: #0f172a;
-  --sidebar-card: #1e293b;
-  --sidebar-border: #334155;
+  /* Sidebar Deep Navy Palette */
+  --sidebar-bg: #090d16;
+  --sidebar-card: #131b2e;
+  --sidebar-border: #1e293b;
   --sidebar-text: #94a3b8;
   --sidebar-text-active: #ffffff;
-  --sidebar-item-hover: rgba(255, 255, 255, 0.06);
+  --sidebar-item-hover: rgba(255, 255, 255, 0.05);
   --sidebar-item-active: #2563eb;
 
   /* Workspace & Main Surface */
@@ -22,7 +22,7 @@
 
   /* Typography Colors */
   --text-primary: #0f172a;
-  --text-secondary: #64748b;
+  --text-secondary: #475569;
   --text-tertiary: #94a3b8;
   --text-inverse: #ffffff;
 
@@ -49,10 +49,10 @@
   --info-border: #bfdbfe;
 
   /* Shadows & Elevation */
-  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px 0 rgba(15, 23, 42, 0.06), 0 1px 2px -1px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px -2px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 12px 24px -4px rgba(15, 23, 42, 0.12), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
 
   /* Radius */
   --radius-sm: 6px;

@@ -6,12 +6,14 @@ from app.config.utils import get_sanitized_domain, normalize_stored_path
 import os
 import json
 
+from app.config.settings import settings
+
 router = APIRouter()
 
 def get_latest_pages_from_storage(domain: str) -> list:
     safe_domain = get_sanitized_domain(domain)
-    
-    latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+
     if not os.path.exists(latest_path):
         return []
         
@@ -34,11 +36,11 @@ def get_latest_pages_from_storage(domain: str) -> list:
 def get_pages(project_id: str, limit: int = Query(50), offset: int = Query(0), db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
-        return []
+        return {"pages": [], "total": 0}
     
     all_pages = get_latest_pages_from_storage(project.domain)
     paginated = all_pages[offset : offset + limit]
-    return paginated
+    return {"pages": paginated, "total": len(all_pages)}
 
 @router.get("/{page_id}")
 def get_page(project_id: str, page_id: str, db: Session = Depends(get_db)):

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.config.database import get_db
 from app.models.project import Project
 from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.settings import settings
 from app.services.reports.pdf_service import PDFReportGenerator
 from app.services.reports.export_service import CSVExportService
 
@@ -28,7 +29,8 @@ def sanitize_filename_part(name: str) -> str:
 
 def get_project_metrics(domain: str) -> dict:
     safe_domain = get_sanitized_domain(domain)
-    website_dir = os.path.join("data", "websites", safe_domain)
+    website_dir = os.path.join(settings.CRAWL_DATA_DIR, safe_domain)
+
     latest_path = os.path.join(website_dir, "latest.json")
     
     metrics = {
@@ -86,7 +88,8 @@ def get_project_metrics(domain: str) -> dict:
 
 def load_project_full_datasets(domain: str):
     safe_domain = get_sanitized_domain(domain)
-    website_dir = os.path.join("data", "websites", safe_domain)
+    website_dir = os.path.join(settings.CRAWL_DATA_DIR, safe_domain)
+
     latest_path = os.path.join(website_dir, "latest.json")
 
     metadata, pages, keywords, rankings, backlinks, internal_links, competitors, issues, crawls = {}, [], [], [], [], [], [], [], []
@@ -482,7 +485,8 @@ def delete_project(project_id: str, db: Session = Depends(get_db)):
     db.delete(p)
     db.commit()
 
-    website_dir = os.path.join("data", "websites", safe_domain)
+    website_dir = os.path.join(settings.CRAWL_DATA_DIR, safe_domain)
+
     if os.path.exists(website_dir):
         try:
             shutil.rmtree(website_dir)
@@ -498,7 +502,7 @@ def get_project_summary(project_id: str, db: Session = Depends(get_db)):
         return {"status": "empty", "message": "Project not found or website domain unconfigured."}
 
     safe_domain = get_sanitized_domain(p.domain)
-    latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
     if not os.path.exists(latest_path):
         return {"status": "empty", "message": "No crawl data available yet."}
         
@@ -522,7 +526,8 @@ def get_project_crawls(project_id: str, db: Session = Depends(get_db)):
         return []
 
     safe_domain = get_sanitized_domain(p.domain)
-    crawls_dir = os.path.join("data", "websites", safe_domain, "crawls")
+    crawls_dir = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "crawls")
+
 
     if not os.path.exists(crawls_dir):
         return []

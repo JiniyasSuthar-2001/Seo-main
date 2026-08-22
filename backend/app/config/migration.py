@@ -23,23 +23,21 @@ def get_sqlite_type(sql_type) -> str:
 def run_schema_migrations(engine: Engine = None):
     """
     Automatic, idempotent SQLite schema migration engine using raw sqlite3 connection.
-    Dynamically inspects all registered SQLAlchemy models and guarantees missing columns/tables are added directly
-    to all SQLite database files on disk before ORM operations start.
+    Targeting strictly the authoritative database file path from application configuration.
     """
-    db_candidates = [
-        os.path.abspath(_DB_PATH),
-        os.path.abspath("backend/seo.db"),
-        os.path.abspath("seo.db")
-    ]
-    db_files = list(set([f for f in db_candidates if os.path.exists(f)]))
+    db_file = os.path.abspath(_DB_PATH)
+    print(f"[MIGRATION] Target database file: '{db_file}'", flush=True)
+    _migrate_single_file(db_file)
 
-    for db_file in db_files:
-        print(f"[MIGRATION] Checking database schema on '{db_file}'...", flush=True)
-        _migrate_single_file(db_file)
 
 def _migrate_single_file(db_file: str):
     expected_tables = {
+        "schema_migrations": {
+            "version": "TEXT",
+            "applied_at": "DATETIME"
+        },
         "projects": {
+
             "id": "TEXT",
             "name": "TEXT",
             "url": "TEXT",

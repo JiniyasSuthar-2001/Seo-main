@@ -21,15 +21,11 @@ from app.services.oauth_provider_service import (
     OAuthProviderConfig
 )
 
+from app.config.auth import get_current_user_id
+
 router = APIRouter()
 
-def get_current_user_id(x_user_id: Optional[str] = Header(None)) -> str:
-    """
-    Extracts the authenticated application user ID from the request headers.
-    Defaults to 'user_default' for single-user desktop environment.
-    """
-    clean_user = (x_user_id or "").strip()
-    return clean_user if clean_user else "user_default"
+
 
 
 @router.get("")

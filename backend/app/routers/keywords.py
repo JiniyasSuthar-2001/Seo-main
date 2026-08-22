@@ -12,7 +12,9 @@ from app.models.keyword import Keyword
 from app.models.keyword_group import KeywordGroup
 from app.models.page import Page
 from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.settings import settings
 from app.providers.nlp_keywords import NLPKeywordExtractor
+
 from app.providers.google_autocomplete import GoogleAutocompleteProvider
 
 router = APIRouter()
@@ -56,7 +58,8 @@ def get_keywords(project_id: str, limit: int = Query(50), offset: int = Query(0)
     # 3. If DB keywords is empty, extract from crawl pages dynamically
     if not kw_records and project.domain:
         safe_domain = get_sanitized_domain(project.domain)
-        latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+        latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+
         pages = []
         if os.path.exists(latest_path):
             try:

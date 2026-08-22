@@ -25,6 +25,8 @@ class Settings(BaseSettings):
 
     PROJECT_NAME: str = "SEO Intelligence Platform"
     DATABASE_URL: str = f"sqlite:///{_DB_PATH.replace(os.sep, '/')}"
+    CRAWL_DATA_DIR: str = os.path.join(_BACKEND_DIR, "data", "websites")
+
     
     # Server & Host Settings
     HOST: str = os.environ.get("HOST", "127.0.0.1")

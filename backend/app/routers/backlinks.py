@@ -8,8 +8,10 @@ from app.config.database import get_db
 from app.models.project import Project
 from app.models.competitor import Competitor
 from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.settings import settings
 
 router = APIRouter()
+
 
 @router.get("")
 @router.get("/")
@@ -22,7 +24,7 @@ def get_backlinks(project_id: str, limit: int = Query(50), offset: int = Query(0
     safe_domain = get_sanitized_domain(domain)
     
     # 1. Check local backlink JSON snapshot
-    backlinks_file = os.path.join("data", "websites", safe_domain, "backlinks.json")
+    backlinks_file = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "backlinks.json")
     backlinks_data = []
     
     if os.path.exists(backlinks_file):
@@ -33,7 +35,7 @@ def get_backlinks(project_id: str, limit: int = Query(50), offset: int = Query(0
             print(f"[BACKLINKS API] Error loading backlinks: {e}", flush=True)
 
     # 2. Extract outgoing external links from crawl snapshot as discovered backlinks
-    latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
     ext_links = []
     if os.path.exists(latest_path):
         try:

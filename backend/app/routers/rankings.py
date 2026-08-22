@@ -9,8 +9,10 @@ from app.models.keyword import Keyword
 from app.models.competitor import Competitor
 from app.models.crawl_session import CrawlSession
 from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.settings import settings
 
 router = APIRouter()
+
 
 @router.get("")
 @router.get("/")
@@ -37,7 +39,8 @@ def get_rankings(project_id: str, limit: int = Query(50), offset: int = Query(0)
         } for c in confirmed_competitors
     ]
     
-    rankings_file = os.path.join("data", "websites", safe_domain, "rankings.json")
+    rankings_file = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "rankings.json")
+
     rankings_data = []
     
     if os.path.exists(rankings_file):

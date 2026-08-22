@@ -8,9 +8,12 @@ from app.config.database import get_db
 from app.models.project import Project
 from app.config.utils import get_sanitized_domain, normalize_stored_path
 from app.services.reports.pdf_service import PDFReportGenerator
+from app.config.settings import settings
 from app.providers.nlp_keywords import NLPKeywordExtractor
 
 router = APIRouter()
+
+
 pdf_gen = PDFReportGenerator()
 nlp_extractor = NLPKeywordExtractor()
 
@@ -37,7 +40,8 @@ def get_crawl_pdf_report(project_id: str, crawl_id: str = "latest", db: Session 
         raise HTTPException(status_code=404, detail="Project not found")
 
     safe_domain = get_sanitized_domain(project.domain)
-    latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+
     if not os.path.exists(latest_path):
         raise HTTPException(status_code=404, detail="No crawl snapshot available")
 
@@ -70,7 +74,8 @@ def export_project_data(project_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Project not found")
 
     safe_domain = get_sanitized_domain(project.domain)
-    latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+
     
     export_payload = {
         "project": {
@@ -114,7 +119,8 @@ def get_pages_pdf_report(project_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Project not found")
 
     safe_domain = get_sanitized_domain(project.domain)
-    latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+
     pages = []
     if os.path.exists(latest_path):
         latest = json.load(open(latest_path))
@@ -146,7 +152,8 @@ def get_technical_pdf_report(project_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Project not found")
 
     safe_domain = get_sanitized_domain(project.domain)
-    latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+
     issues = []
     if os.path.exists(latest_path):
         latest = json.load(open(latest_path))
@@ -178,7 +185,8 @@ def get_keywords_pdf_report(project_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Project not found")
 
     safe_domain = get_sanitized_domain(project.domain)
-    latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+
     pages = []
     if os.path.exists(latest_path):
         latest = json.load(open(latest_path))
@@ -211,7 +219,8 @@ def get_internal_links_pdf_report(project_id: str, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail="Project not found")
 
     safe_domain = get_sanitized_domain(project.domain)
-    latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+
     links = []
     if os.path.exists(latest_path):
         latest = json.load(open(latest_path))
@@ -253,7 +262,8 @@ def generate_custom_report_builder(
     fmt = payload.get("format", "pdf").lower()
 
     safe_domain = get_sanitized_domain(project.domain)
-    latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+
     pages = []
     issues = []
     if os.path.exists(latest_path):

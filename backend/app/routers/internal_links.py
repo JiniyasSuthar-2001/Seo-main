@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 from app.config.database import get_db
 from app.models.project import Project
 from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.settings import settings
 
 router = APIRouter()
+
 
 @router.get("")
 @router.get("/")
@@ -21,7 +23,8 @@ def get_internal_links(project_id: str, limit: int = Query(50), offset: int = Qu
     domain = project.domain
     safe_domain = get_sanitized_domain(domain)
     
-    latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+
     internal_links = []
     pages = []
     
@@ -101,7 +104,8 @@ def get_internal_link_opportunities(project_id: str, db: Session = Depends(get_d
     domain = project.domain
     safe_domain = get_sanitized_domain(domain)
     
-    latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+
     pages = []
     internal_links = []
 

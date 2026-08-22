@@ -2,9 +2,11 @@ import httpx
 import asyncio
 import time
 import re
+import ssl
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
 from typing import Set, Dict, Any, List, Optional
+
 
 STATIC_ASSET_EXTENSIONS = (
     ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".bmp", ".tiff",
@@ -363,6 +365,27 @@ class SEOCrawler:
             self.pages.append(page_record)
             self.evaluate_page_issues(page_record)
 
+        except (httpx.SSLError, ssl.SSLError) as ssl_err:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            print(f"[SSL ERROR] TLS verification failed for {url}: {ssl_err}", flush=True)
+            self.queue_status[url] = "FAILED"
+            page_record = {
+                "url": url,
+                "status_code": 0,
+                "response_time_ms": elapsed_ms,
+                "is_success": False,
+                "error": "SSL/TLS certificate validation failed — HTTPS connection could not be securely established",
+                "word_count": 0,
+                "internal_links_count": 0
+            }
+            self.pages.append(page_record)
+            self.issues.append({
+                "severity": "Critical",
+                "issue_type": "SSL / TLS Certificate Validation Failed",
+                "affected_url": url,
+                "details": f"HTTPS request failed certificate verification: {ssl_err}",
+                "recommendation": "Renew expired SSL certificate, configure valid CA chain, or resolve hostname mismatch."
+            })
         except Exception as e:
             elapsed_ms = int((time.time() - start_time) * 1000)
             print(f"[ERROR] Failed to fetch {url}: {e}", flush=True)
@@ -383,7 +406,8 @@ class SEOCrawler:
         self.is_running = True
         print(f"[CRAWL] Starting real Internet crawl for {self.start_url}", flush=True)
         
-        async with httpx.AsyncClient(verify=False) as client:
+        async with httpx.AsyncClient(verify=True) as client:
+
             # 1. Fetch robots.txt and sitemap.xml first
             await self.fetch_robots_txt(client)
             await self.fetch_sitemap_xml(client)

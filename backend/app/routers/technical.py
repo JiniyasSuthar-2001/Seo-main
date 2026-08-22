@@ -12,6 +12,7 @@ from app.models.audit_issue import AuditIssue
 from app.models.crawl_session import CrawlSession
 from app.config.utils import get_sanitized_domain, normalize_stored_path
 from app.services.audit_rules import evaluate_site_audit_rules
+from app.config.settings import settings
 
 router = APIRouter()
 
@@ -39,7 +40,8 @@ def get_technical_audit(
     safe_domain = get_sanitized_domain(domain)
     
     # 1. Load latest crawl pages
-    latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+
     pages = []
     if os.path.exists(latest_path):
         try:

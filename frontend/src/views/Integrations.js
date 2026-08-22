@@ -173,8 +173,9 @@ export class Integrations {
             this.renderFilteredGrid();
         } catch (e) {
             if (e.name === 'TypeError' || e.message.includes('fetch') || apiClient.status === 'OFFLINE') {
-                renderBackendOfflineState(container, "Unable to connect to backend API server at http://127.0.0.1:8020.", () => this.loadConnections());
+                renderBackendOfflineState(container, `Unable to connect to backend API server at ${API_BASE_URL}.`, () => this.loadConnections());
             } else {
+
                 renderFeatureErrorState(container, "Connected Accounts Error", e.message || "Unable to load integrations status.", () => this.loadConnections());
             }
         }

@@ -9,7 +9,9 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.config.database import get_db
+from app.config.settings import settings
 from app.models.external_connection import ExternalConnection
+
 from app.services.oauth_provider_service import (
     build_authorization_url,
     validate_oauth_state,
@@ -81,7 +83,8 @@ def connect_provider_oauth(
         )
 
     try:
-        redirect_base = str(request.base_url).rstrip("/") if request else "http://127.0.0.1:8020"
+        redirect_base = str(request.base_url).rstrip("/") if request else settings.API_BASE_URL
+
         auth_url = build_authorization_url(p, user_id=user_id, redirect_base=redirect_base)
         return {
             "status": "ok",
@@ -121,7 +124,8 @@ def handle_oauth_callback(
         if state_provider != provider:
             raise HTTPException(status_code=400, detail="OAuth state provider mismatch.")
 
-        redirect_base = str(request.base_url).rstrip("/") if request else "http://127.0.0.1:8020"
+        redirect_base = str(request.base_url).rstrip("/") if request else settings.API_BASE_URL
+
         
         # Real token exchange with provider
         token_response = exchange_code_for_tokens(provider, code, redirect_base=redirect_base)

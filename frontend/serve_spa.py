@@ -3,7 +3,8 @@ import socketserver
 import os
 import sys
 
-PORT = 8030
+HOST = os.environ.get("FRONTEND_HOST") or os.environ.get("HOST") or "127.0.0.1"
+PORT = int(os.environ.get("FRONTEND_PORT") or os.environ.get("PORT") or "8030")
 FRONTEND_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class SPAHandler(http.server.SimpleHTTPRequestHandler):
@@ -37,8 +38,9 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     os.chdir(FRONTEND_DIR)
-    with socketserver.TCPServer(("127.0.0.1", PORT), SPAHandler) as httpd:
-        print(f"[FRONTEND] SPA server running on http://localhost:{PORT} (Serving strictly from {FRONTEND_DIR})", flush=True)
+    socketserver.TCPServer.allow_reuse_address = True
+    with socketserver.TCPServer((HOST, PORT), SPAHandler) as httpd:
+        print(f"[FRONTEND] SPA server running on http://{HOST}:{PORT} (Serving from {FRONTEND_DIR})", flush=True)
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

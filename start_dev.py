@@ -8,10 +8,10 @@ import webbrowser
 import socket
 import signal
 
-def check_port(port):
+def check_port(host, port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
-            s.bind(('127.0.0.1', port))
+            s.bind((host, port))
             return False
         except OSError:
             return True
@@ -64,12 +64,16 @@ def main():
     backend_python = venv_python if os.path.exists(venv_python) else sys.executable
     frontend_python = sys.executable
 
+    host = os.environ.get("HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT", "8020"))
+    frontend_port = int(os.environ.get("FRONTEND_PORT", "8030"))
+
     # Check ports before spawning
-    if check_port(8020):
-        print("[WARNING] Port 8020 is already in use. Please stop the running backend server.", flush=True)
+    if check_port(host, port):
+        print(f"[WARNING] Port {port} on host {host} is already in use. Please stop the running backend server.", flush=True)
         sys.exit(1)
-    if check_port(8030):
-        print("[WARNING] Port 8030 is already in use. Please stop the running frontend server.", flush=True)
+    if check_port(host, frontend_port):
+        print(f"[WARNING] Port {frontend_port} on host {host} is already in use. Please stop the running frontend server.", flush=True)
         sys.exit(1)
 
     backend_process = None
@@ -81,9 +85,9 @@ def main():
         creation_flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
 
     try:
-        print("[STARTUP] Starting backend on http://127.0.0.1:8020...", flush=True)
+        print(f"[STARTUP] Starting backend on http://{host}:{port}...", flush=True)
         backend_process = subprocess.Popen(
-            [backend_python, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8020"],
+            [backend_python, "-m", "uvicorn", "app.main:app", "--host", host, "--port", str(port)],
             cwd=backend_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -91,7 +95,7 @@ def main():
             creationflags=creation_flags
         )
 
-        print("[STARTUP] Starting frontend on http://localhost:8030...", flush=True)
+        print(f"[STARTUP] Starting frontend on http://{host}:{frontend_port}...", flush=True)
         frontend_process = subprocess.Popen(
             [frontend_python, "serve_spa.py"],
             cwd=frontend_dir,
@@ -108,17 +112,18 @@ def main():
         t2.start()
 
         # Perform health checks
-        backend_ready = wait_for_server("http://127.0.0.1:8020/api/health", "HEALTH")
-        frontend_ready = wait_for_server("http://localhost:8030", "HEALTH")
+        health_host = "127.0.0.1" if host == "0.0.0.0" else host
+        backend_ready = wait_for_server(f"http://{health_host}:{port}/api/health", "HEALTH")
+        frontend_ready = wait_for_server(f"http://{health_host}:{frontend_port}", "HEALTH")
 
         if backend_ready and frontend_ready:
             print("\n============================================================", flush=True)
             print(" All services are READY.", flush=True)
-            print(" Opening browser: http://localhost:8030/", flush=True)
+            print(f" Opening browser: http://{health_host}:{frontend_port}/", flush=True)
             print(" Press CTRL+C to stop both servers cleanly.", flush=True)
             print("============================================================\n", flush=True)
             
-            webbrowser.open("http://localhost:8030/")
+            webbrowser.open(f"http://{health_host}:{frontend_port}/")
         else:
             print("\n[ERROR] Server health checks failed.", flush=True)
             raise KeyboardInterrupt

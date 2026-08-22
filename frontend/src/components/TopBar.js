@@ -107,7 +107,8 @@ export class TopBar {
         <div style="display: flex; align-items: center; gap: 16px;">
           
           <!-- SYSTEM HEALTH PILL -->
-          <div id="system-health-pill" style="display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 12px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); font-size: 12px; font-weight: 600; color: #10b981; cursor: pointer;" title="Click to test backend connection (127.0.0.1:8020)">
+          <div id="system-health-pill" style="display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 12px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); font-size: 12px; font-weight: 600; color: #10b981; cursor: pointer;" title="Click to test backend server connection">
+
             <span id="health-dot" style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px #10b981;"></span>
             <span id="health-text">● Backend Online</span>
           </div>

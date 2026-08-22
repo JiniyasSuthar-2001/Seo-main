@@ -139,8 +139,9 @@ export class Pages {
             `;
         } catch (e) {
             if (e.name === 'TypeError' || e.message.includes('fetch') || apiClient.status === 'OFFLINE') {
-                renderBackendOfflineState(container, "Unable to connect to backend API server at http://127.0.0.1:8020.", () => this.mounted());
+                renderBackendOfflineState(container, `Unable to connect to backend API server at ${API_BASE_URL}.`, () => this.mounted());
             } else {
+
                 renderFeatureErrorState(container, "Crawled Pages Error", e.message || "Unable to load page records.", () => this.mounted());
             }
         }

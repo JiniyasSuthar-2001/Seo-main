@@ -55,7 +55,8 @@ window.startCrawl = async () => {
         }, 1000);
         
     } catch(e) {
-        alert("Backend API unavailable. Please ensure the server is running on http://127.0.0.1:8020.");
+        alert(`Backend API unavailable. Please ensure the server is running on ${API_BASE_URL}.`);
+
     }
 };
 
@@ -96,7 +97,8 @@ export class Dashboard {
             const competitorsRes = await apiClient.get(`/api/projects/${projectId}/competitors?status=Confirmed`);
             const confirmedCompetitors = Array.isArray(competitorsRes) ? competitorsRes : [];
 
-            const targetUrl = selectedProj.domain || selectedProj.url || 'http://127.0.0.1:8020';
+            const targetUrl = selectedProj.domain || selectedProj.url || API_BASE_URL;
+
             const hasCrawled = summary.latest_crawl && summary.latest_crawl.pages_crawled > 0;
 
             if (!hasCrawled) {
@@ -512,8 +514,8 @@ export class Dashboard {
             }
 
         } catch (e) {
-            if (e.isNetworkError || apiClient.status === 'OFFLINE') {
-                renderBackendOfflineState(this.element, "Unable to connect to backend API server at http://127.0.0.1:8020.", () => this.mounted());
+            if (e.name === 'TypeError' || e.message.includes('fetch') || apiClient.status === 'OFFLINE') {
+                renderBackendOfflineState(this.element, `Unable to connect to backend API server at ${API_BASE_URL}.`, () => this.mounted());
             } else {
                 renderFeatureErrorState(this.element, "SEO Overview Error", e.message || "Failed to load SEO overview metrics.", () => this.mounted());
             }

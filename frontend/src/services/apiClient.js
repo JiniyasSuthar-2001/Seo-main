@@ -54,10 +54,25 @@ class ApiClient {
             'Content-Type': 'application/json',
         };
 
-        const token = localStorage.getItem('jwt_token');
+        let token = localStorage.getItem('jwt_token');
+        if (!token && !endpoint.startsWith('/api/auth/')) {
+            try {
+                const tokenResp = await fetch(`${API_BASE_URL}/api/auth/token`, { method: 'POST' });
+                if (tokenResp.ok) {
+                    const tokenData = await tokenResp.json();
+                    if (tokenData.access_token) {
+                        token = tokenData.access_token;
+                        localStorage.setItem('jwt_token', token);
+                    }
+                }
+            } catch (e) {}
+        }
+
+
         if (token && token.trim()) {
             defaultHeaders['Authorization'] = `Bearer ${token.trim()}`;
         }
+
 
         const config = {
             ...options,

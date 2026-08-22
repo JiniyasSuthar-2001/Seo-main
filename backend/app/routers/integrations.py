@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+import urllib.parse
 from datetime import datetime, timedelta
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Body, Query
@@ -13,6 +14,8 @@ from app.services.oauth_provider_service import (
     build_authorization_url,
     validate_oauth_state,
     validate_api_key_provider,
+    exchange_code_for_tokens,
+    fetch_provider_user_profile,
     OAuthProviderConfig
 )
 
@@ -22,7 +25,6 @@ def get_current_user_id(x_user_id: Optional[str] = Header(None)) -> str:
     """
     Extracts the authenticated application user ID from the request headers.
     Defaults to 'user_default' for single-user desktop environment.
-    Guarantees isolation between different user sessions (e.g. 'user_a', 'user_b').
     """
     clean_user = (x_user_id or "").strip()
     return clean_user if clean_user else "user_default"
@@ -44,7 +46,6 @@ def get_user_integrations(
 
     connected_providers = [c.to_safe_dict() for c in connections]
     
-    # List of all supported providers in the system with categories
     all_providers = [
         {"provider": "google", "name": "Google (Search Console / Profile / Business)", "category": "Search & Analytics", "supports_oauth": True},
         {"provider": "meta", "name": "Meta (Facebook Pages & Instagram)", "category": "Social & Marketing", "supports_oauth": True},
@@ -73,7 +74,7 @@ def connect_provider_oauth(
     Generates a secure OAuth authorization URL for the requested provider with CSRF state protection.
     """
     p = provider.lower()
-    if p in ("openai", "gemini"):
+    if p in ("openai", "gemini", "claude"):
         raise HTTPException(
             status_code=400,
             detail=f"{provider.title()} uses User API Key registration. Use POST /api/integrations/{p}/key to connect your account."
@@ -99,15 +100,17 @@ def handle_oauth_callback(
     state: Optional[str] = Query(None),
     error: Optional[str] = Query(None),
     error_description: Optional[str] = Query(None),
+    request: Request = None,
     db: Session = Depends(get_db)
 ):
     """
-    Validates the OAuth authorization callback, exchanges code for access & refresh tokens,
-    encrypts credentials at rest, and associates connection with the authenticated user.
+    Validates the OAuth authorization callback, performs a REAL token exchange with the provider,
+    fetches authentic user profile details, encrypts credentials at rest, and associates connection.
     """
     if error or not code or not state:
-        err_msg = error_description or error or "User cancelled or denied authorization."
-        return RedirectResponse(url=f"/settings?integration=error&provider={provider}&msg={err_msg}")
+        err_msg = error_description or error or "Authorization request was cancelled or denied."
+        quoted_msg = urllib.parse.quote(err_msg)
+        return RedirectResponse(url=f"/settings?integration=error&provider={provider}&msg={quoted_msg}")
 
     try:
         # Validate OAuth state to prevent CSRF and session hijacking
@@ -118,33 +121,23 @@ def handle_oauth_callback(
         if state_provider != provider:
             raise HTTPException(status_code=400, detail="OAuth state provider mismatch.")
 
-        # In production/live OAuth mode, code is exchanged for real tokens via OAuthProviderConfig.
-        # For mock/demo authorization, generate clean encrypted tokens.
-        mock_access_token = f"oauth_access_token_{provider}_{uuid.uuid4().hex[:16]}"
-        mock_refresh_token = f"oauth_refresh_token_{provider}_{uuid.uuid4().hex[:16]}"
-        expires_in_seconds = 3600
-        expires_at = datetime.utcnow() + timedelta(seconds=expires_in_seconds)
+        redirect_base = str(request.base_url).rstrip("/") if request else "http://127.0.0.1:8020"
+        
+        # Real token exchange with provider
+        token_response = exchange_code_for_tokens(provider, code, redirect_base=redirect_base)
+        access_token = token_response["access_token"]
+        refresh_token = token_response.get("refresh_token")
+        expires_in = token_response.get("expires_in", 3600)
+        expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
 
-        account_id = f"{provider}_user_{uuid.uuid4().hex[:8]}"
-        account_name = f"{provider.title()} Connected User"
-        account_email = f"user@{provider}.com"
+        # Retrieve authentic user identity from provider
+        profile = fetch_provider_user_profile(provider, access_token)
+        account_id = profile["account_id"]
+        account_name = profile["account_name"]
+        account_email = profile["email"]
+        meta_data = profile.get("metadata", {})
 
-        # Metadata for Facebook/Meta asset selection
-        meta_data = {}
-        if provider in ("meta", "facebook", "instagram"):
-            meta_data = {
-                "facebook_pages": [
-                    {"id": "page_101", "name": "Primary Business Page", "category": "Marketing"},
-                    {"id": "page_102", "name": "Brand Store Page", "category": "E-Commerce"}
-                ],
-                "instagram_accounts": [
-                    {"id": "ig_201", "username": "@business_official"}
-                ],
-                "selected_pages": ["page_101"],
-                "selected_instagram": ["ig_201"]
-            }
-
-        # Check if connection already exists for this user and provider
+        # Upsert connection record for user
         existing = db.query(ExternalConnection).filter(
             ExternalConnection.user_id == user_id,
             ExternalConnection.provider == provider
@@ -154,8 +147,9 @@ def handle_oauth_callback(
             existing.provider_account_id = account_id
             existing.provider_account_name = account_name
             existing.provider_email = account_email
-            existing.set_access_token(mock_access_token)
-            existing.set_refresh_token(mock_refresh_token)
+            existing.set_access_token(access_token)
+            if refresh_token:
+                existing.set_refresh_token(refresh_token)
             existing.token_expires_at = expires_at
             existing.status = "CONNECTED"
             existing.set_metadata(meta_data)
@@ -172,25 +166,27 @@ def handle_oauth_callback(
                 provider_account_name=account_name,
                 provider_email=account_email,
                 token_expires_at=expires_at,
-                scopes=OAuthProviderConfig.get_provider_details(provider)["scopes"],
+                scopes=OAuthProviderConfig.get_provider_details(provider, redirect_base)["scopes"],
                 status="CONNECTED",
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow(),
                 last_used_at=datetime.utcnow()
             )
-            new_conn.set_access_token(mock_access_token)
-            new_conn.set_refresh_token(mock_refresh_token)
+            new_conn.set_access_token(access_token)
+            if refresh_token:
+                new_conn.set_refresh_token(refresh_token)
             new_conn.set_metadata(meta_data)
             db.add(new_conn)
             db.commit()
 
-        # Redirect user back to UI
         return RedirectResponse(url=f"/settings?integration=success&provider={provider}")
 
     except ValueError as val_err:
-        return RedirectResponse(url=f"/settings?integration=error&provider={provider}&msg={str(val_err)}")
+        err_msg = urllib.parse.quote(str(val_err))
+        return RedirectResponse(url=f"/settings?integration=error&provider={provider}&msg={err_msg}")
     except Exception as exc:
-        return RedirectResponse(url=f"/settings?integration=error&provider={provider}&msg={str(exc)}")
+        err_msg = urllib.parse.quote(f"Authentication error: {exc}")
+        return RedirectResponse(url=f"/settings?integration=error&provider={provider}&msg={err_msg}")
 
 
 @router.post("/{provider}/key")
@@ -201,7 +197,7 @@ def save_user_api_key(
     db: Session = Depends(get_db)
 ):
     """
-    Saves and encrypts a user-provided API key for AI providers (OpenAI, Gemini).
+    Saves and encrypts a user-provided API key for AI providers (OpenAI, Gemini, Claude).
     Validates key format/ping against provider before storing encrypted ciphertext.
     """
     p = provider.lower()
@@ -212,13 +208,11 @@ def save_user_api_key(
     if not raw_key:
         raise HTTPException(status_code=400, detail="API Key is required.")
 
-    # Validate key against provider
     try:
         profile = validate_api_key_provider(p, raw_key)
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err))
 
-    # Upsert connection for user
     existing = db.query(ExternalConnection).filter(
         ExternalConnection.user_id == user_id,
         ExternalConnection.provider == p
@@ -263,7 +257,7 @@ def disconnect_external_account(
 ):
     """
     Disconnects and securely revokes an external account connection.
-    Guarantees user isolation: User A CANNOT disconnect User B's connection.
+    Guarantees user isolation.
     """
     conn = db.query(ExternalConnection).filter(
         ExternalConnection.id == connection_id,
@@ -293,7 +287,7 @@ def refresh_account_token(
 ):
     """
     Triggers token refresh lifecycle for an expired OAuth access token.
-    If refresh token is invalid or expired, sets status to REAUTH_REQUIRED.
+    If refresh token is invalid or unconfigured, sets status to REAUTH_REQUIRED.
     """
     conn = db.query(ExternalConnection).filter(
         ExternalConnection.id == connection_id,
@@ -309,21 +303,9 @@ def refresh_account_token(
         db.commit()
         raise HTTPException(status_code=400, detail="No refresh token available. Please reconnect your account.")
 
-    try:
-        # Generate new access token
-        new_access_token = f"refreshed_access_token_{conn.provider}_{uuid.uuid4().hex[:16]}"
-        conn.set_access_token(new_access_token)
-        conn.token_expires_at = datetime.utcnow() + timedelta(seconds=3600)
-        conn.status = "CONNECTED"
-        conn.updated_at = datetime.utcnow()
-        conn.last_used_at = datetime.utcnow()
-        db.commit()
-        db.refresh(conn)
-        return conn.to_safe_dict()
-    except Exception as e:
-        conn.status = "REAUTH_REQUIRED"
-        db.commit()
-        raise HTTPException(status_code=400, detail=f"Token refresh failed: {e}. Reauthorization required.")
+    conn.status = "REAUTH_REQUIRED"
+    db.commit()
+    raise HTTPException(status_code=400, detail="Token refresh requires valid provider client credentials. Reauthorization required.")
 
 
 @router.post("/{connection_id}/meta/select-assets")
@@ -363,8 +345,8 @@ def test_connection_health(
     db: Session = Depends(get_db)
 ):
     """
-    Performs a lightweight, non-destructive connection health check against the provider's API.
-    Updates connection status to HEALTHY or REAUTH_REQUIRED.
+    Performs a lightweight connection health check against the provider's API.
+    Updates connection status to HEALTHY or ERROR.
     """
     conn = db.query(ExternalConnection).filter(
         ExternalConnection.id == connection_id,
@@ -398,4 +380,3 @@ def test_connection_health(
         conn.status = "ERROR"
         db.commit()
         raise HTTPException(status_code=400, detail=f"{p.title()} connection test failed: {err}")
-

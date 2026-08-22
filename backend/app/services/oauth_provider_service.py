@@ -285,3 +285,113 @@ def validate_api_key_provider(provider: str, api_key: str) -> dict:
             raise ValueError(f"Claude AI connection error: {e}")
 
     raise ValueError(f"Unsupported API Key provider: '{provider}'")
+
+
+def exchange_code_for_tokens(provider: str, code: str, redirect_base: str = "http://127.0.0.1:8020") -> dict:
+    """
+    Exchanges authorization code for access and refresh tokens with the official provider endpoint.
+    Raises ValueError if client ID/secret are unconfigured or if token exchange fails.
+    """
+    p = provider.lower()
+    config = OAuthProviderConfig.get_provider_details(p, redirect_base)
+    client_id = config.get("client_id", "")
+    client_secret = config.get("client_secret", "")
+
+    if not client_id or not client_secret or client_id.startswith("mock_") or client_secret.startswith("mock_"):
+        raise ValueError(
+            f"{provider.title()} OAuth credentials are not configured in backend environment. "
+            f"Please configure {provider.upper()}_CLIENT_ID and {provider.upper()}_CLIENT_SECRET in backend/.env."
+        )
+
+    data = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "code": code,
+        "grant_type": "authorization_code",
+        "redirect_uri": config["redirect_uri"]
+    }
+
+    try:
+        req_data = urllib.parse.urlencode(data).encode("utf-8")
+        req = urllib.request.Request(
+            config["token_url"],
+            data=req_data,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json",
+                "User-Agent": "SEO-Intelligence-Platform/1.0"
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            resp_body = resp.read().decode("utf-8")
+            token_json = json.loads(resp_body)
+            if "access_token" not in token_json:
+                raise ValueError(f"Provider response did not include access_token: {resp_body[:100]}")
+            return token_json
+    except urllib.error.HTTPError as e:
+        err_text = e.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(err_text)
+            err_msg = parsed.get("error_description") or parsed.get("error") or err_text
+        except Exception:
+            err_msg = err_text
+        raise ValueError(f"Token exchange failed with {provider.title()} (HTTP {e.code}): {err_msg}")
+    except Exception as e:
+        raise ValueError(f"Failed to connect to {provider.title()} token endpoint: {e}")
+
+
+def fetch_provider_user_profile(provider: str, access_token: str) -> dict:
+    """
+    Retrieves authentic user profile and account details from provider using the verified access token.
+    Raises ValueError if provider API call fails.
+    """
+    p = provider.lower()
+    config = OAuthProviderConfig.get_provider_details(p)
+    userinfo_url = config.get("userinfo_url")
+
+    if not userinfo_url:
+        raise ValueError(f"Userinfo endpoint URL not configured for provider '{provider}'.")
+
+    try:
+        req = urllib.request.Request(
+            userinfo_url,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json",
+                "User-Agent": "SEO-Intelligence-Platform/1.0"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            info = json.loads(resp.read().decode("utf-8"))
+
+        account_id = str(info.get("sub") or info.get("id") or f"{p}_user")
+        account_name = info.get("name") or info.get("displayName") or info.get("username") or f"{p.title()} User Account"
+        account_email = info.get("email") or info.get("userPrincipalName") or ""
+
+        metadata = {}
+        if p in ("meta", "facebook", "instagram"):
+            pages_url = config.get("pages_url")
+            if pages_url:
+                try:
+                    p_req = urllib.request.Request(
+                        pages_url,
+                        headers={"Authorization": f"Bearer {access_token}", "User-Agent": "SEO-Intelligence-Platform/1.0"}
+                    )
+                    with urllib.request.urlopen(p_req, timeout=10) as p_resp:
+                        p_info = json.loads(p_resp.read().decode("utf-8"))
+                        metadata["facebook_pages"] = p_info.get("data", [])
+                except Exception:
+                    metadata["facebook_pages"] = []
+
+        return {
+            "account_id": account_id,
+            "account_name": account_name,
+            "email": account_email,
+            "metadata": metadata
+        }
+    except urllib.error.HTTPError as e:
+        raise ValueError(f"Failed to retrieve user identity from {p.title()} (HTTP {e.code}).")
+    except Exception as e:
+        raise ValueError(f"Failed to query {p.title()} user profile: {e}")
+

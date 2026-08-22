@@ -59,8 +59,11 @@ class ApiClient {
         try {
             const response = await fetch(url, config);
             
-            // Reaching server via TCP fetch succeeds -> Backend is ONLINE!
-            this.setStatus('ONLINE', { endpoint, status: response.status });
+            if (response.ok) {
+                this.setStatus('ONLINE', { endpoint, status: response.status });
+            } else if (response.status >= 500) {
+                this.setStatus('DEGRADED', { endpoint, status: response.status });
+            }
 
             if (!response.ok) {
                 let errorMsg = `HTTP Error: ${response.status}`;

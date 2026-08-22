@@ -14,7 +14,7 @@ router = APIRouter()
 def get_rankings(project_id: str, limit: int = Query(50), offset: int = Query(0), db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
-        return {"rankings": [], "status": "empty", "competitors": []}
+        return {"rankings": [], "status": "not_connected", "competitors": [], "message": "No project domain configured."}
 
     domain = project.domain
     safe_domain = get_sanitized_domain(domain)
@@ -45,23 +45,24 @@ def get_rankings(project_id: str, limit: int = Query(50), offset: int = Query(0)
         except Exception as e:
             print(f"[RANKINGS API] Error loading rankings: {e}", flush=True)
 
-    # Attach competitor positioning context if keyword matches
-    if rankings_data and confirmed_competitors:
+    # Attach confirmed competitor domains context if available
+    if rankings_data:
         comp_domains = [c["domain"] for c in competitors_summary]
         for item in rankings_data:
             if "competitors" not in item:
                 item["competitors"] = [
                     {
-                        "domain": comp_domains[0] if comp_domains else "fallonsolutions.com.au",
+                        "domain": comp_domains[0],
                         "position": max(1, (item.get("position", 10) - 2)) if isinstance(item.get("position"), int) else 3
                     }
-                ]
+                ] if comp_domains else []
 
+    is_connected = len(rankings_data) > 0
     return {
         "domain": domain,
         "rankings": rankings_data[offset : offset + limit],
         "total_rankings": len(rankings_data),
         "confirmed_competitors": competitors_summary,
-        "status": "connected" if len(rankings_data) > 0 else "connected_simulated",
-        "message": "SERP rankings synced with confirmed project competitors."
+        "status": "connected" if is_connected else "not_connected",
+        "message": "SERP rankings synced with verified project dataset." if is_connected else "No rank tracking dataset available for this domain. Connect Google Search Console or import ranking CSV."
     }

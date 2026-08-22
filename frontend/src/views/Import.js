@@ -191,12 +191,13 @@ export class Import {
         }
 
         await projectStore.ensureInitialized();
-        const projectId = resolveProjectId();
-        if (!projectId) {
+        const activeProjectId = projectStore.getSelectedProjectId();
+        if (!activeProjectId) {
             this.errorMessage = 'No active project selected. Please select a project before uploading data.';
             this.reRender();
             return;
         }
+
 
 
         this.isUploading = true;
@@ -213,11 +214,12 @@ export class Import {
             const headers = {};
             if (token) headers['Authorization'] = `Bearer ${token}`;
 
-            const response = await fetch(`${getApiBaseUrl()}/api/projects/${projectId}/imports/upload`, {
+            const response = await fetch(`${getApiBaseUrl()}/api/projects/${activeProjectId}/imports/upload`, {
                 method: 'POST',
                 headers: headers,
                 body: formData
             });
+
 
             if (!response.ok) {
                 const errData = await response.json().catch(() => ({}));

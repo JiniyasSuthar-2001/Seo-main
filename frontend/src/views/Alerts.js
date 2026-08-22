@@ -62,13 +62,14 @@ export class Alerts {
         if (!data || !data.has_alerts || !data.alerts || data.alerts.length === 0) {
             container.innerHTML = `
                 <div class="card" style="padding: 32px; text-align: center; background: var(--bg-card);">
-                    <div style="font-size: 24px; margin-bottom: 8px;">✓</div>
-                    <h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">All Systems Normal</h3>
-                    <p style="color: var(--text-secondary); font-size: 13px;">No critical technical issues or crawl threshold alerts detected for this project.</p>
+                    <div style="font-size: 24px; margin-bottom: 8px; color: var(--success);">✓</div>
+                    <h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px;">No Active Alerts Detected</h3>
+                    <p style="color: var(--text-secondary); font-size: 13px;">No critical technical threshold alerts detected in the latest audit snapshot for this project.</p>
                 </div>
             `;
             return;
         }
+
 
         const alertCards = data.alerts.map(alert => {
             const isCrit = alert.type === 'critical' || alert.type === 'error';

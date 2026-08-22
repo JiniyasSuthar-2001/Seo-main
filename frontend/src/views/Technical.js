@@ -55,8 +55,10 @@ export class Technical {
         });
 
         try {
+            await projectStore.ensureInitialized();
             const selectedProj = projectStore.getSelectedProject();
             const projectId = projectStore.getSelectedProjectId();
+
 
             if (!selectedProj || !projectId) {
                 container.innerHTML = `<div class="card" style="padding: 32px; text-align: center;">Please select or create a project workspace.</div>`;

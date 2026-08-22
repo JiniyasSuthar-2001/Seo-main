@@ -115,8 +115,10 @@ export class Keywords {
         const container = document.getElementById('kw-tab-content');
         if (!container) return;
 
+        await projectStore.ensureInitialized();
         const projectId = resolveProjectId();
         const selectedProj = projectStore.getSelectedProject();
+
 
 
         if (!projectId || !selectedProj) {

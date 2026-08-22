@@ -4,7 +4,9 @@ export class Router {
     this.viewContainer = viewContainer;
     
     window.addEventListener('popstate', () => this.handleRoute());
+    window.addEventListener('project:selected', () => this.handleRoute());
   }
+
 
   addRoute(path, ViewComponent) {
     this.routes[path] = ViewComponent;

@@ -89,8 +89,10 @@ export class Rankings {
         const container = document.getElementById('rankings-tab-content');
         if (!container) return;
 
+        await projectStore.ensureInitialized();
         const projectId = resolveProjectId();
         const selectedProj = projectStore.getSelectedProject();
+
 
         if (!projectId || !selectedProj) {
             container.innerHTML = `<div class="card" style="padding: 32px; text-align: center;">Please select an SEO project workspace.</div>`;

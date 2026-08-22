@@ -56,7 +56,6 @@ window.startCrawl = async () => {
         
     } catch(e) {
         alert(`Backend API unavailable. Please ensure the server is running on ${API_BASE_URL}.`);
-
     }
 };
 
@@ -77,10 +76,12 @@ export class Dashboard {
 
     async mounted() {
         try {
+            await projectStore.ensureInitialized();
+
             const selectedProj = projectStore.getSelectedProject();
             const projectId = projectStore.getSelectedProjectId();
 
-            if (!selectedProj || !projectId) {
+            if (!projectId || !selectedProj) {
                 this.element.innerHTML = `
                     <div class="card" style="padding: 40px; text-align: center;">
                         <h2 style="font-size: 20px; font-weight: 700; margin-bottom: 8px;">No SEO Project Selected</h2>
@@ -91,438 +92,450 @@ export class Dashboard {
                 return;
             }
 
-            // Fetch summary metrics & crawl history
+            // Fetch primary project data, technical audit, crawl history, and opportunities
             const summary = await dashboardService.getSummary(projectId);
             const history = await crawlService.getCrawlHistory(projectId);
-            const competitorsRes = await apiClient.get(`/api/projects/${projectId}/competitors?status=Confirmed`);
-            const confirmedCompetitors = Array.isArray(competitorsRes) ? competitorsRes : [];
+            
+            let techRes = { issues: [], category_breakdown: {}, health_score: 100 };
+            try {
+                techRes = await apiClient.get(`/api/projects/${projectId}/technical?limit=100`);
+            } catch (e) {}
 
-            const targetUrl = selectedProj.domain || selectedProj.url || API_BASE_URL;
+            let opportunities = [];
+            try {
+                const oppRes = await apiClient.get(`/api/projects/${projectId}/opportunities`);
+                opportunities = oppRes.opportunities || oppRes || [];
+            } catch (e) {}
 
-            const hasCrawled = summary.latest_crawl && summary.latest_crawl.pages_crawled > 0;
+            let keywordsData = [];
+            try {
+                const kwRes = await apiClient.get(`/api/projects/${projectId}/keywords`);
+                keywordsData = Array.isArray(kwRes) ? kwRes : (kwRes.keywords || []);
+            } catch (e) {}
 
-            if (!hasCrawled) {
-                // ELEGANT UNCRAWLED OVERVIEW STATE
-                this.element.innerHTML = `
-                    <div class="header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-                        <div>
-                            <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.05em;">SEO OVERVIEW WORKSPACE</div>
-                            <h1 style="font-size: 24px; font-weight: 700; margin-top: 2px;">${selectedProj.name}</h1>
-                            <div style="font-size: 13px; color: var(--text-secondary); margin-top: 2px;">Target Website: <strong style="color: var(--text-primary);">${targetUrl}</strong></div>
-                        </div>
-                        <div style="display: flex; gap: 10px;">
-                            <button class="btn btn-secondary btn-sm" onclick="window.location.reload()">Refresh</button>
-                            <button class="btn btn-primary btn-sm" onclick="window.startCrawl()">Run Crawl</button>
-                        </div>
-                    </div>
+            let backlinksData = [];
+            try {
+                const blRes = await apiClient.get(`/api/projects/${projectId}/backlinks`);
+                backlinksData = Array.isArray(blRes) ? blRes : (blRes.backlinks || []);
+            } catch (e) {}
 
-                    <!-- UNCRAWLED KPI GRID -->
-                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px;">
-                        <div class="kpi-card" style="border-left: 4px solid var(--border);">
-                            <div class="kpi-label">SEO Health</div>
-                            <div class="kpi-value" style="color: var(--text-tertiary);">-- / 100</div>
-                            <div class="kpi-status">No crawl data</div>
-                        </div>
-                        <div class="kpi-card">
-                            <div class="kpi-label">Organic Visibility</div>
-                            <div class="kpi-value" style="font-size: 14px; color: var(--text-secondary); line-height: 1.4;">Connect Search Console</div>
-                            <div class="kpi-status">GSC Integration</div>
-                        </div>
-                        <div class="kpi-card">
-                            <div class="kpi-label">Ranking Keywords</div>
-                            <div class="kpi-value" style="font-size: 14px; color: var(--text-secondary);">No data available</div>
-                            <div class="kpi-status">Rank Tracker</div>
-                        </div>
-                        <div class="kpi-card">
-                            <div class="kpi-label">Top 10 Keywords</div>
-                            <div class="kpi-value" style="font-size: 14px; color: var(--text-secondary);">No data available</div>
-                            <div class="kpi-status">Rank Tracker</div>
-                        </div>
-                        <div class="kpi-card">
-                            <div class="kpi-label">Backlinks</div>
-                            <div class="kpi-value" style="font-size: 14px; color: var(--text-secondary);">No data available</div>
-                            <div class="kpi-status">Import Dataset</div>
-                        </div>
-                        <div class="kpi-card">
-                            <div class="kpi-label">Referring Domains</div>
-                            <div class="kpi-value" style="font-size: 14px; color: var(--text-secondary);">No data available</div>
-                            <div class="kpi-status">Import Dataset</div>
-                        </div>
-                    </div>
+            const targetUrl = selectedProj.domain || selectedProj.url || "unconfigured_domain";
+            const crawl = summary.latest_crawl || {};
+            const hasCrawled = summary.status === 'success' && crawl.pages_crawled > 0;
 
-                    <!-- EMPTY CRAWL ACTION CARD -->
-                    <div class="empty-state" style="padding: 40px 24px; text-align: center; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 32px;">
-                        <div class="empty-state-icon" style="margin-bottom: 12px;">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-                        </div>
-                        <h2 style="font-size: 18px; font-weight: 700; margin-bottom: 8px;">Run First Crawl Analysis</h2>
-                        <p style="color: var(--text-secondary); font-size: 14px; max-width: 540px; margin: 0 auto 20px; line-height: 1.5;">
-                            Start a website crawl to calculate your SEO Health score, discover audited pages, extract HTML meta tags, identify technical findings, and map your link architecture for <strong>${targetUrl}</strong>.
-                        </p>
-                        
-                        <div style="display: flex; gap: 12px; justify-content: center; max-width: 440px; margin: 0 auto 16px;">
-                            <input id="project-url" type="url" value="${targetUrl}" style="flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--bg-workspace); color: var(--text-primary);">
-                            <button class="btn btn-primary" onclick="window.startCrawl()">Start Crawl</button>
-                        </div>
+            const healthScore = techRes.health_score !== undefined ? techRes.health_score : (hasCrawled ? 85 : null);
+            let healthColor = 'var(--success, #10b981)';
+            if (healthScore !== null) {
+                if (healthScore < 70) healthColor = 'var(--critical, #ef4444)';
+                else if (healthScore < 85) healthColor = 'var(--warning, #f59e0b)';
+            }
 
-                        <div id="crawl-progress" style="display: none; margin: 24px auto 0; max-width: 440px; text-align: left;">
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px;">
-                                <span>Crawling...</span>
-                                <span id="crawl-stats">0 pages</span>
+            const issues = techRes.issues || [];
+            const summaryStats = techRes.summary || {};
+            const criticalCount = summaryStats.critical_errors || issues.filter(i => i.severity === 'critical' || i.severity === 'error').length;
+            const warningCount = summaryStats.warnings || issues.filter(i => i.severity === 'warning').length;
+            const noticeCount = summaryStats.notices || issues.filter(i => i.severity === 'notice' || i.severity === 'info').length;
+
+            // Categories Breakdown HTML
+            const categories = techRes.category_breakdown || {};
+            let categoriesGridHtml = '';
+            if (Object.keys(categories).length > 0) {
+                categoriesGridHtml = Object.entries(categories).map(([catName, stats]) => {
+                    const isEvaluated = stats.evaluated !== false;
+                    const totalIssues = (stats.critical || 0) + (stats.error || 0) + (stats.warning || 0) + (stats.notice || 0);
+
+                    let statusText = "Passed";
+                    let badgeBg = "rgba(16, 185, 129, 0.15)";
+                    let statusColor = "#10b981";
+
+                    if (!isEvaluated) {
+                        statusText = "Not analyzed";
+                        badgeBg = "var(--bg-subtle)";
+                        statusColor = "var(--text-tertiary)";
+                    } else if (totalIssues > 0 || stats.status === "Issues Found") {
+                        statusText = `${totalIssues} issue${totalIssues === 1 ? '' : 's'}`;
+                        badgeBg = "rgba(239, 68, 68, 0.15)";
+                        statusColor = "#ef4444";
+                    }
+
+                    return `
+                        <div class="card" style="padding: 14px; font-size: 13px; background: var(--bg-card);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                <span style="font-weight: 600; color: var(--text-primary);">${catName}</span>
+                                <span style="font-size: 11px; font-weight: 700; color: ${statusColor}; background: ${badgeBg}; padding: 2px 8px; border-radius: 12px;">${statusText}</span>
                             </div>
-                            <div style="width: 100%; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden;">
-                                <div id="crawl-bar" style="width: 0%; height: 100%; background: var(--primary); transition: width 0.3s ease;"></div>
+                            <div style="font-size: 11px; color: var(--text-tertiary);">
+                                ${isEvaluated ? `Crit: ${stats.critical + stats.error} • Warn: ${stats.warning} • Pass: ${stats.passed}` : (stats.reason || 'Unevaluated check')}
                             </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            // Priority Issues Table HTML
+            let topIssuesHtml = '';
+            if (issues.length === 0) {
+                topIssuesHtml = `
+                    <div style="padding: 24px; text-align: center; color: var(--text-secondary); font-size: 13px;">
+                        ${hasCrawled ? `✓ Zero critical technical SEO issues detected across ${crawl.pages_crawled || 0} pages.` : 'No crawl analysis available yet.'}
+                    </div>
+                `;
+            } else {
+                const topIssues = issues.slice(0, 5);
+                const rows = topIssues.map(iss => {
+                    const isCrit = iss.severity === 'critical' || iss.severity === 'error';
+                    const badgeClass = isCrit ? 'badge-critical' : (iss.severity === 'warning' ? 'badge-warning' : 'badge-info');
+                    const urlCount = (iss.affected_urls || []).length || 1;
+                    return `
+                        <tr style="border-bottom: 1px solid var(--border);">
+                            <td style="padding: 10px 16px;"><span class="badge ${badgeClass}">${(iss.severity || 'notice').toUpperCase()}</span></td>
+                            <td style="padding: 10px 16px; font-weight: 600;">${iss.title}</td>
+                            <td style="padding: 10px 16px; font-size: 12px; color: var(--text-secondary); font-family: monospace;">${urlCount} URLs</td>
+                            <td style="padding: 10px 16px; font-weight: 700; color: ${isCrit ? '#ef4444' : '#f59e0b'};">${isCrit ? 'HIGH' : 'MEDIUM'}</td>
+                            <td style="padding: 10px 16px; text-align: right;"><a href="/technical" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">View details &rarr;</a></td>
+                        </tr>
+                    `;
+                }).join('');
+
+                topIssuesHtml = `
+                    <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                        <thead>
+                            <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
+                                <th style="padding: 10px 16px;">Severity</th>
+                                <th style="padding: 10px 16px;">Issue Title</th>
+                                <th style="padding: 10px 16px;">Affected URLs</th>
+                                <th style="padding: 10px 16px;">Impact</th>
+                                <th style="padding: 10px 16px; text-align: right;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                `;
+            }
+
+            // Keyword Snapshot Calculations
+            let kwSnapshotHtml = '';
+            if (keywordsData.length > 0) {
+                const totalKw = keywordsData.length;
+                const pos1_3 = keywordsData.filter(k => (k.position || 999) <= 3).length;
+                const pos4_10 = keywordsData.filter(k => (k.position || 999) >= 4 && (k.position || 999) <= 10).length;
+                const pos11_20 = keywordsData.filter(k => (k.position || 999) >= 11 && (k.position || 999) <= 20).length;
+                const pos21_50 = keywordsData.filter(k => (k.position || 999) >= 21 && (k.position || 999) <= 50).length;
+                const pos51_plus = keywordsData.filter(k => (k.position || 999) > 50).length;
+
+                kwSnapshotHtml = `
+                    <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-top: 12px;">
+                        <div style="background: var(--bg-subtle); padding: 12px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">Total Keywords</div>
+                            <div style="font-size: 18px; font-weight: 700; color: var(--primary);">${totalKw}</div>
+                        </div>
+                        <div style="background: var(--bg-subtle); padding: 12px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">Pos 1–3</div>
+                            <div style="font-size: 18px; font-weight: 700; color: #10b981;">${pos1_3}</div>
+                        </div>
+                        <div style="background: var(--bg-subtle); padding: 12px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">Pos 4–10</div>
+                            <div style="font-size: 18px; font-weight: 700; color: #3b82f6;">${pos4_10}</div>
+                        </div>
+                        <div style="background: var(--bg-subtle); padding: 12px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">Pos 11–20</div>
+                            <div style="font-size: 18px; font-weight: 700; color: #f59e0b;">${pos11_20}</div>
+                        </div>
+                        <div style="background: var(--bg-subtle); padding: 12px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">Pos 21–50</div>
+                            <div style="font-size: 18px; font-weight: 700; color: #8b5cf6;">${pos21_50}</div>
+                        </div>
+                        <div style="background: var(--bg-subtle); padding: 12px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">Pos 51+</div>
+                            <div style="font-size: 18px; font-weight: 700; color: var(--text-secondary);">${pos51_plus}</div>
                         </div>
                     </div>
                 `;
             } else {
-                // FULL SEMRUSH-STYLE SEO OVERVIEW DASHBOARD
-                const crawl = summary.latest_crawl;
-                
-                // Fetch technical audit issues for Health Score calculation & Priority Issues list
-                const techRes = await apiClient.get(`/api/projects/${projectId}/technical?limit=100`);
-                const issues = techRes.issues || techRes || [];
+                kwSnapshotHtml = `
+                    <div style="padding: 20px; text-align: center; color: var(--text-secondary); background: var(--bg-subtle); border-radius: 8px; font-size: 13px;">
+                        No keyword data imported yet. <a href="/import" data-link style="color: var(--primary); font-weight: 600;">Import Keywords CSV &rarr;</a>
+                    </div>
+                `;
+            }
 
-                const criticalCount = issues.filter(i => (i.severity === 'critical' || i.severity === 'error')).length;
-                const warningCount = issues.filter(i => i.severity === 'warning').length;
-                const noticeCount = issues.filter(i => i.severity === 'notice' || i.severity === 'info').length;
-                
-                const totalCrawledPages = crawl.pages_crawled || 1;
-                const totalChecks = totalCrawledPages * 5; // 5 core checks per page
-                const totalFailed = criticalCount * 2 + warningCount;
-                const passedChecks = Math.max(0, totalChecks - totalFailed);
-                const healthScore = Math.min(100, Math.max(0, Math.round((passedChecks / totalChecks) * 100)));
+            // Backlinks Snapshot Calculations
+            let blSnapshotHtml = '';
+            if (backlinksData.length > 0) {
+                const totalBl = backlinksData.length;
+                const refDomains = new Set(backlinksData.map(b => b.source_domain || b.domain)).size;
+                const dofollow = backlinksData.filter(b => (b.follow_status || b.type || '').toLowerCase().includes('dofollow')).length;
+                const nofollow = backlinksData.filter(b => (b.follow_status || b.type || '').toLowerCase().includes('nofollow')).length;
 
-                let healthColor = 'var(--success, #10b981)';
-                if (healthScore < 70) healthColor = 'var(--critical, #ef4444)';
-                else if (healthScore < 85) healthColor = 'var(--warning, #f59e0b)';
-
-                // Sort Priority Issues by (1) Critical impact, (2) Affected pages count, (3) Severity
-                const sortedIssues = [...issues].sort((a, b) => {
-                    const sevScore = (i) => (i.severity === 'critical' || i.severity === 'error') ? 3 : (i.severity === 'warning' ? 2 : 1);
-                    const scoreA = sevScore(a);
-                    const scoreB = sevScore(b);
-                    if (scoreA !== scoreB) return scoreB - scoreA;
-                    const pagesA = a.affected_pages_count || (a.affected_pages ? a.affected_pages.length : 1);
-                    const pagesB = b.affected_pages_count || (b.affected_pages ? b.affected_pages.length : 1);
-                    return pagesB - pagesA;
-                });
-
-                // Priority issues table markup
-                let priorityIssuesHtml = '';
-                if (sortedIssues.length === 0) {
-                    priorityIssuesHtml = `
-                        <div style="padding: 24px; text-align: center; color: var(--text-secondary); font-size: 14px;">
-                            ✓ Zero technical SEO issues detected across ${totalCrawledPages} audited pages.
+                blSnapshotHtml = `
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 12px;">
+                        <div style="background: var(--bg-subtle); padding: 12px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">Total Backlinks</div>
+                            <div style="font-size: 18px; font-weight: 700; color: var(--primary);">${totalBl}</div>
                         </div>
-                    `;
-                } else {
-                    const topIssues = sortedIssues.slice(0, 5);
-                    const issueRows = topIssues.map(issue => {
-                        const isCritical = (issue.severity === 'critical' || issue.severity === 'error');
-                        const sevBadgeClass = isCritical ? 'badge-critical' : (issue.severity === 'warning' ? 'badge-warning' : 'badge-info');
-                        const sevText = isCritical ? 'CRITICAL' : (issue.severity === 'warning' ? 'WARNING' : 'NOTICE');
-                        const pagesCount = issue.affected_pages_count || (issue.affected_pages ? issue.affected_pages.length : 1);
-                        const impactText = isCritical ? 'HIGH' : (issue.severity === 'warning' ? 'MEDIUM' : 'LOW');
-                        const impactColor = isCritical ? 'var(--critical, #ef4444)' : (issue.severity === 'warning' ? 'var(--warning, #f59e0b)' : 'var(--text-secondary)');
-
-                        return `
-                            <tr style="border-bottom: 1px solid var(--border);">
-                                <td style="padding: 12px 16px;">
-                                    <span class="badge ${sevBadgeClass}" style="font-size: 10px; font-weight: 700;">${sevText}</span>
-                                </td>
-                                <td style="padding: 12px 16px; font-weight: 600; color: var(--text-primary);">
-                                    ${issue.title || issue.issue_type || 'Technical Audit Issue'}
-                                </td>
-                                <td style="padding: 12px 16px; font-size: 13px; color: var(--text-secondary);">
-                                    ${pagesCount} ${pagesCount === 1 ? 'page' : 'pages'}
-                                </td>
-                                <td style="padding: 12px 16px; font-weight: 700; font-size: 12px; color: ${impactColor};">
-                                    ${impactText}
-                                </td>
-                                <td style="padding: 12px 16px; text-align: right;">
-                                    <a href="/technical" data-link class="btn btn-secondary btn-sm" style="font-size: 12px;">View details &rarr;</a>
-                                </td>
-                            </tr>
-                        `;
-                    }).join('');
-
-                    priorityIssuesHtml = `
-                        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
-                            <thead>
-                                <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;">
-                                    <th style="padding: 10px 16px;">Severity</th>
-                                    <th style="padding: 10px 16px;">Issue Title</th>
-                                    <th style="padding: 10px 16px;">Affected Pages</th>
-                                    <th style="padding: 10px 16px;">Impact</th>
-                                    <th style="padding: 10px 16px; text-align: right;">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${issueRows}
-                            </tbody>
-                        </table>
-                    `;
-                }
-
-                // Confirmed Competitors snapshot markup
-                let competitorsSnapshotHtml = '';
-                if (confirmedCompetitors.length === 0) {
-                    competitorsSnapshotHtml = `
-                        <div style="padding: 24px; text-align: center; color: var(--text-secondary); font-size: 13px;">
-                            <div style="margin-bottom: 8px; font-weight: 600; color: var(--text-primary);">No Confirmed Competitors Configured</div>
-                            <p style="margin-bottom: 16px; max-width: 480px; margin-left: auto; margin-right: auto;">Add confirmed competitors in the Competitors view to compare keyword overlaps and backlink metrics.</p>
-                            <a href="/competitors" data-link class="btn btn-secondary btn-sm">+ Add Confirmed Competitors</a>
+                        <div style="background: var(--bg-subtle); padding: 12px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">Referring Domains</div>
+                            <div style="font-size: 18px; font-weight: 700; color: #10b981;">${refDomains}</div>
                         </div>
-                    `;
-                } else {
-                    const compRows = confirmedCompetitors.slice(0, 4).map(c => `
-                        <tr style="border-bottom: 1px solid var(--border);">
-                            <td style="padding: 12px 16px; font-weight: 600;">${c.name}</td>
-                            <td style="padding: 12px 16px; font-family: monospace; font-size: 12px;">${c.domain}</td>
-                            <td style="padding: 12px 16px;">${c.location || 'Regional'}</td>
-                            <td style="padding: 12px 16px; font-weight: 700; color: var(--primary);">${c.relevance_score || 0}%</td>
-                            <td style="padding: 12px 16px; text-align: right;"><span class="badge badge-success">Confirmed</span></td>
-                        </tr>
-                    `).join('');
+                        <div style="background: var(--bg-subtle); padding: 12px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">Dofollow Links</div>
+                            <div style="font-size: 18px; font-weight: 700; color: #3b82f6;">${dofollow}</div>
+                        </div>
+                        <div style="background: var(--bg-subtle); padding: 12px; border-radius: 8px; text-align: center;">
+                            <div style="font-size: 11px; color: var(--text-secondary);">Nofollow Links</div>
+                            <div style="font-size: 18px; font-weight: 700; color: var(--text-secondary);">${nofollow}</div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                blSnapshotHtml = `
+                    <div style="padding: 20px; text-align: center; color: var(--text-secondary); background: var(--bg-subtle); border-radius: 8px; font-size: 13px;">
+                        No backlink data imported yet. <a href="/import" data-link style="color: var(--primary); font-weight: 600;">Import Backlinks CSV &rarr;</a>
+                    </div>
+                `;
+            }
 
-                    competitorsSnapshotHtml = `
-                        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
-                            <thead>
-                                <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
-                                    <th style="padding: 10px 16px;">Competitor</th>
-                                    <th style="padding: 10px 16px;">Domain</th>
-                                    <th style="padding: 10px 16px;">Location</th>
-                                    <th style="padding: 10px 16px;">Relevance</th>
-                                    <th style="padding: 10px 16px; text-align: right;">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${compRows}
-                            </tbody>
-                        </table>
-                    `;
-                }
+            // Main Workspace Assembly
+            this.element.innerHTML = `
+                <!-- TOP HEADER & DOMAIN SUMMARY -->
+                <div class="header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+                    <div>
+                        <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.06em;">SEO OVERVIEW WORKSPACE</div>
+                        <h1 style="font-size: 24px; font-weight: 700; margin-top: 2px; color: var(--text-primary);">${selectedProj.name}</h1>
+                        <div style="font-size: 13px; color: var(--text-secondary); margin-top: 4px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+                            <span>Target Domain: <strong style="color: var(--text-primary);">${targetUrl}</strong></span>
+                            <span>Last Crawl: <strong style="color: var(--text-primary);">${crawl.timestamp || 'Not crawled yet'}</strong></span>
+                            <span class="badge ${hasCrawled ? 'badge-success' : 'badge-info'}" style="font-size: 11px;">
+                                ${hasCrawled ? 'Crawled' : 'Not Crawled'}
+                            </span>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <a href="/crawl-history" data-link class="btn btn-secondary btn-sm">Crawl History</a>
+                        <a href="${API_BASE_URL}/api/projects/${selectedProj.id}/report.pdf" target="_blank" class="btn btn-secondary btn-sm">PDF Executive Report</a>
+                        <button class="btn btn-primary btn-sm" onclick="window.startCrawl()">Run Crawl</button>
+                    </div>
+                </div>
 
-                // AI Insights section
-                let aiInsightsHtml = '';
-                try {
-                    const aiRes = await aiService.getInsights(selectedProj.id);
-                    if (aiRes && aiRes.insights && aiRes.insights.length > 0) {
-                        const isRealLLM = aiRes.is_llm_generated === true;
-                        const providerName = (aiRes.provider || 'none').toUpperCase();
-                        const badgeColor = isRealLLM ? 'var(--primary)' : 'var(--text-tertiary)';
-                        const badgeText = isRealLLM ? `LLM Analysis (${providerName})` : 'Deterministic SEO Rules';
+                <!-- SECTION 1 — SEO HEALTH SUMMARY KPI CARDS -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px;">
+                    <a href="/technical" data-link class="kpi-card interactive-kpi" style="border-left: 4px solid ${healthColor || 'var(--border)'};">
+                        <div class="kpi-label">SEO Health Score</div>
+                        <div class="kpi-value" style="color: ${healthColor || 'var(--text-primary)'};">${healthScore !== null ? healthScore : '—'} <span style="font-size: 13px; color: var(--text-secondary);">/ 100</span></div>
+                        <div class="kpi-status">${healthScore !== null ? `${criticalCount} Errors • ${warningCount} Warn` : 'No crawl data'}</div>
+                    </a>
 
-                        let cards = aiRes.insights.map(ins => `
-                            <div class="card" style="padding: 16px 20px; border-left: 4px solid ${isRealLLM ? 'var(--primary)' : '#6c757d'};">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-                                    <span style="font-weight: 600; font-size: 14px;">${ins.finding}</span>
-                                    <span class="badge badge-info" style="font-size: 10px; background: ${badgeColor}; color: #fff;">
-                                        ${badgeText} • Confidence: ${ins.confidence ? (ins.confidence * 100).toFixed(0) : 95}%
-                                    </span>
-                                </div>
-                                <p style="font-size: 13px; color: var(--text-primary); margin-bottom: 8px;">${ins.impact || ''}</p>
-                                <div style="font-size: 12px; color: var(--text-secondary); background: var(--bg-subtle); padding: 8px 12px; border-radius: 6px;">
-                                    <strong>Recommendation:</strong> ${ins.recommendation || ''}
-                                </div>
-                            </div>
-                        `).join('');
-                        
-                        aiInsightsHtml = `
-                            <div style="margin-top: 24px;">
-                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                                    <h2 style="font-size: 16px; font-weight: 700; margin: 0;">SEO Intelligence Insights</h2>
-                                    <span style="font-size: 11px; padding: 2px 8px; border-radius: 4px; background: ${isRealLLM ? '#e6f4ea' : '#f1f3f4'}; color: ${isRealLLM ? '#137333' : '#5f6368'}; font-weight: 600;">
-                                        ${isRealLLM ? `Powered by ${providerName} API` : 'AI Not Configured (Offline Engine)'}
-                                    </span>
-                                </div>
-                                <div style="display: flex; flex-direction: column; gap: 12px;">
-                                    ${cards}
-                                </div>
-                            </div>
-                        `;
-                    }
-                } catch (aierr) {}
+                    <a href="/pages" data-link class="kpi-card interactive-kpi">
+                        <div class="kpi-label">Crawled Pages</div>
+                        <div class="kpi-value">${hasCrawled ? (crawl.pages_crawled || 0) : '—'}</div>
+                        <div class="kpi-status">${hasCrawled ? 'Audited inventory' : 'Not crawled'}</div>
+                    </a>
 
+                    <a href="/technical" data-link class="kpi-card interactive-kpi">
+                        <div class="kpi-label">Total Issues</div>
+                        <div class="kpi-value">${hasCrawled ? (summaryStats.total_issues !== undefined ? summaryStats.total_issues : issues.length) : '—'}</div>
+                        <div class="kpi-status">${hasCrawled ? 'Audit findings' : 'No crawl data'}</div>
+                    </a>
 
-                this.element.innerHTML = `
-                    <!-- DASHBOARD HEADER TOOLBAR -->
-                    <div class="header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                    <div class="kpi-card">
+                        <div class="kpi-label">Critical Errors</div>
+                        <div class="kpi-value" style="color: var(--critical);">${hasCrawled ? criticalCount : '—'}</div>
+                        <div class="kpi-status">${hasCrawled ? 'High priority fixes' : 'No crawl data'}</div>
+                    </div>
+
+                    <a href="/keywords" data-link class="kpi-card interactive-kpi">
+                        <div class="kpi-label">Organic Keywords</div>
+                        <div class="kpi-value">${keywordsData.length > 0 ? keywordsData.length : (selectedProj.keywords_count || '—')}</div>
+                        <div class="kpi-status">${keywordsData.length > 0 ? 'Tracked keywords' : 'No data'}</div>
+                    </a>
+
+                    <a href="/backlinks" data-link class="kpi-card interactive-kpi">
+                        <div class="kpi-label">Backlinks</div>
+                        <div class="kpi-value">${backlinksData.length > 0 ? backlinksData.length : (selectedProj.backlinks_count || '—')}</div>
+                        <div class="kpi-status">${backlinksData.length > 0 ? 'External backlinks' : 'No data'}</div>
+                    </a>
+                </div>
+
+                <!-- SECTION 2 — TECHNICAL SEO SUMMARY GRID -->
+                <div class="card" style="padding: 20px; margin-bottom: 28px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                         <div>
-                            <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.05em;">SEO OVERVIEW WORKSPACE</div>
-                            <h1 style="font-size: 24px; font-weight: 700; margin-top: 2px;">${selectedProj.name}</h1>
-                            <div style="font-size: 13px; color: var(--text-secondary); margin-top: 2px;">
-                                Domain: <strong style="color: var(--text-primary);">${crawl.website || targetUrl}</strong>
-                                &nbsp;•&nbsp; Snapshot Date: <strong>${crawl.timestamp || 'Recent'}</strong>
-                            </div>
+                            <h3 style="font-size: 15px; font-weight: 700; margin: 0;">15-Category Technical SEO Summary</h3>
+                            <div style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">Evaluated deterministic rule breakdown (Unevaluated checks marked 'Not analyzed')</div>
                         </div>
-                        <div style="display: flex; gap: 10px;">
-                            <button class="btn btn-secondary btn-sm" onclick="window.location.reload()">Refresh Data</button>
-                            <a href="${API_BASE_URL}/api/projects/${selectedProj.id}/report.pdf" target="_blank" class="btn btn-secondary btn-sm">PDF Executive Report</a>
-                            <button class="btn btn-primary btn-sm" onclick="window.startCrawl()">Run Crawl</button>
-                        </div>
+                        <a href="/technical" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">Open Technical Workspace</a>
                     </div>
-
-                    <!-- 6 PRIMARY KPI CARDS (WITH CLICKABLE REAL HEALTH SCORE CARD) -->
-                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; margin-bottom: 28px;">
-                        
-                        <!-- SEO HEALTH CARD (CLICK NAVIGATES TO TECHNICAL AUDIT) -->
-                        <a href="/technical" data-link class="kpi-card interactive-kpi" style="border-left: 4px solid ${healthColor};">
-                            <div class="kpi-header"><span class="kpi-label">SEO Health</span></div>
-                            <div class="kpi-value" style="color: ${healthColor};">${healthScore} <span style="font-size: 14px; font-weight: 500; color: var(--text-secondary);">/ 100</span></div>
-                            <div class="kpi-status" style="font-size: 11px;">
-                                <span style="color: var(--critical); font-weight: 700;">${criticalCount} Errors</span> &nbsp;•&nbsp;
-                                <span style="color: var(--warning); font-weight: 600;">${warningCount} Warn</span> &nbsp;•&nbsp;
-                                <span style="color: var(--success); font-weight: 600;">${passedChecks} Pass</span>
-                            </div>
-                        </a>
-
-                        <div class="kpi-card">
-                            <div class="kpi-header"><span class="kpi-label">Organic Visibility</span></div>
-                            <div class="kpi-value" style="font-size: 13px; color: var(--text-secondary); line-height: 1.4; margin-top: 4px;">Connect Search Console to calculate</div>
-                            <div class="kpi-status"><a href="/settings" data-link style="color: var(--primary); text-decoration: none;">Connect GSC &rarr;</a></div>
-                        </div>
-
-                        <a href="/keywords" data-link class="kpi-card interactive-kpi">
-                            <div class="kpi-header"><span class="kpi-label">Ranking Keywords</span></div>
-                            <div class="kpi-value">${selectedProj.keywords_count || crawl.keywords_count || 0}</div>
-                            <div class="kpi-status">Tracked dataset &rarr;</div>
-                        </a>
-
-                        <a href="/rankings" data-link class="kpi-card interactive-kpi">
-                            <div class="kpi-header"><span class="kpi-label">Top 10 Keywords</span></div>
-                            <div class="kpi-value">${selectedProj.top10_count || 0}</div>
-                            <div class="kpi-status">Page 1 positions &rarr;</div>
-                        </a>
-
-                        <a href="/backlinks" data-link class="kpi-card interactive-kpi">
-                            <div class="kpi-header"><span class="kpi-label">Backlinks</span></div>
-                            <div class="kpi-value">${selectedProj.backlinks_count || 0}</div>
-                            <div class="kpi-status">External links &rarr;</div>
-                        </a>
-
-                        <a href="/pages" data-link class="kpi-card interactive-kpi">
-                            <div class="kpi-header"><span class="kpi-label">Crawled Pages</span></div>
-                            <div class="kpi-value">${crawl.pages_crawled}</div>
-                            <div class="kpi-status">Audited inventory &rarr;</div>
-                        </a>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px;">
+                        ${categoriesGridHtml || '<div style="font-size: 13px; color: var(--text-secondary); text-align: center; grid-column: 1/-1; padding: 16px;">Run a website crawl to evaluate 15 technical audit categories.</div>'}
                     </div>
+                </div>
 
-                    <!-- PRIORITY ISSUES & OPPORTUNITIES PREVIEW (2-COLUMN GRID) -->
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 20px; margin-bottom: 28px;">
-                        
-                        <!-- PRIORITY ISSUES CONTAINER -->
-                        <div class="card" style="padding: 0; overflow: hidden;">
-                            <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
-                                <div>
-                                    <h3 style="font-size: 15px; font-weight: 700;">Priority Audit Issues</h3>
-                                    <div style="font-size: 11px; color: var(--text-secondary);">Sorted by Critical Impact & Affected Page Count</div>
-                                </div>
-                                <a href="/technical" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">View All Issues</a>
-                            </div>
-                            ${priorityIssuesHtml}
-                        </div>
-
-                        <!-- OPPORTUNITIES PREVIEW CONTAINER -->
-                        <div class="card" style="padding: 20px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                                <div>
-                                    <h3 style="font-size: 15px; font-weight: 700;">SEO Growth Opportunities</h3>
-                                    <div style="font-size: 11px; color: var(--text-secondary);">Actionable Optimization Recommendations</div>
-                                </div>
-                                <a href="/opportunities" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">Open Opportunities Hub</a>
-                            </div>
-
-                            <div style="display: flex; flex-direction: column; gap: 10px;">
-                                <div style="padding: 12px 14px; background: var(--bg-subtle); border-radius: 8px; border: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
-                                    <div>
-                                        <div style="font-weight: 600; font-size: 13px; color: var(--text-primary);">Technical Audit Fixes</div>
-                                        <div style="font-size: 12px; color: var(--text-secondary);">${criticalCount} critical errors & ${warningCount} warnings require attention.</div>
-                                    </div>
-                                    <a href="/technical" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">Fix &rarr;</a>
-                                </div>
-
-                                <div style="padding: 12px 14px; background: var(--bg-subtle); border-radius: 8px; border: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
-                                    <div>
-                                        <div style="font-weight: 600; font-size: 13px; color: var(--text-primary);">Content & Meta Tag Optimization</div>
-                                        <div style="font-size: 12px; color: var(--text-secondary);">Review crawled pages missing HTML title tags or meta descriptions.</div>
-                                    </div>
-                                    <a href="/pages" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">Audit Pages &rarr;</a>
-                                </div>
-
-                                <div style="padding: 12px 14px; background: var(--bg-subtle); border-radius: 8px; border: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
-                                    <div>
-                                        <div style="font-weight: 600; font-size: 13px; color: var(--text-primary);">Internal Link Graph Optimization</div>
-                                        <div style="font-size: 12px; color: var(--text-secondary);">${crawl.internal_links_count || 0} internal links mapped across audited pages.</div>
-                                    </div>
-                                    <a href="/internal-links" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">View Graph &rarr;</a>
-                                </div>
-                            </div>
-                        </div>
-
-                    </div>
-
-                    <!-- CONFIRMED COMPETITOR SNAPSHOT -->
-                    <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 28px;">
+                <!-- SECTION 3 & 4 — TOP ISSUES & CRAWL SUMMARY GRID -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 20px; margin-bottom: 28px;">
+                    
+                    <!-- SECTION 3: TOP SEO ISSUES -->
+                    <div class="card" style="padding: 0; overflow: hidden;">
                         <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
                             <div>
-                                <h3 style="font-size: 15px; font-weight: 700;">Confirmed Competitors Snapshot</h3>
-                                <div style="font-size: 11px; color: var(--text-secondary);">Verified Market Competitors for ${selectedProj.name}</div>
+                                <h3 style="font-size: 15px; font-weight: 700; margin: 0;">Top Priority Technical Issues</h3>
+                                <div style="font-size: 11px; color: var(--text-secondary);">Sorted by Critical Impact</div>
                             </div>
-                            <a href="/competitors" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">Manage Competitors</a>
+                            <a href="/technical" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">View All &rarr;</a>
                         </div>
-                        ${competitorsSnapshotHtml}
+                        ${topIssuesHtml}
                     </div>
 
-                    <!-- TREND & CRAWL HISTORY AREA -->
+                    <!-- SECTION 4: CRAWL SUMMARY -->
                     <div class="card" style="padding: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                             <div>
-                                <h3 style="font-size: 15px; font-weight: 700;">Crawl History & Snapshot Progression</h3>
-                                <div style="font-size: 11px; color: var(--text-secondary);">Audit snapshot timeline for ${crawl.website || targetUrl}</div>
+                                <h3 style="font-size: 15px; font-weight: 700; margin: 0;">Crawl Inventory Summary</h3>
+                                <div style="font-size: 11px; color: var(--text-secondary);">Audited pages HTTP status distribution</div>
                             </div>
-                            <a href="/crawl-history" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">Full History</a>
+                            <a href="/pages" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">Audited Pages &rarr;</a>
                         </div>
 
-                        ${Array.isArray(history) && history.length > 1 ? `
-                            <div style="display: flex; flex-direction: column; gap: 8px;">
-                                ${history.slice(0, 4).map(h => `
-                                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--bg-subtle); border-radius: 6px; font-size: 13px;">
-                                        <div>
-                                            <strong style="color: var(--text-primary);">${h.timestamp || 'Crawl Snapshot'}</strong>
-                                            <span style="color: var(--text-secondary); margin-left: 12px;">${h.pages_crawled || 0} pages audited</span>
-                                        </div>
-                                        <div>
-                                            <span class="badge badge-info">${h.total_issues || 0} issues</span>
-                                        </div>
-                                    </div>
-                                `).join('')}
+                        ${hasCrawled ? `
+                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                                <div style="background: var(--bg-subtle); padding: 12px; border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 11px; color: var(--text-secondary);">Crawled Pages</div>
+                                    <div style="font-size: 18px; font-weight: 700; color: var(--text-primary);">${crawl.pages_crawled || 0}</div>
+                                </div>
+                                <div style="background: var(--bg-subtle); padding: 12px; border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 11px; color: var(--text-secondary);">4xx / 5xx Broken</div>
+                                    <div style="font-size: 18px; font-weight: 700; color: #ef4444;">${criticalCount}</div>
+                                </div>
+                                <div style="background: var(--bg-subtle); padding: 12px; border-radius: 8px; text-align: center;">
+                                    <div style="font-size: 11px; color: var(--text-secondary);">Warnings</div>
+                                    <div style="font-size: 18px; font-weight: 700; color: #f59e0b;">${warningCount}</div>
+                                </div>
                             </div>
                         ` : `
-                            <div style="padding: 20px; background: var(--bg-subtle); border-radius: 8px; font-size: 13px; color: var(--text-secondary); text-align: center;">
-                                ℹ️ Historical trend tracking requires running multiple website crawls over time or connecting Google Search Console integration.
+                            <div style="padding: 24px; text-align: center; color: var(--text-secondary); background: var(--bg-subtle); border-radius: 8px; font-size: 13px;">
+                                No crawl inventory data available yet. Start a crawl to inspect page status codes.
                             </div>
                         `}
                     </div>
 
-                    ${aiInsightsHtml}
+                </div>
 
-                    <style>
-                        .interactive-kpi {
-                            text-decoration: none;
-                            display: block;
-                            transition: all 0.2s ease;
-                        }
-                        .interactive-kpi:hover {
-                            transform: translateY(-2px);
-                            border-color: var(--primary) !important;
-                            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
-                        }
-                    </style>
-                `;
-            }
+                <!-- SECTION 5 & 6 — OPPORTUNITIES & KEYWORD SNAPSHOT GRID -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 20px; margin-bottom: 28px;">
+                    
+                    <!-- SECTION 5: SEO GROWTH OPPORTUNITIES -->
+                    <div class="card" style="padding: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                            <div>
+                                <h3 style="font-size: 15px; font-weight: 700; margin: 0;">SEO Growth Opportunities</h3>
+                                <div style="font-size: 11px; color: var(--text-secondary);">Actionable rank expansion recommendations</div>
+                            </div>
+                            <a href="/opportunities" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">Opportunities Hub</a>
+                        </div>
+                        ${opportunities.length > 0 ? `
+                            <div style="display: flex; flex-direction: column; gap: 10px;">
+                                ${opportunities.slice(0, 3).map(o => `
+                                    <div style="padding: 10px 12px; background: var(--bg-subtle); border-radius: 6px; font-size: 13px;">
+                                        <strong style="color: var(--text-primary);">${o.title || o.issue || 'SEO Opportunity'}</strong>
+                                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">${o.recommendation || o.action || ''}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : `
+                            <div style="padding: 20px; text-align: center; color: var(--text-secondary); background: var(--bg-subtle); border-radius: 8px; font-size: 13px;">
+                                No SEO opportunities available from the current dataset.
+                            </div>
+                        `}
+                    </div>
+
+                    <!-- SECTION 6: KEYWORD SNAPSHOT -->
+                    <div class="card" style="padding: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                            <div>
+                                <h3 style="font-size: 15px; font-weight: 700; margin: 0;">Keyword Ranking Distribution</h3>
+                                <div style="font-size: 11px; color: var(--text-secondary);">Position breakdown across search engine results</div>
+                            </div>
+                            <a href="/keywords" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">Keywords Hub</a>
+                        </div>
+                        ${kwSnapshotHtml}
+                    </div>
+
+                </div>
+
+                <!-- SECTION 7 & 8 — BACKLINK SNAPSHOT & CRAWL HISTORY GRID -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 20px; margin-bottom: 28px;">
+                    
+                    <!-- SECTION 7: BACKLINK SNAPSHOT -->
+                    <div class="card" style="padding: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                            <div>
+                                <h3 style="font-size: 15px; font-weight: 700; margin: 0;">Backlinks & Referring Domains</h3>
+                                <div style="font-size: 11px; color: var(--text-secondary);">External link architecture profile</div>
+                            </div>
+                            <a href="/backlinks" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">Backlinks Workspace</a>
+                        </div>
+                        ${blSnapshotHtml}
+                    </div>
+
+                    <!-- SECTION 8: RECENT CRAWL HISTORY -->
+                    <div class="card" style="padding: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                            <div>
+                                <h3 style="font-size: 15px; font-weight: 700; margin: 0;">Recent Crawl History</h3>
+                                <div style="font-size: 11px; color: var(--text-secondary);">Audit snapshot timeline</div>
+                            </div>
+                            <a href="/crawl-history" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">Full History</a>
+                        </div>
+
+                        ${Array.isArray(history) && history.length > 0 ? `
+                            <div style="display: flex; flex-direction: column; gap: 8px;">
+                                ${history.slice(0, 3).map(h => `
+                                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--bg-subtle); border-radius: 6px; font-size: 13px;">
+                                        <div>
+                                            <strong style="color: var(--text-primary);">${h.timestamp || 'Crawl Snapshot'}</strong>
+                                            <span style="color: var(--text-secondary); margin-left: 10px;">${h.pages_crawled || 0} pages</span>
+                                        </div>
+                                        <div><span class="badge badge-info">${h.total_issues || 0} issues</span></div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : `
+                            <div style="padding: 20px; text-align: center; color: var(--text-secondary); background: var(--bg-subtle); border-radius: 8px; font-size: 13px;">
+                                No crawl history snapshots recorded yet.
+                            </div>
+                        `}
+                    </div>
+
+                </div>
+
+                <!-- SECTION 9 — QUICK ACTIONS NAV GRID -->
+                <div class="card" style="padding: 20px; margin-bottom: 24px;">
+                    <h3 style="font-size: 15px; font-weight: 700; margin: 0 0 14px 0;">SEO Workspace Quick Actions</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px;">
+                        <button class="btn btn-primary btn-sm" onclick="window.startCrawl()" style="padding: 10px;">Run Crawl</button>
+                        <a href="/technical" data-link class="btn btn-secondary btn-sm" style="padding: 10px; text-align: center;">Technical Audit</a>
+                        <a href="/pages" data-link class="btn btn-secondary btn-sm" style="padding: 10px; text-align: center;">Crawled Pages</a>
+                        <a href="/keywords" data-link class="btn btn-secondary btn-sm" style="padding: 10px; text-align: center;">View Keywords</a>
+                        <a href="/rankings" data-link class="btn btn-secondary btn-sm" style="padding: 10px; text-align: center;">View Rankings</a>
+                        <a href="/backlinks" data-link class="btn btn-secondary btn-sm" style="padding: 10px; text-align: center;">View Backlinks</a>
+                        <a href="/opportunities" data-link class="btn btn-secondary btn-sm" style="padding: 10px; text-align: center;">Opportunities</a>
+                        <a href="/reports" data-link class="btn btn-secondary btn-sm" style="padding: 10px; text-align: center;">Reports Hub</a>
+                        <a href="/import" data-link class="btn btn-secondary btn-sm" style="padding: 10px; text-align: center;">Import Data</a>
+                    </div>
+                </div>
+
+                <style>
+                    .interactive-kpi {
+                        text-decoration: none;
+                        display: block;
+                        transition: all 0.2s ease;
+                    }
+                    .interactive-kpi:hover {
+                        transform: translateY(-2px);
+                        border-color: var(--primary) !important;
+                        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+                    }
+                </style>
+            `;
 
         } catch (e) {
             if (e.name === 'TypeError' || e.message.includes('fetch') || apiClient.status === 'OFFLINE') {

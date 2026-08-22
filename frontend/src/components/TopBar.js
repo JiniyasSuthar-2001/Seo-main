@@ -177,13 +177,9 @@ export class TopBar {
   }
 
   async initProjectSelector() {
-    setTimeout(async () => {
+    const updateSelect = () => {
       const selectEl = document.getElementById('header-project-select');
       if (!selectEl) return;
-
-      try {
-        await projectStore.fetchProjects();
-      } catch (e) {}
 
       const projects = projectStore.projects;
       const selectedId = projectStore.getSelectedProjectId();
@@ -198,14 +194,28 @@ export class TopBar {
           ${p.name} (${p.domain || p.url || 'No domain'})
         </option>
       `).join('');
+    };
 
-      selectEl.addEventListener('change', (e) => {
-        const val = e.target.value;
-        if (val) {
-          projectStore.setSelectedProjectId(val);
-          window.location.reload();
-        }
-      });
-    }, 100);
+    try {
+      await projectStore.ensureInitialized();
+      updateSelect();
+    } catch (e) {}
+
+    projectStore.subscribe(() => updateSelect());
+
+    setTimeout(() => {
+      const selectEl = document.getElementById('header-project-select');
+      if (selectEl && !selectEl.dataset.bound) {
+        selectEl.dataset.bound = "true";
+        selectEl.addEventListener('change', (e) => {
+          const val = e.target.value;
+          if (val) {
+            projectStore.setSelectedProjectId(val);
+            window.dispatchEvent(new CustomEvent('project:selected', { detail: { projectId: val } }));
+          }
+        });
+      }
+    }, 50);
   }
+
 }

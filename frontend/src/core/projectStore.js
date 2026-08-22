@@ -5,6 +5,8 @@ class ProjectStore {
         this.projects = [];
         this.selectedProjectId = localStorage.getItem('seo_selected_project_id') || null;
         this.listeners = new Set();
+        this.isInitialized = false;
+        this.initPromise = null;
     }
 
     subscribe(listener) {
@@ -13,7 +15,20 @@ class ProjectStore {
     }
 
     notify() {
-        this.listeners.forEach(fn => fn(this.selectedProjectId, this.getSelectedProject()));
+        this.listeners.forEach(fn => {
+            try { fn(this.selectedProjectId, this.getSelectedProject()); } catch (e) {}
+        });
+    }
+
+    async ensureInitialized() {
+        if (this.isInitialized) return this.projects;
+        if (!this.initPromise) {
+            this.initPromise = this.fetchProjects().then((projs) => {
+                this.isInitialized = true;
+                return projs;
+            });
+        }
+        return this.initPromise;
     }
 
     async fetchProjects() {
@@ -26,6 +41,8 @@ class ProjectStore {
                 const exists = this.projects.find(p => String(p.id) === String(this.selectedProjectId));
                 if (!exists) {
                     this.setSelectedProjectId(this.projects[0].id);
+                } else {
+                    this.notify();
                 }
             } else {
                 this.selectedProjectId = null;
@@ -38,6 +55,7 @@ class ProjectStore {
         }
         return this.projects;
     }
+
 
     getSelectedProjectId() {
         return this.selectedProjectId;

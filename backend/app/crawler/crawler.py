@@ -286,6 +286,29 @@ class SEOCrawler:
             robots_tag = soup.find("meta", attrs={"name": "robots"})
             robots_meta = robots_tag["content"].strip() if robots_tag and robots_tag.get("content") else "index, follow"
 
+            # HTML Tag Attributes & Viewport
+            html_lang = soup.html.get("lang").strip() if soup.html and soup.html.get("lang") else None
+            viewport_tag = soup.find("meta", attrs={"name": "viewport"})
+            viewport = viewport_tag["content"].strip() if viewport_tag and viewport_tag.get("content") else None
+
+            # Hreflang Tags (International SEO)
+            hreflangs = []
+            for link in soup.find_all("link", attrs={"rel": re.compile(r"alternate", re.I)}):
+                if link.get("hreflang"):
+                    hreflangs.append({
+                        "lang": link.get("hreflang").strip(),
+                        "href": link.get("href", "").strip()
+                    })
+
+            # Structured Data (Schema.org JSON-LD)
+            structured_data = []
+            for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
+                if script.string:
+                    try:
+                        structured_data.append(json.loads(script.string.strip()))
+                    except Exception:
+                        structured_data.append({"raw": script.string.strip()})
+
             # Headings
             h1_tags = [h.text.strip() for h in soup.find_all("h1") if h.text.strip()]
             h1 = h1_tags[0] if h1_tags else None
@@ -345,6 +368,8 @@ class SEOCrawler:
 
             page_record = {
                 "url": url,
+                "final_url": str(response.url),
+                "redirect_history": [str(r.url) for r in response.history],
                 "status_code": response.status_code,
                 "response_time_ms": elapsed_ms,
                 "is_success": True,
@@ -352,6 +377,10 @@ class SEOCrawler:
                 "meta_description": meta_description,
                 "canonical": canonical,
                 "robots_meta": robots_meta,
+                "html_lang": html_lang,
+                "viewport": viewport,
+                "hreflangs": hreflangs,
+                "structured_data": structured_data,
                 "h1": h1,
                 "h1_count": len(h1_tags),
                 "h2_count": len(h2_tags),
@@ -363,6 +392,7 @@ class SEOCrawler:
             }
             
             self.pages.append(page_record)
+
             self.evaluate_page_issues(page_record)
 
         except (ssl.SSLError, httpx.ConnectError) as ssl_err:

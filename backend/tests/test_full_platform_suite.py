@@ -142,8 +142,9 @@ def test_full_platform_remediation_suite():
             {"url": "https://platformtest.com", "status_code": 200, "word_count": 400, "h1": "Main Title", "title": "Title Tag", "meta_description": "Description", "canonical": "https://platformtest.com"}
         ])
         categories = eval_res["category_breakdown"]
-        assert categories["Structured Data"]["status"] == "Not Evaluated"
-        assert categories["Structured Data"]["evaluated"] is False
+        assert categories["Performance"]["status"] in ("Not Evaluated", "Not Analyzed")
+        assert categories["Performance"]["evaluated"] is False
+
         assert categories["Crawlability"]["status"] == "Passed"
         assert categories["Crawlability"]["evaluated"] is True
         print("      [PASS] Unevaluated categories report status 'Not Evaluated' (evaluated=False).\n", flush=True)

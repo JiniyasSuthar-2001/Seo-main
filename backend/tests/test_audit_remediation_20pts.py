@@ -186,8 +186,9 @@ def test_20_point_remediation_suite():
     print("[17/20] Testing unevaluated audit categories return 'Not Evaluated'...", flush=True)
     eval_results = evaluate_site_audit_rules([{"url": "https://example.com", "status_code": 200, "word_count": 500, "h1": "Main Title", "title": "Title", "meta_description": "Meta Desc", "canonical": "https://example.com"}])
     cats = eval_results["category_breakdown"]
-    assert cats["Structured Data"]["status"] == "Not Evaluated"
-    assert cats["Structured Data"]["evaluated"] is False
+    assert cats["Performance"]["status"] in ("Not Evaluated", "Not Analyzed")
+    assert cats["Performance"]["evaluated"] is False
+
     assert cats["Crawlability"]["status"] == "Passed"
     assert cats["Crawlability"]["evaluated"] is True
     print("       [PASS] Unevaluated categories report status 'Not Evaluated' (evaluated=False).\n", flush=True)

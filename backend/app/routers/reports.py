@@ -234,3 +234,59 @@ def get_internal_links_pdf_report(project_id: str, db: Session = Depends(get_db)
     ts = get_export_timestamp()
     safe_filename = f"{proj_name}-SEO-Internal-Links-{ts}.pdf"
     return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""})
+
+
+@router.post("/builder")
+@router.post("/reports/builder")
+def generate_custom_report_builder(
+    project_id: str,
+    payload: dict = {},
+    db: Session = Depends(get_db)
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    sections = payload.get("sections", ["Executive Summary", "SEO Health", "Technical Audit"])
+    brand_name = payload.get("brand_name", "SEO Intelligence Platform")
+    report_title = payload.get("report_title", "Custom SEO Executive Audit Report")
+    fmt = payload.get("format", "pdf").lower()
+
+    safe_domain = get_sanitized_domain(project.domain)
+    latest_path = os.path.join("data", "websites", safe_domain, "latest.json")
+    pages = []
+    issues = []
+    if os.path.exists(latest_path):
+        try:
+            latest = json.load(open(latest_path))
+            crawl_dir = normalize_stored_path(latest.get("path"))
+            pages_file = os.path.join(crawl_dir, "pages.json")
+            if os.path.exists(pages_file):
+                pages = json.load(open(pages_file))
+            issues_file = os.path.join(crawl_dir, "issues.json")
+            if os.path.exists(issues_file):
+                issues = json.load(open(issues_file))
+        except Exception:
+            pass
+
+    from app.services.audit_rules import evaluate_site_audit_rules
+    from app.services.report_builder_service import generate_custom_pdf_report, generate_csv_report_package
+
+    audit_eval = evaluate_site_audit_rules(pages)
+
+    if fmt == "zip":
+        zip_bytes = generate_csv_report_package(project.name, project.domain, pages, [], issues)
+        filename = f"{sanitize_filename_part(project.name)}-CSV-Package.zip"
+        return Response(content=zip_bytes, media_type="application/zip", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
+
+    pdf_bytes = generate_custom_pdf_report(
+        project.name,
+        project.domain,
+        sections,
+        audit_eval,
+        brand_name,
+        report_title
+    )
+    filename = f"{sanitize_filename_part(project.name)}-Custom-Report.pdf"
+    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
+

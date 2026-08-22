@@ -5,7 +5,7 @@ from app.config.settings import _DB_PATH
 from app.config.database import Base
 
 # Import all models so Base.metadata contains all table definitions
-from app.models import project, dataset, page, keyword, keyword_group, crawl_session, competitor, external_connection
+from app.models import project, dataset, page, keyword, keyword_group, crawl_session, competitor, external_connection, audit_issue, action_opportunity
 
 def get_sqlite_type(sql_type) -> str:
     st = str(sql_type).upper()
@@ -38,8 +38,6 @@ def run_schema_migrations(engine: Engine = None):
         _migrate_single_file(db_file)
 
 def _migrate_single_file(db_file: str):
-
-
     expected_tables = {
         "projects": {
             "id": "TEXT",
@@ -60,8 +58,12 @@ def _migrate_single_file(db_file: str):
             "id": "TEXT",
             "project_id": "TEXT",
             "status": "TEXT",
+            "crawler_status": "TEXT",
+            "crawl_scope": "TEXT",
             "pages_discovered": "INTEGER",
             "pages_crawled": "INTEGER",
+            "blocked_pages_count": "INTEGER",
+            "assets_crawled_count": "INTEGER",
             "issues_found": "INTEGER",
             "started_at": "DATETIME",
             "completed_at": "DATETIME"
@@ -133,6 +135,40 @@ def _migrate_single_file(db_file: str):
             "notes": "TEXT",
             "first_discovered": "DATETIME",
             "last_checked": "DATETIME",
+            "created_at": "DATETIME",
+            "updated_at": "DATETIME"
+        },
+        "audit_issues": {
+            "id": "TEXT",
+            "project_id": "TEXT",
+            "session_id": "TEXT",
+            "rule_id": "TEXT",
+            "category": "TEXT",
+            "severity": "TEXT",
+            "title": "TEXT",
+            "description": "TEXT",
+            "evidence_json": "TEXT",
+            "affected_urls_json": "TEXT",
+            "affected_pages_count": "INTEGER",
+            "recommendation": "TEXT",
+            "status": "TEXT",
+            "first_detected": "DATETIME",
+            "last_detected": "DATETIME",
+            "created_at": "DATETIME"
+        },
+        "action_opportunities": {
+            "id": "TEXT",
+            "project_id": "TEXT",
+            "title": "TEXT",
+            "category": "TEXT",
+            "priority_score": "REAL",
+            "priority_level": "TEXT",
+            "impact": "TEXT",
+            "evidence": "TEXT",
+            "affected_urls_json": "TEXT",
+            "affected_count": "INTEGER",
+            "recommendation": "TEXT",
+            "status": "TEXT",
             "created_at": "DATETIME",
             "updated_at": "DATETIME"
         }

@@ -60,10 +60,20 @@ def get_technical_audit(
 
     # Filter issues by category & severity
     filtered_issues = audit_data["issues"]
-    if category and category.lower() != "all":
-        filtered_issues = [i for i in filtered_issues if i["category"].lower() == category.lower()]
-    if severity and severity.lower() != "all":
-        filtered_issues = [i for i in filtered_issues if i["severity"].lower() == severity.lower()]
+    if category and isinstance(category, str) and category.lower() != "all":
+        filtered_issues = [i for i in filtered_issues if i.get("category", "").lower() == category.lower()]
+    if severity and isinstance(severity, str) and severity.lower() != "all":
+        filtered_issues = [i for i in filtered_issues if i.get("severity", "").lower() == severity.lower()]
+
+
+    try:
+        lim = int(limit)
+    except (ValueError, TypeError):
+        lim = 50
+    try:
+        off = int(offset)
+    except (ValueError, TypeError):
+        off = 0
 
     return {
         "project_id": project.id,
@@ -72,10 +82,11 @@ def get_technical_audit(
         "total_audited_pages": audit_data["total_audited_pages"],
         "summary": audit_data["summary"],
         "category_breakdown": audit_data["category_breakdown"],
-        "issues": filtered_issues[offset : offset + limit],
+        "issues": filtered_issues[off : off + lim],
         "total_issues": len(filtered_issues),
         "provenance": audit_data["provenance"]
     }
+
 
 
 @router.get("/issue-history")

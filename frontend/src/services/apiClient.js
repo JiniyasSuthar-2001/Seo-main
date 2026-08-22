@@ -42,18 +42,22 @@ class ApiClient {
     }
 
     async request(endpoint, options = {}) {
-        if (endpoint.includes('/projects/undefined') || endpoint.includes('/projects/null')) {
-            const err = new Error("Invalid API Request: Project ID is unresolvable (undefined or null).");
+        if (endpoint.includes('/projects/undefined') || endpoint.includes('/projects/null') || endpoint.includes('/projects/{project_id}')) {
+            const err = new Error("Invalid API Request: Project ID is unresolvable.");
             err.status = 400;
             err.isNetworkError = false;
             throw err;
         }
         const url = `${API_BASE_URL}${endpoint}`;
 
-        
         const defaultHeaders = {
             'Content-Type': 'application/json',
         };
+
+        const token = localStorage.getItem('jwt_token');
+        if (token && token.trim()) {
+            defaultHeaders['Authorization'] = `Bearer ${token.trim()}`;
+        }
 
         const config = {
             ...options,
@@ -62,6 +66,7 @@ class ApiClient {
                 ...options.headers,
             },
         };
+
 
         try {
             const response = await fetch(url, config);
@@ -124,9 +129,18 @@ class ApiClient {
         });
     }
 
+    patch(endpoint, data, options = {}) {
+        return this.request(endpoint, { 
+            ...options, 
+            method: 'PATCH',
+            body: JSON.stringify(data) 
+        });
+    }
+
     delete(endpoint, options = {}) {
         return this.request(endpoint, { ...options, method: 'DELETE' });
     }
 }
 
 export const apiClient = new ApiClient();
+

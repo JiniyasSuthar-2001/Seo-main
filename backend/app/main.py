@@ -15,6 +15,9 @@ validate_startup_config(strict=False)
 run_schema_migrations(engine)
 Base.metadata.create_all(bind=engine)
 
+from fastapi.responses import JSONResponse
+import traceback
+
 app = FastAPI(title="SEO Intelligence API")
 
 # Configure CORS dynamically from settings (no wildcards)
@@ -24,8 +27,22 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "Accept"],
-
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    print(f"[GLOBAL EXCEPTION HANDLER] Unhandled error on {request.url.path}: {exc}", flush=True)
+    traceback.print_exc()
+    origin = request.headers.get("origin") or "http://127.0.0.1:8030"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal Server Error: {str(exc)}"},
+        headers={
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+        }
+    )
+
 
 # Register routers
 app.include_router(integrations.router, prefix="/api/integrations", tags=["integrations"])

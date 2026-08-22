@@ -1,6 +1,7 @@
 import { projectStore } from '../core/projectStore.js';
-
+import { apiClient } from '../services/apiClient.js';
 import { getApiBaseUrl } from '../config/api.js';
+
 
 export class Alerts {
     constructor() {
@@ -13,7 +14,18 @@ export class Alerts {
         const element = document.createElement('div');
         element.className = 'alerts-view';
 
-        const projectId = projectStore.getSelectedProjectId();
+        if (!projectId) {
+            element.innerHTML = `
+                <div class="header" style="margin-bottom: 24px;">
+                    <h1 style="font-size: 24px; font-weight: 600;">SEO Alerts & Feed</h1>
+                    <p style="color: var(--text-secondary); margin-top: 4px;">Real-time feed of critical technical issues, crawl failures, and threshold alerts.</p>
+                </div>
+                <div class="card" style="padding: 32px; text-align: center; color: var(--text-secondary);">
+                    Please select or create a project workspace to view SEO alerts.
+                </div>
+            `;
+            return element;
+        }
 
         element.innerHTML = `
             <div class="header" style="margin-bottom: 24px;">
@@ -35,6 +47,7 @@ export class Alerts {
         `;
 
         if (this.isLoading && projectId) {
+
             this.fetchAlerts(projectId);
         }
 
@@ -110,14 +123,7 @@ export class Alerts {
 
     async fetchAlerts(projectId) {
         try {
-            const token = localStorage.getItem('jwt_token');
-            const headers = {};
-            if (token) headers['Authorization'] = `Bearer ${token}`;
-
-            const res = await fetch(`${getApiBaseUrl()}/api/projects/${projectId}/alerts`, { headers });
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-            const data = await res.json();
+            const data = await apiClient.get(`/api/projects/${projectId}/alerts`);
             this.alertsData = data;
         } catch (err) {
             this.error = err.message || 'Failed to load project alerts.';
@@ -126,6 +132,7 @@ export class Alerts {
             this.reRender();
         }
     }
+
 
     reRender() {
         const root = document.getElementById('main-content');

@@ -71,8 +71,7 @@ export class Technical {
             }
 
             if (this.activeTab === 'history') {
-                const resHist = await fetch(`${API_BASE_URL}/api/projects/${projectId}/technical/issue-history`);
-                const histData = await resHist.json();
+                const histData = await apiClient.get(`/api/projects/${projectId}/technical/issue-history`);
 
                 container.innerHTML = `
                     <div class="card" style="padding: 24px;">
@@ -103,9 +102,8 @@ export class Technical {
                 return;
             }
 
-            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/technical?limit=200&offset=0`);
-            if (!res.ok) throw new Error("API response error");
-            const auditData = await res.json();
+            const auditData = await apiClient.get(`/api/projects/${projectId}/technical?limit=200&offset=0`);
+
 
             const health = auditData.health_score || 100;
             const issues = auditData.issues || [];

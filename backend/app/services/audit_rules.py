@@ -217,7 +217,18 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
         categories["Canonicals"]["passed"] += total_pages
 
     # 8. Images (Missing Alt Text)
-    missing_alt_pages = [p for p in pages if p.get("images_missing_alt") and len(p.get("images_missing_alt", [])) > 0]
+    def _has_missing_alt(p_obj):
+        v = p_obj.get("images_missing_alt")
+        if not v:
+            return False
+        if isinstance(v, int):
+            return v > 0
+        if isinstance(v, (list, tuple, set)):
+            return len(v) > 0
+        return False
+
+    missing_alt_pages = [p for p in pages if _has_missing_alt(p)]
+
     if missing_alt_pages:
         issues.append({
             "rule_id": "IMG_001",

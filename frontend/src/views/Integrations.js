@@ -172,13 +172,20 @@ export class Integrations {
             this.connections = (data && data.connections) || [];
             this.renderFilteredGrid();
         } catch (e) {
-            if (e.name === 'TypeError' || e.message.includes('fetch') || apiClient.status === 'OFFLINE') {
+            if (e.status === 401) {
+                renderFeatureErrorState(
+                    container,
+                    "Authentication Required",
+                    "Connected external accounts belong strictly to your authenticated application user. Please sign in or provide a valid user session to manage integrations.",
+                    () => this.loadConnections()
+                );
+            } else if (e.name === 'TypeError' || e.message.includes('fetch') || apiClient.status === 'OFFLINE') {
                 renderBackendOfflineState(container, `Unable to connect to backend API server at ${API_BASE_URL}.`, () => this.loadConnections());
             } else {
-
                 renderFeatureErrorState(container, "Connected Accounts Error", e.message || "Unable to load integrations status.", () => this.loadConnections());
             }
         }
+
     }
 
     getProviderCatalog() {

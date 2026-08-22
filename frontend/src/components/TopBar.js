@@ -194,12 +194,17 @@ export class TopBar {
           ${p.name} (${p.domain || p.url || 'No domain'})
         </option>
       `).join('');
+
+      if (selectedId) {
+        selectEl.value = selectedId;
+      }
     };
 
     try {
       await projectStore.ensureInitialized();
       updateSelect();
     } catch (e) {}
+
 
     projectStore.subscribe(() => updateSelect());
 

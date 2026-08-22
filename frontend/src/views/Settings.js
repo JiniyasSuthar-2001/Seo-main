@@ -36,9 +36,10 @@ export class Settings {
         if (!container) return;
 
         try {
-            await projectStore.fetchProjects();
+            await projectStore.ensureInitialized();
             const selectedProj = projectStore.getSelectedProject();
             const projectId = projectStore.getSelectedProjectId();
+
 
             let dsData = {};
             if (projectId) {

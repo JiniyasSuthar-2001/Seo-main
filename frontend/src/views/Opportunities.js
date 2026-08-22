@@ -95,6 +95,7 @@ export class Opportunities {
         if (!container) return;
 
         try {
+            await projectStore.ensureInitialized();
             const selectedProj = projectStore.getSelectedProject();
             const projectId = projectStore.getSelectedProjectId();
 
@@ -103,9 +104,9 @@ export class Opportunities {
                 return;
             }
 
-            const res = await fetch(`${API_BASE_URL}/api/projects/${projectId}/opportunities?category=${this.activeCategory}`);
-            const data = await res.json();
-            const opps = data.opportunities || [];
+            const data = await apiClient.get(`/api/projects/${projectId}/opportunities?category=${this.activeCategory}`);
+            const opps = data.opportunities || data || [];
+
 
             if (opps.length === 0) {
                 container.innerHTML = `

@@ -190,11 +190,14 @@ export class Import {
             return;
         }
 
+        await projectStore.ensureInitialized();
+        const projectId = resolveProjectId();
         if (!projectId) {
             this.errorMessage = 'No active project selected. Please select a project before uploading data.';
             this.reRender();
             return;
         }
+
 
         this.isUploading = true;
         this.selectedDataType = dataType;

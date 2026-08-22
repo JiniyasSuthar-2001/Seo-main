@@ -78,8 +78,14 @@ export class Dashboard {
         try {
             await projectStore.ensureInitialized();
 
-            const selectedProj = projectStore.getSelectedProject();
-            const projectId = projectStore.getSelectedProjectId();
+            let selectedProj = projectStore.getSelectedProject();
+            let projectId = projectStore.getSelectedProjectId();
+
+            if ((!projectId || !selectedProj) && projectStore.projects && projectStore.projects.length > 0) {
+                projectStore.setSelectedProjectId(projectStore.projects[0].id);
+                selectedProj = projectStore.getSelectedProject();
+                projectId = projectStore.getSelectedProjectId();
+            }
 
             if (!projectId || !selectedProj) {
                 this.element.innerHTML = `
@@ -91,6 +97,7 @@ export class Dashboard {
                 `;
                 return;
             }
+
 
             // Fetch primary project data, technical audit, crawl history, and opportunities
             const summary = await dashboardService.getSummary(projectId);

@@ -3,10 +3,23 @@ import { apiClient } from '../services/apiClient.js';
 class ProjectStore {
     constructor() {
         this.projects = [];
-        this.selectedProjectId = localStorage.getItem('seo_selected_project_id') || null;
+        this.selectedProjectId = this.cleanId(localStorage.getItem('seo_selected_project_id'));
         this.listeners = new Set();
         this.isInitialized = false;
         this.initPromise = null;
+    }
+
+    cleanId(id) {
+        if (!id) return null;
+        if (typeof id === 'object') {
+            id = id.id || id.projectId || null;
+        }
+        if (!id) return null;
+        const str = String(id).trim().replace(/^["']|["']$/g, '');
+        if (!str || str === 'null' || str === 'undefined' || str === '[object Object]') {
+            return null;
+        }
+        return str;
     }
 
     subscribe(listener) {
@@ -15,17 +28,22 @@ class ProjectStore {
     }
 
     notify() {
+        const id = this.getSelectedProjectId();
+        const proj = this.getSelectedProject();
         this.listeners.forEach(fn => {
-            try { fn(this.selectedProjectId, this.getSelectedProject()); } catch (e) {}
+            try { fn(id, proj); } catch (e) {}
         });
     }
 
     async ensureInitialized() {
-        if (this.isInitialized) return this.projects;
+        if (this.isInitialized && this.projects.length > 0) return this.projects;
         if (!this.initPromise) {
             this.initPromise = this.fetchProjects().then((projs) => {
                 this.isInitialized = true;
                 return projs;
+            }).catch(err => {
+                this.initPromise = null;
+                throw err;
             });
         }
         return this.initPromise;
@@ -36,12 +54,13 @@ class ProjectStore {
             const data = await apiClient.get('/api/projects');
             this.projects = Array.isArray(data) ? data : (data.data || []);
             
-            // If no selected project yet or invalid, set to first available project
             if (this.projects.length > 0) {
-                const exists = this.projects.find(p => String(p.id) === String(this.selectedProjectId));
+                const currentId = this.cleanId(this.selectedProjectId);
+                const exists = currentId ? this.projects.find(p => this.cleanId(p.id) === currentId) : null;
                 if (!exists) {
                     this.setSelectedProjectId(this.projects[0].id);
                 } else {
+                    this.selectedProjectId = currentId;
                     this.notify();
                 }
             } else {
@@ -56,14 +75,33 @@ class ProjectStore {
         return this.projects;
     }
 
-
     getSelectedProjectId() {
-        return this.selectedProjectId;
+        const clean = this.cleanId(this.selectedProjectId);
+        if (clean) return clean;
+        if (this.projects && this.projects.length > 0) {
+            const fallbackId = this.cleanId(this.projects[0].id);
+            if (fallbackId) {
+                this.setSelectedProjectId(fallbackId);
+                return fallbackId;
+            }
+        }
+        return null;
     }
 
     getSelectedProject() {
-        if (!this.selectedProjectId || !this.projects.length) return null;
-        return this.projects.find(p => String(p.id) === String(this.selectedProjectId)) || null;
+        const id = this.getSelectedProjectId();
+        if (!id || !this.projects || !this.projects.length) return null;
+        const found = this.projects.find(p => this.cleanId(p.id) === id);
+        if (found) return found;
+        if (this.projects.length > 0) {
+            const first = this.projects[0];
+            const firstId = this.cleanId(first.id);
+            if (firstId) {
+                this.setSelectedProjectId(firstId);
+                return first;
+            }
+        }
+        return null;
     }
 
     getCurrentProject() {
@@ -71,9 +109,10 @@ class ProjectStore {
     }
 
     setSelectedProjectId(id) {
-        this.selectedProjectId = id ? String(id) : null;
-        if (this.selectedProjectId) {
-            localStorage.setItem('seo_selected_project_id', this.selectedProjectId);
+        const clean = this.cleanId(id);
+        this.selectedProjectId = clean;
+        if (clean) {
+            localStorage.setItem('seo_selected_project_id', clean);
         } else {
             localStorage.removeItem('seo_selected_project_id');
         }
@@ -82,7 +121,6 @@ class ProjectStore {
 
     async createProject(payload) {
         try {
-            // Handle both object payload or legacy (name, domain) signature
             const body = typeof payload === 'object' ? payload : { name: arguments[0], url: arguments[1] };
             const newProj = await apiClient.post('/api/projects', body);
             await this.fetchProjects();

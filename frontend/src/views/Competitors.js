@@ -37,6 +37,7 @@ export class Competitors {
     }
 
     async loadData() {
+        await projectStore.ensureInitialized();
         const currentProject = projectStore.getCurrentProject();
         if (!currentProject) {
             this.renderState();

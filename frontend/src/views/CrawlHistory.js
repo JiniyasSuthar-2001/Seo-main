@@ -29,8 +29,10 @@ export class CrawlHistory {
         if (!container) return;
 
         try {
+            await projectStore.ensureInitialized();
             const selectedProj = projectStore.getSelectedProject();
             const history = await crawlService.getCrawlHistory(projectStore.getSelectedProjectId());
+
 
             if (!history || history.length === 0) {
                 container.innerHTML = `

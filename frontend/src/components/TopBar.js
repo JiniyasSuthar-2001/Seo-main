@@ -185,19 +185,23 @@ export class TopBar {
       const selectedId = projectStore.getSelectedProjectId();
 
       if (!projects || projects.length === 0) {
-        selectEl.innerHTML = `<option value="">No projects created</option>`;
+        selectEl.innerHTML = `<option value="all">🌐 All Websites (Workspace Overview)</option>`;
         return;
       }
 
-      selectEl.innerHTML = projects.map(p => `
+      let optionsHtml = `<option value="all" ${!selectedId || selectedId === 'all' ? 'selected' : ''}>🌐 All Websites (Workspace Overview)</option>`;
+      optionsHtml += projects.map(p => `
         <option value="${p.id}" ${String(p.id) === String(selectedId) ? 'selected' : ''}>
           ${p.name} (${p.domain || p.url || 'No domain'})
         </option>
       `).join('');
 
+      selectEl.innerHTML = optionsHtml;
+
       if (selectedId) {
         selectEl.value = selectedId;
       }
+
     };
 
     try {

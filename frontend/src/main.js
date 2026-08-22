@@ -12,6 +12,7 @@ import { Backlinks } from './views/Backlinks.js';
 import { InternalLinks } from './views/InternalLinks.js';
 import { Competitors } from './views/Competitors.js';
 import { Technical } from './views/Technical.js';
+import { Opportunities } from './views/Opportunities.js';
 import { Import } from './views/Import.js';
 import { Reports } from './views/Reports.js';
 import { CrawlHistory } from './views/CrawlHistory.js';
@@ -55,6 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
   router.addRoute('/internal-links', InternalLinks);
   router.addRoute('/competitors', Competitors);
   router.addRoute('/technical', Technical);
+  router.addRoute('/opportunities', Opportunities);
   router.addRoute('/import', Import);
   router.addRoute('/reports', Reports);
   router.addRoute('/crawl-history', CrawlHistory);
@@ -65,3 +67,4 @@ document.addEventListener('DOMContentLoaded', () => {
 
   router.init();
 });
+

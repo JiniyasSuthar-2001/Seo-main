@@ -29,6 +29,7 @@ def get_workspace_overview(db: Session = Depends(get_db)):
 
     projects_summary = []
     all_crawls = []
+    recent_activity = []
     issues_by_type = defaultdict(lambda: {
         "title": "",
         "severity": "notice",
@@ -83,6 +84,19 @@ def get_workspace_overview(db: Session = Depends(get_db)):
             except Exception as e:
                 print(f"[WORKSPACE API] Error reading issues for {p.name}: {e}", flush=True)
 
+        # Determine Status
+        status_label = "Never Crawled"
+        if has_crawled:
+            if project_health is not None:
+                if project_health >= 85 and metrics.get("critical_issues", 0) == 0:
+                    status_label = "Healthy"
+                elif project_health < 70 or metrics.get("critical_issues", 0) > 3:
+                    status_label = "Critical"
+                else:
+                    status_label = "Needs Attention"
+            else:
+                status_label = "Crawled"
+
         p_summary = {
             "id": p.id,
             "name": p.name,
@@ -96,9 +110,19 @@ def get_workspace_overview(db: Session = Depends(get_db)):
             "critical_issues": metrics.get("critical_issues", 0),
             "warnings": metrics.get("warnings", 0),
             "last_crawl": metrics.get("last_crawl"),
-            "crawl_status": metrics.get("crawl_status", "No Crawls")
+            "crawl_status": status_label
         }
         projects_summary.append(p_summary)
+
+        # Activity item: Website created
+        if p.created_at:
+            recent_activity.append({
+                "type": "website_added",
+                "title": f"Added website: {p.name}",
+                "domain": p.domain or p.url,
+                "project_id": p.id,
+                "timestamp": p.created_at.isoformat()
+            })
 
         # Collect crawl history
         crawls_dir = os.path.join(website_dir, "crawls")
@@ -113,13 +137,36 @@ def get_workspace_overview(db: Session = Depends(get_db)):
                             c_meta["project_name"] = p.name
                             c_meta["domain"] = p.domain
                             all_crawls.append(c_meta)
+
+                            # Activity item: Crawl completed
+                            if c_meta.get("timestamp"):
+                                recent_activity.append({
+                                    "type": "crawl_completed",
+                                    "title": f"Crawl completed for {p.name}",
+                                    "domain": p.domain or p.url,
+                                    "project_id": p.id,
+                                    "pages_crawled": c_meta.get("pages_crawled", 0),
+                                    "timestamp": c_meta.get("timestamp")
+                                })
             except Exception:
                 pass
 
     total_crawls = len(all_crawls)
     all_crawls.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+    recent_activity.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
 
     avg_health = round(sum(health_scores) / len(health_scores)) if health_scores else None
+
+    # Historical trend points (only from real crawl records)
+    health_trend = []
+    if len(all_crawls) >= 2:
+        for c in reversed(all_crawls[:10]):
+            health_trend.append({
+                "timestamp": c.get("timestamp"),
+                "domain": c.get("domain"),
+                "pages_crawled": c.get("pages_crawled", 0),
+                "issues": c.get("total_issues", 0)
+            })
 
     # Format account-wide issue summary list
     account_issues = []
@@ -145,5 +192,7 @@ def get_workspace_overview(db: Session = Depends(get_db)):
         },
         "projects": projects_summary,
         "recent_crawls": all_crawls[:10],
-        "account_issues_summary": account_issues[:10]
+        "account_issues_summary": account_issues[:10],
+        "recent_activity": recent_activity[:10],
+        "health_trend": health_trend
     }

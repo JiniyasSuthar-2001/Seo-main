@@ -5,6 +5,7 @@ import { projectStore } from '../core/projectStore.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
 import { apiClient } from '../services/apiClient.js';
 import { API_BASE_URL } from '../config/api.js';
+import { crawlProgressOverlay } from '../components/CrawlProgressOverlay.js';
 
 window.startCrawl = async () => {
     const selectedProj = projectStore.getSelectedProject();
@@ -23,6 +24,9 @@ window.startCrawl = async () => {
         const projectId = selectedProj ? selectedProj.id : null;
         const data = await crawlService.startCrawl(projectId, url);
         
+        // Launch live prominent loading overlay & button states
+        crawlProgressOverlay.start(projectId, data.session_id, url);
+
         const interval = setInterval(async () => {
             try {
                 const statusData = await crawlService.getCrawlStatus(projectId, data.session_id);
@@ -37,22 +41,12 @@ window.startCrawl = async () => {
                 
                 if (statusData.status === 'completed') {
                     clearInterval(interval);
-                    
                     const statsEl = document.getElementById('crawl-stats');
                     if (statsEl) statsEl.innerText = "Crawl Complete!";
                     const barEl = document.getElementById('crawl-bar');
                     if (barEl) barEl.style.backgroundColor = 'var(--success)';
-                    
-                    alert('Crawl finished successfully! Dashboard will now refresh.');
-                    
-                    setTimeout(() => {
-                        if (progressDiv) progressDiv.style.display = 'none';
-                        window.location.reload();
-                    }, 1500);
-                    
                 } else if (statusData.status === 'failed') {
                     clearInterval(interval);
-                    alert('Crawl failed. Please check backend terminal logs for error details.');
                     if (progressDiv) progressDiv.style.display = 'none';
                 }
             } catch (pollError) {

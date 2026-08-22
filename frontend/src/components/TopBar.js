@@ -1,4 +1,5 @@
 import { projectStore } from '../core/projectStore.js';
+import { apiClient } from '../services/apiClient.js';
 
 window.showCreateProjectModal = () => {
   let modal = document.getElementById('create-project-modal');
@@ -106,9 +107,9 @@ export class TopBar {
         <div style="display: flex; align-items: center; gap: 16px;">
           
           <!-- SYSTEM HEALTH PILL -->
-          <div style="display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 12px; background: var(--success-bg); border: 1px solid var(--success-border); font-size: 12px; font-weight: 600; color: var(--success);">
-            <span style="width: 6px; height: 6px; border-radius: 50%; background: var(--success); box-shadow: 0 0 6px var(--success);"></span>
-            <span>● Connected</span>
+          <div id="system-health-pill" style="display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 12px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); font-size: 12px; font-weight: 600; color: #10b981; cursor: pointer;" title="Click to test backend connection (127.0.0.1:8020)">
+            <span id="health-dot" style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px #10b981;"></span>
+            <span id="health-text">● Backend Online</span>
           </div>
 
           <!-- QUICK CRAWL BUTTON -->
@@ -127,7 +128,51 @@ export class TopBar {
     `;
 
     this.initProjectSelector();
+    this.initHealthPill();
     return this.element;
+  }
+
+  initHealthPill() {
+    setTimeout(() => {
+      const pillEl = document.getElementById('system-health-pill');
+      const dotEl = document.getElementById('health-dot');
+      const textEl = document.getElementById('health-text');
+      if (!pillEl) return;
+
+      const updatePill = (status) => {
+        if (status === 'ONLINE') {
+          pillEl.style.background = 'rgba(16, 185, 129, 0.15)';
+          pillEl.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+          pillEl.style.color = '#10b981';
+          if (dotEl) { dotEl.style.background = '#10b981'; dotEl.style.boxShadow = '0 0 6px #10b981'; }
+          if (textEl) textEl.innerText = '● Backend Online';
+        } else if (status === 'DEGRADED') {
+          pillEl.style.background = 'rgba(245, 158, 11, 0.15)';
+          pillEl.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+          pillEl.style.color = '#f59e0b';
+          if (dotEl) { dotEl.style.background = '#f59e0b'; dotEl.style.boxShadow = '0 0 6px #f59e0b'; }
+          if (textEl) textEl.innerText = '● Server Degraded';
+        } else {
+          pillEl.style.background = 'rgba(239, 68, 68, 0.15)';
+          pillEl.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+          pillEl.style.color = '#ef4444';
+          if (dotEl) { dotEl.style.background = '#ef4444'; dotEl.style.boxShadow = '0 0 6px #ef4444'; }
+          if (textEl) textEl.innerText = '● Backend Offline';
+        }
+      };
+
+      updatePill(apiClient.status);
+      apiClient.onStatusChange(updatePill);
+
+      pillEl.addEventListener('click', async () => {
+        if (textEl) textEl.innerText = '● Checking...';
+        await apiClient.checkHealth();
+        updatePill(apiClient.status);
+      });
+
+      // Periodic background health ping every 30s
+      setInterval(() => apiClient.checkHealth(), 30000);
+    }, 100);
   }
 
   async initProjectSelector() {
@@ -135,7 +180,10 @@ export class TopBar {
       const selectEl = document.getElementById('header-project-select');
       if (!selectEl) return;
 
-      await projectStore.fetchProjects();
+      try {
+        await projectStore.fetchProjects();
+      } catch (e) {}
+
       const projects = projectStore.projects;
       const selectedId = projectStore.getSelectedProjectId();
 

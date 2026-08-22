@@ -1,4 +1,11 @@
+import os
 from urllib.parse import urlparse
+
+def normalize_stored_path(path: str) -> str:
+    if not path:
+        return ""
+    clean_path = str(path).replace("\\", "/")
+    return os.path.normpath(clean_path)
 
 def get_sanitized_domain(url_or_domain: str) -> str:
     if not url_or_domain:

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body, Response
 from sqlalchemy.orm import Session
 from app.config.database import get_db
 from app.models.project import Project
-from app.config.utils import get_sanitized_domain
+from app.config.utils import get_sanitized_domain, normalize_stored_path
 from app.services.reports.pdf_service import PDFReportGenerator
 from app.services.reports.export_service import CSVExportService
 
@@ -51,7 +51,7 @@ def get_project_metrics(domain: str) -> dict:
         with open(latest_path, "r") as f:
             latest = json.load(f)
         
-        crawl_dir = latest.get("path")
+        crawl_dir = normalize_stored_path(latest.get("path"))
         if crawl_dir and os.path.exists(crawl_dir):
             metadata_path = os.path.join(crawl_dir, "metadata.json")
             if os.path.exists(metadata_path):
@@ -95,7 +95,7 @@ def load_project_full_datasets(domain: str):
         try:
             with open(latest_path, "r") as f:
                 latest = json.load(f)
-            crawl_dir = latest.get("path")
+            crawl_dir = normalize_stored_path(latest.get("path"))
             if crawl_dir and os.path.exists(crawl_dir):
                 meta_p = os.path.join(crawl_dir, "metadata.json")
                 pages_p = os.path.join(crawl_dir, "pages.json")
@@ -505,7 +505,7 @@ def get_project_summary(project_id: str, db: Session = Depends(get_db)):
     try:
         with open(latest_path, "r") as f:
             latest = json.load(f)
-        crawl_dir = latest.get("path")
+        crawl_dir = normalize_stored_path(latest.get("path"))
         metadata_path = os.path.join(crawl_dir, "metadata.json")
         if os.path.exists(metadata_path):
             with open(metadata_path, "r") as mf:

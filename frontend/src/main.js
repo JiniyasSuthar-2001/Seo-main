@@ -17,6 +17,7 @@ import { Reports } from './views/Reports.js';
 import { CrawlHistory } from './views/CrawlHistory.js';
 import { Alerts } from './views/Alerts.js';
 import { Settings } from './views/Settings.js';
+import { Integrations } from './views/Integrations.js';
 import { Help } from './views/Help.js';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -59,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
   router.addRoute('/crawl-history', CrawlHistory);
   router.addRoute('/alerts', Alerts);
   router.addRoute('/settings', Settings);
+  router.addRoute('/integrations', Integrations);
   router.addRoute('/help', Help);
 
   router.init();

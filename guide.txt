@@ -1,0 +1,125 @@
+================================================================================
+COMPLETE GUIDE: CONNECTING GOOGLE ACCOUNTS & APIS TO YOUR SEO WEB APP
+================================================================================
+
+This guide explains step-by-step how to connect Google Accounts and services
+(Google Search Console, Google Keyword Planner / Ads, Google Calendar, Gmail,
+and Google Analytics) to your SEO website in development.
+
+--------------------------------------------------------------------------------
+STEP 1: CREATE A PROJECT IN GOOGLE CLOUD CONSOLE
+--------------------------------------------------------------------------------
+1. Go to Google Cloud Console: https://console.cloud.google.com/
+2. In the top navigation bar dropdown, click "New Project".
+3. Name your project (e.g., "SEO Intelligence Platform") and click "Create".
+4. Ensure your new project is selected in the top project selector.
+
+--------------------------------------------------------------------------------
+STEP 2: ENABLE REQUIRED GOOGLE APIS
+--------------------------------------------------------------------------------
+1. Navigate to "APIs & Services" > "Library" from the left navigation menu.
+2. Search for and ENABLE each of the following APIs:
+   - Google Search Console API (For organic performance, clicks, impressions & keyword query positions)
+   - Google Analytics Data API (GA4) (For website traffic, pageviews & conversions)
+   - Google Ads API (Required for Google Keyword Planner search volume, CPC & keyword metrics)
+   - Google Calendar API (For content publishing schedules, SEO audit reminders & deadlines)
+   - Gmail API (For automated link-building outreach emails & SEO report alerts)
+   - Google My Business API (Optional: For Local SEO metrics & business profile tracking)
+
+--------------------------------------------------------------------------------
+STEP 3: CONFIGURE THE OAUTH CONSENT SCREEN
+--------------------------------------------------------------------------------
+1. Go to "APIs & Services" > "OAuth consent screen".
+2. Select "External" user type and click "Create".
+3. App Information:
+   - App name: SEO Intelligence App
+   - User support email: Your Gmail address
+   - Developer contact information: Your email address
+4. Click "Save and Continue".
+5. Scopes: Click "Add or Remove Scopes" and select:
+   - .../auth/userinfo.email (Email address)
+   - .../auth/userinfo.profile (Basic Profile)
+   - .../auth/webmasters.readonly (Google Search Console)
+   - .../auth/analytics.readonly (Google Analytics)
+   - .../auth/calendar (Google Calendar)
+   - .../auth/gmail.send (Gmail sending capability for outreach)
+   - .../auth/adwords (Google Ads / Keyword Planner)
+6. Test Users (CRUCIAL FOR DEVELOPMENT):
+   - Under the "Test Users" section, click "+ Add Users".
+   - Add your own Gmail address (and any team members' Gmail addresses).
+   - NOTE: While your app is in "Testing" status, only added test users can log in
+     via OAuth without needing official Google Verification.
+
+--------------------------------------------------------------------------------
+STEP 4: GENERATE OAUTH 2.0 CREDENTIALS
+--------------------------------------------------------------------------------
+1. Go to "APIs & Services" > "Credentials".
+2. Click "+ Create Credentials" at the top and select "OAuth client ID".
+3. Select "Web application" as the Application Type.
+4. Name: SEO Web App Local Credentials
+5. Fill in the authorized origins for your development environment:
+
+   AUTHORISED JAVASCRIPT ORIGINS:
+   http://localhost:8030
+   http://127.0.0.1:8030
+
+   AUTHORISED REDIRECT URIS:
+   http://localhost:8020/api/integrations/google/callback
+   http://127.0.0.1:8020/api/integrations/google/callback
+
+6. Click "Create". A popup will display your Client ID and Client Secret.
+
+--------------------------------------------------------------------------------
+STEP 5: CONFIGURE ENVIRONMENT VARIABLES IN YOUR PROJECT
+--------------------------------------------------------------------------------
+Save your generated credentials in your backend environment variables (or .env file):
+
+GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
+GOOGLE_CLIENT_SECRET="your-client-secret"
+REDIRECT_BASE_URL="http://127.0.0.1:8020"
+
+--------------------------------------------------------------------------------
+STEP 6: HOW THE OAUTH 2.0 AUTHENTICATION FLOW WORKS
+--------------------------------------------------------------------------------
+1. User clicks "Connect Google Account" in the frontend.
+2. Frontend triggers GET /api/integrations/google/connect.
+3. Backend generates a signed OAuth authorization URL containing access_type=offline
+   and prompt=consent to ensure Google returns a Refresh Token.
+4. User completes Google consent on the browser window.
+5. Google redirects back to:
+   http://127.0.0.1:8020/api/integrations/google/callback?code=AUTH_CODE
+6. Backend exchanges the code for access_token and refresh_token, encrypts them,
+   and stores them in the database.
+7. Backend uses the access_token (and auto-refreshes it via refresh_token) to call
+   Search Console, Analytics, Calendar, Gmail, and Google Ads APIs.
+
+--------------------------------------------------------------------------------
+STEP 7: API-SPECIFIC SETUP & USAGE NOTES
+--------------------------------------------------------------------------------
+1. Google Keyword Planner (Google Ads API):
+   - Requires a Google Ads Manager Account (MCC).
+   - Apply for a Developer Token under Tools & Settings > API Center in Google Ads.
+   - During development, use a Google Ads Test Account for instant API testing.
+
+2. Google Search Console & Analytics API:
+   - Your user must be an owner/verified user of the target domain in Search Console
+     or have viewer permissions in GA4.
+
+3. Google Calendar API:
+   - Scope: https://www.googleapis.com/auth/calendar
+   - Used for creating publication schedules, audit deadlines, and reminders.
+
+4. Gmail API:
+   - Scope: https://www.googleapis.com/auth/gmail.send
+   - Used for link-building outreach emails and automated reporting alerts.
+
+================================================================================
+SUMMARY CHECKLIST FOR LOCAL TESTING:
+================================================================================
+ [ ] Google Cloud Console project created.
+ [ ] Search Console, Analytics, Ads, Calendar, and Gmail APIs enabled.
+ [ ] Scopes & Test Users configured in OAuth Consent Screen.
+ [ ] JavaScript origins set to http://localhost:8030
+ [ ] Redirect URIs set to http://localhost:8020/api/integrations/google/callback
+ [ ] GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET saved in backend environment.
+================================================================================

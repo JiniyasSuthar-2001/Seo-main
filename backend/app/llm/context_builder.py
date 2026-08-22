@@ -1,7 +1,7 @@
 import os
 import json
 from typing import Dict, Any, List, Optional
-from app.config.utils import get_sanitized_domain
+from app.config.utils import get_sanitized_domain, normalize_stored_path
 
 class LLMContextBuilder:
     def __init__(self, base_dir: str = "data/websites"):
@@ -25,9 +25,9 @@ class LLMContextBuilder:
             with open(latest_path, "r") as f:
                 latest_pointer = json.load(f)
 
-            crawl_dir = latest_pointer.get("path")
+            crawl_dir = normalize_stored_path(latest_pointer.get("path"))
             
-            # Load snapshot JSON files
+            # Load snapshot JSON files safely
             metadata = {}
             pages = []
             issues = []
@@ -53,44 +53,59 @@ class LLMContextBuilder:
                 with open(links_file, "r") as lf:
                     internal_links = json.load(lf)
 
-            # Compact normalized context payload to optimize LLM tokens & evidence tracing
-            normalized_pages = [
-                {
-                    "url": p.get("url"),
-                    "status_code": p.get("status_code"),
-                    "title": p.get("title"),
-                    "h1": p.get("h1"),
-                    "word_count": p.get("word_count"),
-                    "links_count": p.get("internal_links_count")
-                }
-                for p in pages[:50]
-            ]
+            # Compact normalized context payload with full validation against None and malformed records
+            normalized_pages = []
+            if isinstance(pages, list):
+                for p in pages[:50]:
+                    if isinstance(p, dict):
+                        wc = p.get("word_count")
+                        wc_val = int(wc) if isinstance(wc, (int, float)) and wc is not None else 0
+                        
+                        lc = p.get("internal_links_count")
+                        lc_val = int(lc) if isinstance(lc, (int, float)) and lc is not None else 0
 
-            normalized_issues = [
-                {
-                    "severity": i.get("severity"),
-                    "issue_type": i.get("issue_type"),
-                    "affected_url": i.get("affected_url"),
-                    "details": i.get("details")
-                }
-                for i in issues[:30]
-            ]
+                        sc = p.get("status_code")
+                        sc_val = int(sc) if isinstance(sc, (int, float)) and sc is not None else 200
+
+                        normalized_pages.append({
+                            "url": p.get("url") or "",
+                            "status_code": sc_val,
+                            "title": p.get("title"),
+                            "h1": p.get("h1"),
+                            "word_count": wc_val,
+                            "links_count": lc_val
+                        })
+                    else:
+                        print(f"[CONTEXT BUILDER WARNING] Skipping non-dict page record: {p}", flush=True)
+
+            normalized_issues = []
+            if isinstance(issues, list):
+                for i in issues[:30]:
+                    if isinstance(i, dict):
+                        normalized_issues.append({
+                            "severity": i.get("severity") or "Notice",
+                            "issue_type": i.get("issue_type") or "General",
+                            "affected_url": i.get("affected_url") or "",
+                            "details": i.get("details") or ""
+                        })
+                    else:
+                        print(f"[CONTEXT BUILDER WARNING] Skipping non-dict issue record: {i}", flush=True)
 
             return {
                 "has_data": True,
                 "domain": domain,
-                "crawl_id": metadata.get("crawl_id"),
-                "timestamp": metadata.get("timestamp"),
-                "pages_count": len(pages),
-                "issues_count": len(issues),
+                "crawl_id": metadata.get("crawl_id") if isinstance(metadata, dict) else None,
+                "timestamp": metadata.get("timestamp") if isinstance(metadata, dict) else None,
+                "pages_count": len(pages) if isinstance(pages, list) else 0,
+                "issues_count": len(issues) if isinstance(issues, list) else 0,
                 "summary": {
-                    "critical": metadata.get("critical_issues", 0),
-                    "warning": metadata.get("warning_issues", 0),
-                    "notice": metadata.get("notice_issues", 0)
+                    "critical": metadata.get("critical_issues", 0) if isinstance(metadata, dict) else 0,
+                    "warning": metadata.get("warning_issues", 0) if isinstance(metadata, dict) else 0,
+                    "notice": metadata.get("notice_issues", 0) if isinstance(metadata, dict) else 0
                 },
                 "pages_sample": normalized_pages,
                 "issues_sample": normalized_issues,
-                "links_sample_count": len(internal_links)
+                "links_sample_count": len(internal_links) if isinstance(internal_links, list) else 0
             }
 
         except Exception as e:

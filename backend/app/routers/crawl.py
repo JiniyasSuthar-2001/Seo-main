@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
-from app.config.database import get_db
+from app.config.database import get_db, SessionLocal
 from app.models.project import Project
 from app.models.crawl_session import CrawlSession
 from app.crawler.crawler import SEOCrawler
@@ -16,12 +16,13 @@ router = APIRouter()
 class CrawlRequest(BaseModel):
     url: Optional[str] = None
 
-async def run_crawl_task(session_id: str, start_url: str, db: Session):
-    crawl_session = db.query(CrawlSession).filter(CrawlSession.id == session_id).first()
-    if not crawl_session:
-        return
-        
+async def run_crawl_task(session_id: str, start_url: str):
+    db = SessionLocal()
     try:
+        crawl_session = db.query(CrawlSession).filter(CrawlSession.id == session_id).first()
+        if not crawl_session:
+            return
+            
         print(f"[CRAWL] Starting crawl task for session {session_id} on {start_url}", flush=True)
         crawler = SEOCrawler(start_url=start_url, max_pages=1000)
         results = await crawler.start()
@@ -30,18 +31,26 @@ async def run_crawl_task(session_id: str, start_url: str, db: Session):
         storage = CrawlStorage()
         crawl_dir = storage.save_crawl_snapshot(start_url, session_id, results)
         
-        # Mark completed only after storage succeeds
-        crawl_session.status = "completed"
-        crawl_session.pages_crawled = len(results.get("pages", []))
+        # Mark session status cleanly based on actual results
+        crawl_status = results.get("status", "completed")
+        crawl_session.status = crawl_status
+        crawl_session.pages_crawled = results.get("successful_pages_count", len(results.get("pages", [])))
         crawl_session.pages_discovered = len(crawler.queue_status)
         crawl_session.issues_found = len(results.get("issues", []))
         db.commit()
-        print(f"[CRAWL SUCCESS] Session {session_id} COMPLETED cleanly. Output: {crawl_dir}", flush=True)
+        print(f"[CRAWL FINISHED] Session {session_id} status: '{crawl_status}'. Output: {crawl_dir}", flush=True)
         
     except Exception as e:
         print(f"[CRAWL ERROR] Session {session_id} FAILED: {e}", flush=True)
-        crawl_session.status = "failed"
-        db.commit()
+        try:
+            crawl_session = db.query(CrawlSession).filter(CrawlSession.id == session_id).first()
+            if crawl_session:
+                crawl_session.status = "failed"
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
 
 @router.post("/{project_id}/crawl")
 async def start_crawl(project_id: str, request: CrawlRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
@@ -73,7 +82,7 @@ async def start_crawl(project_id: str, request: CrawlRequest, background_tasks: 
     db.refresh(new_session)
 
     # Add background crawl task
-    background_tasks.add_task(run_crawl_task, new_session.id, target_url, db)
+    background_tasks.add_task(run_crawl_task, new_session.id, target_url)
     return {"message": "Crawl started", "session_id": new_session.id, "target_url": target_url}
 
 @router.get("/{project_id}/crawl/{session_id}")

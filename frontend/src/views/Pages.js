@@ -1,6 +1,7 @@
 import { projectStore } from '../core/projectStore.js';
 import { API_BASE_URL } from '../config/api.js';
-import { renderBackendOfflineState } from '../components/ErrorState.js';
+import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
+import { apiClient } from '../services/apiClient.js';
 
 window.exportPagesCSV = () => {
     const table = document.querySelector('table');
@@ -137,7 +138,11 @@ export class Pages {
                 </div>
             `;
         } catch (e) {
-            renderBackendOfflineState(container, "Unable to load page records from backend API.");
+            if (e.name === 'TypeError' || e.message.includes('fetch') || apiClient.status === 'OFFLINE') {
+                renderBackendOfflineState(container, "Unable to connect to backend API server at http://127.0.0.1:8020.", () => this.mounted());
+            } else {
+                renderFeatureErrorState(container, "Crawled Pages Error", e.message || "Unable to load page records.", () => this.mounted());
+            }
         }
     }
 }

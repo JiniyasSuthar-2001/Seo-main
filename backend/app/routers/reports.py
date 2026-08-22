@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from app.config.database import get_db
 from app.models.project import Project
-from app.config.utils import get_sanitized_domain
+from app.config.utils import get_sanitized_domain, normalize_stored_path
 from app.services.reports.pdf_service import PDFReportGenerator
 from app.providers.nlp_keywords import NLPKeywordExtractor
 
@@ -28,6 +28,10 @@ def sanitize_filename_part(name: str) -> str:
 @router.get("/crawl/{crawl_id}/report.pdf")
 @router.get("/reports/crawl")
 def get_crawl_pdf_report(project_id: str, crawl_id: str = "latest", db: Session = Depends(get_db)):
+    if project_id == "all":
+        from app.routers.projects import get_all_projects_pdf
+        return get_all_projects_pdf(db)
+
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -39,7 +43,7 @@ def get_crawl_pdf_report(project_id: str, crawl_id: str = "latest", db: Session 
 
     with open(latest_path, "r") as f:
         latest = json.load(f)
-    crawl_dir = latest.get("path")
+    crawl_dir = normalize_stored_path(latest.get("path"))
 
     meta_path = os.path.join(crawl_dir, "metadata.json")
     pages_path = os.path.join(crawl_dir, "pages.json")
@@ -57,6 +61,10 @@ def get_crawl_pdf_report(project_id: str, crawl_id: str = "latest", db: Session 
 
 @router.get("/export")
 def export_project_data(project_id: str, db: Session = Depends(get_db)):
+    if project_id == "all":
+        from app.routers.projects import get_all_projects_zip_export
+        return get_all_projects_zip_export(db)
+
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -77,7 +85,7 @@ def export_project_data(project_id: str, db: Session = Depends(get_db)):
     if os.path.exists(latest_path):
         try:
             latest = json.load(open(latest_path))
-            crawl_dir = latest.get("path")
+            crawl_dir = normalize_stored_path(latest.get("path"))
             meta_path = os.path.join(crawl_dir, "metadata.json")
             pages_path = os.path.join(crawl_dir, "pages.json")
             issues_path = os.path.join(crawl_dir, "issues.json")
@@ -110,7 +118,8 @@ def get_pages_pdf_report(project_id: str, db: Session = Depends(get_db)):
     pages = []
     if os.path.exists(latest_path):
         latest = json.load(open(latest_path))
-        pages_file = os.path.join(latest.get("path"), "pages.json")
+        crawl_dir = normalize_stored_path(latest.get("path"))
+        pages_file = os.path.join(crawl_dir, "pages.json")
         if os.path.exists(pages_file):
             pages = json.load(open(pages_file))
 
@@ -141,7 +150,8 @@ def get_technical_pdf_report(project_id: str, db: Session = Depends(get_db)):
     issues = []
     if os.path.exists(latest_path):
         latest = json.load(open(latest_path))
-        issues_file = os.path.join(latest.get("path"), "issues.json")
+        crawl_dir = normalize_stored_path(latest.get("path"))
+        issues_file = os.path.join(crawl_dir, "issues.json")
         if os.path.exists(issues_file):
             issues = json.load(open(issues_file))
 
@@ -172,7 +182,8 @@ def get_keywords_pdf_report(project_id: str, db: Session = Depends(get_db)):
     pages = []
     if os.path.exists(latest_path):
         latest = json.load(open(latest_path))
-        pages_file = os.path.join(latest.get("path"), "pages.json")
+        crawl_dir = normalize_stored_path(latest.get("path"))
+        pages_file = os.path.join(crawl_dir, "pages.json")
         if os.path.exists(pages_file):
             pages = json.load(open(pages_file))
 
@@ -204,7 +215,8 @@ def get_internal_links_pdf_report(project_id: str, db: Session = Depends(get_db)
     links = []
     if os.path.exists(latest_path):
         latest = json.load(open(latest_path))
-        links_file = os.path.join(latest.get("path"), "internal_links.json")
+        crawl_dir = normalize_stored_path(latest.get("path"))
+        links_file = os.path.join(crawl_dir, "internal_links.json")
         if os.path.exists(links_file):
             links = json.load(open(links_file))
 

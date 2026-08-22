@@ -2,7 +2,7 @@ import os
 import json
 from datetime import datetime
 from typing import Dict, Any, List
-from app.config.utils import get_sanitized_domain
+from app.config.utils import get_sanitized_domain, normalize_stored_path
 
 class CrawlStorage:
     def __init__(self, base_dir: str = "data/websites"):
@@ -30,7 +30,7 @@ class CrawlStorage:
             try:
                 with open(latest_pointer_path, "r") as pf:
                     prev_pointer = json.load(pf)
-                    prev_snapshot_path = prev_pointer.get("path")
+                    prev_snapshot_path = normalize_stored_path(prev_pointer.get("path"))
             except Exception as e:
                 print(f"[STORAGE] Could not read previous latest.json: {e}", flush=True)
 
@@ -43,8 +43,9 @@ class CrawlStorage:
             "crawl_id": session_id,
             "website": domain,
             "timestamp": timestamp,
-            "status": "completed",
-            "pages_crawled": len(pages),
+            "status": results.get("status", "completed"),
+            "pages_crawled": results.get("successful_pages_count", len(pages)),
+            "failed_pages_count": results.get("failed_pages_count", 0),
             "total_issues": len(issues),
             "critical_issues": critical_count,
             "warning_issues": warning_count,

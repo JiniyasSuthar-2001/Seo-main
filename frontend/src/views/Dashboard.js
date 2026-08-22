@@ -2,7 +2,9 @@ import { dashboardService } from '../services/dashboard.js';
 import { crawlService } from '../services/crawlService.js';
 import { aiService } from '../services/aiService.js';
 import { projectStore } from '../core/projectStore.js';
-import { renderBackendOfflineState } from '../components/ErrorState.js';
+import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
+import { apiClient } from '../services/apiClient.js';
+import { API_BASE_URL } from '../config/api.js';
 
 window.startCrawl = async () => {
     const selectedProj = projectStore.getSelectedProject();
@@ -305,8 +307,8 @@ export class Dashboard {
                     </a>
                     <a href="/keywords" data-link class="kpi-card interactive-kpi" title="Click to open Keywords dataset view">
                         <div class="kpi-header"><span class="kpi-label">Keywords Tracked</span></div>
-                        <div class="kpi-value">0</div>
-                        <div class="kpi-status">Import CSV dataset &rarr;</div>
+                        <div class="kpi-value">${selectedProj.keywords_count || crawl.keywords_count || 0}</div>
+                        <div class="kpi-status">${(selectedProj.keywords_count || crawl.keywords_count) > 0 ? 'Extracted topics & keywords &rarr;' : 'Import CSV dataset &rarr;'}</div>
                     </a>
                 </div>
 
@@ -349,7 +351,11 @@ export class Dashboard {
               `;
           }
       } catch (e) {
-          renderBackendOfflineState(this.element, "Unable to load dashboard metrics from backend API.");
+          if (e.isNetworkError || apiClient.status === 'OFFLINE') {
+              renderBackendOfflineState(this.element, "Unable to connect to backend API server at http://127.0.0.1:8020.", () => this.mounted());
+          } else {
+              renderFeatureErrorState(this.element, "Dashboard Summary Error", e.message || "Failed to load dashboard metrics.", () => this.mounted());
+          }
       }
   }
 }

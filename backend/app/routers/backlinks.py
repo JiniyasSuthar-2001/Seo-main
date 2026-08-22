@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.config.database import get_db
 from app.models.project import Project
-from app.config.utils import get_sanitized_domain
+from app.config.utils import get_sanitized_domain, normalize_stored_path
 import os
 import json
 
@@ -25,7 +25,8 @@ def get_backlinks(project_id: str, limit: int = Query(50), offset: int = Query(0
         try:
             with open(latest_path, "r") as f:
                 latest = json.load(f)
-            ext_file = os.path.join(latest.get("path"), "external_links.json")
+            crawl_dir = normalize_stored_path(latest.get("path"))
+            ext_file = os.path.join(crawl_dir, "external_links.json")
             if os.path.exists(ext_file):
                 with open(ext_file, "r") as ef:
                     outbound_links = json.load(ef)

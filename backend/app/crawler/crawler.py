@@ -6,6 +6,12 @@ from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
 from typing import Set, Dict, Any, List, Optional
 
+STATIC_ASSET_EXTENSIONS = (
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".bmp", ".tiff",
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".zip", ".tar", ".gz", ".rar",
+    ".mp4", ".avi", ".mov", ".mp3", ".wav", ".css", ".js", ".woff", ".woff2", ".ttf", ".eot"
+)
+
 class SEOCrawler:
     def __init__(self, start_url: str, max_pages: int = 1000, request_timeout: float = 20.0):
         if not start_url or not start_url.startswith(("http://", "https://")):
@@ -19,7 +25,7 @@ class SEOCrawler:
         self.domain = parsed_url.netloc.lower()
         self.scheme = parsed_url.scheme
         
-        # State Queue tracking: PENDING, CRAWLING, CRAWLED, FAILED, SKIPPED
+        # Queue state tracking: PENDING, CRAWLING, CRAWLED, FAILED, BLOCKED, SKIPPED
         self.queue_status: Dict[str, str] = {self.start_url: "PENDING"}
         self.visited: Set[str] = set()
         self.to_visit: List[str] = [self.start_url]
@@ -32,9 +38,11 @@ class SEOCrawler:
         self.issues: List[Dict[str, Any]] = []
         self.internal_links: List[Dict[str, Any]] = []
         self.external_links: List[Dict[str, Any]] = []
+        self.asset_checks: List[Dict[str, Any]] = []
         
         self.is_running = False
-        self.user_agent = "SEO-Intelligence-Platform/1.0"
+        self.seed_status_code = None
+        self.user_agent = "SEO-Intelligence-Platform/1.0 (Mozilla/5.0 Compatible)"
 
     def is_same_domain(self, url: str) -> bool:
         parsed = urlparse(url)
@@ -43,6 +51,11 @@ class SEOCrawler:
         clean_netloc = netloc.replace("www.", "")
         clean_dom = dom.replace("www.", "")
         return clean_netloc == clean_dom
+
+    def is_static_asset(self, url: str) -> bool:
+        parsed = urlparse(url)
+        path = parsed.path.lower()
+        return path.endswith(STATIC_ASSET_EXTENSIONS)
 
     def normalize_url(self, url: str, base_url: str) -> str:
         full_url = urljoin(base_url, url)
@@ -87,11 +100,11 @@ class SEOCrawler:
                     discovered_count = 0
                     for loc in locs:
                         norm = self.normalize_url(loc, sm_url)
-                        if self.is_same_domain(norm) and norm not in self.queue_status:
+                        if self.is_same_domain(norm) and not self.is_static_asset(norm) and norm not in self.queue_status:
                             self.queue_status[norm] = "PENDING"
                             self.to_visit.append(norm)
                             discovered_count += 1
-                    print(f"[SITEMAP] Discovered {discovered_count} URLs from {sm_url}", flush=True)
+                    print(f"[SITEMAP] Discovered {discovered_count} HTML URLs from {sm_url}", flush=True)
             except Exception as e:
                 print(f"[SITEMAP] Failed to parse sitemap {sm_url}: {e}", flush=True)
 
@@ -105,8 +118,18 @@ class SEOCrawler:
 
     def evaluate_page_issues(self, page_data: Dict[str, Any]):
         url = page_data["url"]
-        status = page_data["status_code"]
+        status = page_data.get("status_code", 0)
         
+        if status == 403 or status == 401:
+            self.issues.append({
+                "severity": "Critical",
+                "issue_type": "Access Denied / Forbidden",
+                "affected_url": url,
+                "details": f"Server returned HTTP status {status} (Access Denied / Forbidden). Crawling blocked.",
+                "recommendation": "Verify firewall policies, server permissions, or user-agent access controls."
+            })
+            return
+
         if status >= 400 or status == 0:
             self.issues.append({
                 "severity": "Critical",
@@ -198,11 +221,52 @@ class SEOCrawler:
             response = await client.get(url, headers=headers, timeout=self.request_timeout, follow_redirects=True)
             elapsed_ms = int((time.time() - start_time) * 1000)
             
+            if url == self.start_url:
+                self.seed_status_code = response.status_code
+
             print(f"[HTTP] {response.status_code} {url} ({elapsed_ms}ms)", flush=True)
+            
+            # Handle HTTP Access Denied (403, 401) or HTTP Errors (5xx, 4xx)
+            if response.status_code in (403, 401):
+                self.queue_status[url] = "BLOCKED"
+                page_record = {
+                    "url": url,
+                    "status_code": response.status_code,
+                    "response_time_ms": elapsed_ms,
+                    "error": f"HTTP {response.status_code} Access Denied",
+                    "is_success": False,
+                    "word_count": 0,
+                    "internal_links_count": 0
+                }
+                self.pages.append(page_record)
+                self.evaluate_page_issues(page_record)
+                return
+
+            if response.status_code >= 400:
+                self.queue_status[url] = "FAILED"
+                page_record = {
+                    "url": url,
+                    "status_code": response.status_code,
+                    "response_time_ms": elapsed_ms,
+                    "error": f"HTTP {response.status_code} Error",
+                    "is_success": False,
+                    "word_count": 0,
+                    "internal_links_count": 0
+                }
+                self.pages.append(page_record)
+                self.evaluate_page_issues(page_record)
+                return
+
             self.queue_status[url] = "CRAWLED"
             
             content_type = response.headers.get("content-type", "")
             if "text/html" not in content_type:
+                # Store as static resource check rather than HTML page
+                self.asset_checks.append({
+                    "url": url,
+                    "status_code": response.status_code,
+                    "content_type": content_type
+                })
                 return
 
             html = response.text
@@ -236,7 +300,7 @@ class SEOCrawler:
             images = soup.find_all("img")
             images_missing_alt = sum(1 for img in images if not img.get("alt") or not img["alt"].strip())
 
-            # Extract Links
+            # Extract Links & Separate HTML pages from Static Asset URLs
             discovered_internal = set()
             a_tags = soup.find_all("a", href=True)
             
@@ -249,6 +313,15 @@ class SEOCrawler:
                     
                 normalized = self.normalize_url(href, url)
                 
+                # Check if target is a static image or asset file vs HTML page
+                if self.is_static_asset(normalized):
+                    self.asset_checks.append({
+                        "url": normalized,
+                        "found_on": url,
+                        "type": "static_asset"
+                    })
+                    continue
+
                 if self.is_same_domain(normalized):
                     discovered_internal.add(normalized)
                     self.internal_links.append({
@@ -266,12 +339,13 @@ class SEOCrawler:
                         "anchor_text": anchor_text
                     })
 
-            print(f"[PARSE] Extracted {len(discovered_internal)} internal links from {url}", flush=True)
+            print(f"[PARSE] Extracted {len(discovered_internal)} internal HTML links from {url}", flush=True)
 
             page_record = {
                 "url": url,
                 "status_code": response.status_code,
                 "response_time_ms": elapsed_ms,
+                "is_success": True,
                 "title": title_tag,
                 "meta_description": meta_description,
                 "canonical": canonical,
@@ -297,12 +371,15 @@ class SEOCrawler:
                 "url": url,
                 "status_code": 0,
                 "response_time_ms": elapsed_ms,
-                "error": str(e)
+                "is_success": False,
+                "error": str(e),
+                "word_count": 0,
+                "internal_links_count": 0
             }
             self.pages.append(page_record)
             self.evaluate_page_issues(page_record)
 
-    async def start(self):
+    async def start(self) -> Dict[str, Any]:
         self.is_running = True
         print(f"[CRAWL] Starting real Internet crawl for {self.start_url}", flush=True)
         
@@ -321,11 +398,24 @@ class SEOCrawler:
                 await asyncio.sleep(0.5)
 
         self.is_running = False
-        print(f"[CRAWL] Finished crawling {self.start_url}. Discovered: {len(self.queue_status)}, Crawled: {len(self.pages)}, Issues: {len(self.issues)}", flush=True)
+
+        successful_pages = [p for p in self.pages if p.get("is_success") and p.get("status_code") == 200]
+        failed_pages = [p for p in self.pages if not p.get("is_success") or (p.get("status_code") or 0) >= 400]
+        
+        # Check if seed or entire site was access denied (e.g. 403 Forbidden)
+        is_access_denied = (self.seed_status_code in (403, 401)) or (len(successful_pages) == 0 and len(failed_pages) > 0)
+        overall_status = "access_denied" if is_access_denied else ("completed" if successful_pages else "failed")
+
+        print(f"[CRAWL FINISHED] Status: {overall_status}. Successful Pages: {len(successful_pages)}, Failed/Blocked: {len(failed_pages)}, Issues: {len(self.issues)}", flush=True)
         
         return {
+            "status": overall_status,
+            "seed_status_code": self.seed_status_code,
+            "successful_pages_count": len(successful_pages),
+            "failed_pages_count": len(failed_pages),
             "pages": self.pages,
             "issues": self.issues,
             "internal_links": self.internal_links,
-            "external_links": self.external_links
+            "external_links": self.external_links,
+            "asset_checks": self.asset_checks
         }

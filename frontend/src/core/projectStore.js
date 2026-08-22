@@ -48,6 +48,10 @@ class ProjectStore {
         return this.projects.find(p => String(p.id) === String(this.selectedProjectId)) || null;
     }
 
+    getCurrentProject() {
+        return this.getSelectedProject();
+    }
+
     setSelectedProjectId(id) {
         this.selectedProjectId = id ? String(id) : null;
         if (this.selectedProjectId) {
@@ -64,8 +68,9 @@ class ProjectStore {
             const body = typeof payload === 'object' ? payload : { name: arguments[0], url: arguments[1] };
             const newProj = await apiClient.post('/api/projects', body);
             await this.fetchProjects();
-            if (newProj && newProj.id) {
-                this.setSelectedProjectId(newProj.id);
+            const createdId = (newProj && newProj.project && newProj.project.id) || (newProj && newProj.id);
+            if (createdId) {
+                this.setSelectedProjectId(createdId);
             }
             return newProj;
         } catch (e) {

@@ -1,30 +1,38 @@
 import { projectStore } from '../core/projectStore.js';
 import { API_BASE_URL } from '../config/api.js';
-import { renderBackendOfflineState } from '../components/ErrorState.js';
+import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
+import { apiClient } from '../services/apiClient.js';
+import { Integrations } from './Integrations.js';
 
 export class Settings {
     constructor() {
         this.element = document.createElement('div');
         this.element.className = 'settings-view';
+        this.integrationsSubView = new Integrations();
     }
 
     render() {
         this.element.innerHTML = `
             <div class="header" style="margin-bottom: 24px;">
                 <h1 style="font-size: 24px; font-weight: 600;">Project Settings & Data Source Center</h1>
-                <p style="color: var(--text-secondary); margin-top: 4px;">Configure workspace projects, local storage paths, and first-party API connections.</p>
+                <p style="color: var(--text-secondary); margin-top: 4px;">Configure workspace projects, local storage paths, user-owned integrations, and API connections.</p>
             </div>
+
             <div id="settings-content">
                 <div class="card" style="padding: 32px; text-align: center; color: var(--text-secondary);">
                     Loading settings & data sources...
                 </div>
             </div>
+
+            <!-- INTEGRATIONS SUB-SECTION -->
+            <div id="settings-integrations-wrapper" style="margin-top: 40px; border-top: 1px solid var(--border); padding-top: 32px;"></div>
         `;
         return this.element;
     }
 
     async mounted() {
         const container = document.getElementById('settings-content');
+        const integrationsWrapper = this.element.querySelector('#settings-integrations-wrapper') || document.getElementById('settings-integrations-wrapper');
         if (!container) return;
 
         try {
@@ -129,8 +137,18 @@ export class Settings {
                 </div>
             `;
 
+            // Mount Integrations Subview
+            if (integrationsWrapper) {
+                integrationsWrapper.appendChild(this.integrationsSubView.render());
+                await this.integrationsSubView.mounted();
+            }
+
         } catch (e) {
-            renderBackendOfflineState(container, "Unable to load settings from backend API.");
+            if (e.name === 'TypeError' || e.message.includes('fetch') || apiClient.status === 'OFFLINE') {
+                renderBackendOfflineState(container, "Unable to connect to backend API server at http://127.0.0.1:8020.", () => this.mounted());
+            } else {
+                renderFeatureErrorState(container, "Settings Error", e.message || "Unable to load settings data.", () => this.mounted());
+            }
         }
     }
 }

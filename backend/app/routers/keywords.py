@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from app.config.database import get_db
 from app.models.project import Project
-from app.config.utils import get_sanitized_domain
+from app.config.utils import get_sanitized_domain, normalize_stored_path
 from app.providers.nlp_keywords import NLPKeywordExtractor
 from app.providers.google_autocomplete import GoogleAutocompleteProvider
 import os
@@ -29,7 +29,8 @@ def get_keywords(project_id: str, limit: int = Query(50), offset: int = Query(0)
         try:
             with open(latest_path, "r") as f:
                 latest = json.load(f)
-            pages_file = os.path.join(latest.get("path"), "pages.json")
+            crawl_dir = normalize_stored_path(latest.get("path"))
+            pages_file = os.path.join(crawl_dir, "pages.json")
             if os.path.exists(pages_file):
                 with open(pages_file, "r") as pf:
                     pages = json.load(pf)

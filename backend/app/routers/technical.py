@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.config.database import get_db
 from app.models.project import Project
-from app.config.utils import get_sanitized_domain
+from app.config.utils import get_sanitized_domain, normalize_stored_path
 import os
 import json
 
@@ -19,7 +19,8 @@ def get_latest_issues_from_storage(domain: str) -> list:
         with open(latest_path, "r") as f:
             latest = json.load(f)
             
-        issues_file = os.path.join(latest.get("path"), "issues.json")
+        crawl_dir = normalize_stored_path(latest.get("path"))
+        issues_file = os.path.join(crawl_dir, "issues.json")
         if os.path.exists(issues_file):
             with open(issues_file, "r") as pf:
                 return json.load(pf)

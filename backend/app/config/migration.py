@@ -2,15 +2,37 @@ import os
 import sqlite3
 from sqlalchemy.engine import Engine
 from app.config.settings import _DB_PATH
+from app.config.database import Base
+
+# Import all models so Base.metadata contains all table definitions
+from app.models import project, dataset, page, keyword, crawl_session, competitor, external_connection
+
+def get_sqlite_type(sql_type) -> str:
+    st = str(sql_type).upper()
+    if 'INT' in st:
+        return 'INTEGER'
+    elif 'FLOAT' in st or 'REAL' in st or 'NUMERIC' in st:
+        return 'REAL'
+    elif 'BOOL' in st:
+        return 'BOOLEAN'
+    elif 'DATE' in st or 'TIME' in st:
+        return 'DATETIME'
+    else:
+        return 'TEXT'
 
 def run_schema_migrations(engine: Engine = None):
     """
     Automatic, idempotent SQLite schema migration engine using raw sqlite3 connection.
-    Guarantees column additions for existing tables directly on disk database file before ORM operations.
-    Preserves 100% of existing rows, primary keys, relationships, and datasets.
+    Dynamically inspects all registered SQLAlchemy models and guarantees missing columns are added directly
+    to the SQLite database file on disk before ORM operations start.
+    Preserves 100% of existing tables, rows, primary keys, and relationships without recreation or data deletion.
     """
     db_file = os.path.abspath(_DB_PATH)
     print(f"[MIGRATION] Checking database schema on '{db_file}'...", flush=True)
+
+    if not os.path.exists(db_file):
+        print(f"[MIGRATION] Database file '{db_file}' does not exist yet. SQLAlchemy create_all will initialize it.", flush=True)
+        return
 
     expected_tables = {
         "projects": {
@@ -69,6 +91,28 @@ def run_schema_migrations(engine: Engine = None):
             "word_count": "INTEGER",
             "h1": "TEXT",
             "indexability": "TEXT"
+        },
+        "competitors": {
+            "id": "TEXT",
+            "project_id": "TEXT",
+            "name": "TEXT",
+            "domain": "TEXT",
+            "url": "TEXT",
+            "location": "TEXT",
+            "geographic_level": "TEXT",
+            "relevance_score": "REAL",
+            "keyword_overlap": "INTEGER",
+            "search_appearances": "INTEGER",
+            "status": "TEXT",
+            "is_primary": "BOOLEAN",
+            "discovery_source": "TEXT",
+            "discovered_keywords": "TEXT",
+            "competing_services": "TEXT",
+            "notes": "TEXT",
+            "first_discovered": "DATETIME",
+            "last_checked": "DATETIME",
+            "created_at": "DATETIME",
+            "updated_at": "DATETIME"
         }
     }
 
@@ -79,9 +123,30 @@ def run_schema_migrations(engine: Engine = None):
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         existing_tables = [row[0] for row in cursor.fetchall()]
 
+        # 1. Check metadata tables from SQLAlchemy models
+        for table_name, table in Base.metadata.tables.items():
+            if table_name not in existing_tables:
+                continue
+
+            cursor.execute(f"PRAGMA table_info('{table_name}');")
+            col_info = cursor.fetchall()
+            existing_col_names = {row[1].lower(): row for row in col_info}
+
+            for column in table.columns:
+                col_name = column.name
+                if col_name.lower() not in existing_col_names:
+                    col_type = get_sqlite_type(column.type)
+                    print(f"[MIGRATION] Adding missing column '{col_name}' ({col_type}) to table '{table_name}'...", flush=True)
+                    try:
+                        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type};")
+                        conn.commit()
+                        print(f"[MIGRATION] SUCCESS: Added '{col_name}' to '{table_name}'.", flush=True)
+                    except Exception as col_err:
+                        print(f"[MIGRATION] ERROR adding '{col_name}' to '{table_name}': {col_err}", flush=True)
+
+        # 2. Check fallback explicit expected_tables dict for double safety
         for table_name, columns in expected_tables.items():
             if table_name not in existing_tables:
-                print(f"[MIGRATION] Table '{table_name}' does not exist yet (create_all will initialize it).", flush=True)
                 continue
 
             cursor.execute(f"PRAGMA table_info('{table_name}');")

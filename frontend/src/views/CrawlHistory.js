@@ -1,6 +1,7 @@
 import { crawlService } from '../services/crawlService.js';
 import { projectStore } from '../core/projectStore.js';
-import { renderBackendOfflineState } from '../components/ErrorState.js';
+import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
+import { apiClient } from '../services/apiClient.js';
 
 export class CrawlHistory {
     constructor() {
@@ -93,7 +94,11 @@ export class CrawlHistory {
                 </div>
             `;
         } catch (e) {
-            renderBackendOfflineState(container, "Unable to load crawl history.");
+            if (e.name === 'TypeError' || e.message.includes('fetch') || apiClient.status === 'OFFLINE') {
+                renderBackendOfflineState(container, "Unable to connect to backend API server at http://127.0.0.1:8020.", () => this.mounted());
+            } else {
+                renderFeatureErrorState(container, "Crawl History Error", e.message || "Unable to load crawl history.", () => this.mounted());
+            }
         }
     }
 }

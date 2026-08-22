@@ -1,6 +1,8 @@
 import os
 import json
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+from sqlalchemy.orm import Session
+from app.llm.llm_provider import LLMProvider, get_llm_provider_for_user, AIProviderException
 
 class BaseLLMProvider:
     def analyze(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -9,12 +11,12 @@ class BaseLLMProvider:
     def chat(self, query: str, context: Dict[str, Any]) -> str:
         raise NotImplementedError
 
+
 class EvidenceReasoningProvider(BaseLLMProvider):
     """
-    High-accuracy, offline-capable evidence reasoning engine.
+    High-accuracy, offline-capable deterministic SEO evidence reasoning engine.
     Parses exact context data to build structured findings with confidence scores
-    and evidence links without hallucinating raw facts.
-    Robust against None, empty lists, malformed page objects, or missing numerical fields.
+    and evidence links without fabricating raw facts.
     """
     def analyze(self, context: Dict[str, Any]) -> List[Dict[str, Any]]:
         if not isinstance(context, dict) or not context.get("has_data"):
@@ -162,5 +164,11 @@ class EvidenceReasoningProvider(BaseLLMProvider):
 
         return f"I have analyzed the **{context.get('pages_count', 0)} pages** and **{context.get('issues_count', 0)} technical findings** from the latest crawl of **{domain}**. You can ask me about critical issues, page titles, internal link structure, or recommended fixes."
 
-def get_llm_provider() -> BaseLLMProvider:
-    return EvidenceReasoningProvider()
+
+def get_llm_provider(user_id: Optional[str] = None, db: Optional[Session] = None) -> Optional[LLMProvider]:
+    """
+    Returns the real configured LLMProvider adapter for the authenticated user, or None if unconfigured.
+    """
+    if user_id and db:
+        return get_llm_provider_for_user(user_id, db)
+    return None

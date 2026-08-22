@@ -2,10 +2,11 @@ import os
 import json
 from typing import Dict, Any, List, Optional
 from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.settings import settings
 
 class LLMContextBuilder:
-    def __init__(self, base_dir: str = "data/websites"):
-        self.base_dir = base_dir
+    def __init__(self, base_dir: Optional[str] = None):
+        self.base_dir = base_dir or settings.CRAWL_DATA_DIR
 
     def get_website_folder(self, domain: str) -> str:
         safe_domain = get_sanitized_domain(domain)

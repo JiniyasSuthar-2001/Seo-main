@@ -309,25 +309,35 @@ export class Dashboard {
                 let aiInsightsHtml = '';
                 try {
                     const aiRes = await aiService.getInsights(selectedProj.id);
-                    if (aiRes.insights && aiRes.insights.length > 0) {
+                    if (aiRes && aiRes.insights && aiRes.insights.length > 0) {
+                        const isRealLLM = aiRes.is_llm_generated === true;
+                        const providerName = (aiRes.provider || 'none').toUpperCase();
+                        const badgeColor = isRealLLM ? 'var(--primary)' : 'var(--text-tertiary)';
+                        const badgeText = isRealLLM ? `LLM Analysis (${providerName})` : 'Deterministic SEO Rules';
+
                         let cards = aiRes.insights.map(ins => `
-                            <div class="card" style="padding: 16px 20px; border-left: 4px solid var(--primary);">
+                            <div class="card" style="padding: 16px 20px; border-left: 4px solid ${isRealLLM ? 'var(--primary)' : '#6c757d'};">
                                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
                                     <span style="font-weight: 600; font-size: 14px;">${ins.finding}</span>
-                                    <span class="badge badge-info" style="font-size: 10px;">
-                                        AI Confidence: ${(ins.confidence * 100).toFixed(0)}%
+                                    <span class="badge badge-info" style="font-size: 10px; background: ${badgeColor}; color: #fff;">
+                                        ${badgeText} • Confidence: ${ins.confidence ? (ins.confidence * 100).toFixed(0) : 95}%
                                     </span>
                                 </div>
-                                <p style="font-size: 13px; color: var(--text-primary); margin-bottom: 8px;">${ins.impact}</p>
+                                <p style="font-size: 13px; color: var(--text-primary); margin-bottom: 8px;">${ins.impact || ''}</p>
                                 <div style="font-size: 12px; color: var(--text-secondary); background: var(--bg-subtle); padding: 8px 12px; border-radius: 6px;">
-                                    <strong>AI Recommendation:</strong> ${ins.recommendation}
+                                    <strong>Recommendation:</strong> ${ins.recommendation || ''}
                                 </div>
                             </div>
                         `).join('');
                         
                         aiInsightsHtml = `
                             <div style="margin-top: 24px;">
-                                <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 12px;">Structured AI SEO Insights</h2>
+                                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                                    <h2 style="font-size: 16px; font-weight: 700; margin: 0;">SEO Intelligence Insights</h2>
+                                    <span style="font-size: 11px; padding: 2px 8px; border-radius: 4px; background: ${isRealLLM ? '#e6f4ea' : '#f1f3f4'}; color: ${isRealLLM ? '#137333' : '#5f6368'}; font-weight: 600;">
+                                        ${isRealLLM ? `Powered by ${providerName} API` : 'AI Not Configured (Offline Engine)'}
+                                    </span>
+                                </div>
                                 <div style="display: flex; flex-direction: column; gap: 12px;">
                                     ${cards}
                                 </div>
@@ -335,6 +345,7 @@ export class Dashboard {
                         `;
                     }
                 } catch (aierr) {}
+
 
                 this.element.innerHTML = `
                     <!-- DASHBOARD HEADER TOOLBAR -->

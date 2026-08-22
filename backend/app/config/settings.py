@@ -53,11 +53,34 @@ class Settings(BaseSettings):
     META_APP_ID: Optional[str] = os.environ.get("META_APP_ID") or os.environ.get("FACEBOOK_CLIENT_ID")
     META_APP_SECRET: Optional[str] = os.environ.get("META_APP_SECRET") or os.environ.get("FACEBOOK_CLIENT_SECRET")
 
+    FRONTEND_BASE_URL: str = os.environ.get(
+        "FRONTEND_BASE_URL", 
+        f"http://{os.environ.get('FRONTEND_HOST', '127.0.0.1')}:{os.environ.get('FRONTEND_PORT', '8030')}"
+    )
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
 settings = Settings()
+
+def build_frontend_redirect(path: str = "/settings", query_params: Optional[dict] = None) -> str:
+    """
+    Constructs an absolute frontend SPA redirect URL targeting FRONTEND_BASE_URL (Port 8030).
+    Safely encodes query parameters while excluding sensitive internal tokens or stack traces.
+    """
+    import urllib.parse
+    base = settings.FRONTEND_BASE_URL.rstrip("/")
+    clean_path = path if path.startswith("/") else f"/{path}"
+    if query_params:
+        clean_params = {}
+        for k, v in query_params.items():
+            if v is not None:
+                clean_params[k] = str(v)
+        query_str = urllib.parse.urlencode(clean_params)
+        return f"{base}{clean_path}?{query_str}"
+    return f"{base}{clean_path}"
+
 
 def validate_startup_config(strict: bool = True):
     """

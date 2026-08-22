@@ -149,19 +149,22 @@ export class Integrations {
             banner.innerHTML = `
                 <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981; padding: 12px 16px; border-radius: 8px; font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
                     <span>✓ Successfully connected your <strong>${(provider || 'external').toUpperCase()}</strong> account.</span>
-                    <button onclick="window.history.replaceState({}, '', '/settings')" style="background: none; border: none; color: inherit; cursor: pointer; font-size: 16px;">&times;</button>
+                    <button onclick="this.parentElement.parentElement.style.display='none'" style="background: none; border: none; color: inherit; cursor: pointer; font-size: 16px;">&times;</button>
                 </div>
             `;
+            window.history.replaceState({}, '', window.location.pathname);
         } else if (status === 'error') {
             banner.style.display = 'block';
             banner.innerHTML = `
                 <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 12px 16px; border-radius: 8px; font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
                     <span>✕ Failed to connect ${(provider || 'external').toUpperCase()}: ${this.escapeHtml(msg || 'Authorization cancelled.')}</span>
-                    <button onclick="window.history.replaceState({}, '', '/settings')" style="background: none; border: none; color: inherit; cursor: pointer; font-size: 16px;">&times;</button>
+                    <button onclick="this.parentElement.parentElement.style.display='none'" style="background: none; border: none; color: inherit; cursor: pointer; font-size: 16px;">&times;</button>
                 </div>
             `;
+            window.history.replaceState({}, '', window.location.pathname);
         }
     }
+
 
     async loadConnections() {
         const container = this.element.querySelector('#integrations-content');

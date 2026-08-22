@@ -9,8 +9,9 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.config.database import get_db
-from app.config.settings import settings
+from app.config.settings import settings, build_frontend_redirect
 from app.models.external_connection import ExternalConnection
+
 
 from app.services.oauth_provider_service import (
     build_authorization_url,
@@ -108,8 +109,13 @@ def handle_oauth_callback(
     """
     if error or not code or not state:
         err_msg = error_description or error or "Authorization request was cancelled or denied."
-        quoted_msg = urllib.parse.quote(err_msg)
-        return RedirectResponse(url=f"/settings?integration=error&provider={provider}&msg={quoted_msg}")
+        target_url = build_frontend_redirect("/settings", {
+            "integration": "error",
+            "provider": provider,
+            "error": "authentication_failed",
+            "msg": err_msg
+        })
+        return RedirectResponse(url=target_url)
 
     try:
         # Validate OAuth state to prevent CSRF and session hijacking
@@ -122,7 +128,6 @@ def handle_oauth_callback(
 
         redirect_base = str(request.base_url).rstrip("/") if request else settings.API_BASE_URL
 
-        
         # Real token exchange with provider
         token_response = exchange_code_for_tokens(provider, code, redirect_base=redirect_base)
         access_token = token_response["access_token"]
@@ -179,14 +184,30 @@ def handle_oauth_callback(
             db.add(new_conn)
             db.commit()
 
-        return RedirectResponse(url=f"/settings?integration=success&provider={provider}")
+        success_url = build_frontend_redirect("/settings", {
+            "integration": "success",
+            "provider": provider
+        })
+        return RedirectResponse(url=success_url)
 
     except ValueError as val_err:
-        err_msg = urllib.parse.quote(str(val_err))
-        return RedirectResponse(url=f"/settings?integration=error&provider={provider}&msg={err_msg}")
+        err_url = build_frontend_redirect("/settings", {
+            "integration": "error",
+            "provider": provider,
+            "error": "validation_error",
+            "msg": str(val_err)
+        })
+        return RedirectResponse(url=err_url)
     except Exception as exc:
-        err_msg = urllib.parse.quote(f"Authentication error: {exc}")
-        return RedirectResponse(url=f"/settings?integration=error&provider={provider}&msg={err_msg}")
+        print(f"[OAUTH CALLBACK EXCEPTION] Provider '{provider}' callback error: {exc}", flush=True)
+        err_url = build_frontend_redirect("/settings", {
+            "integration": "error",
+            "provider": provider,
+            "error": "authentication_failed",
+            "msg": "OAuth authentication failed."
+        })
+        return RedirectResponse(url=err_url)
+
 
 
 @router.post("/{provider}/key")

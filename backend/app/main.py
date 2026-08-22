@@ -5,7 +5,8 @@ from app.config.database import engine, Base
 from app.config.migration import run_schema_migrations
 
 # Import all models to ensure they are registered with Base
-from app.models import project, dataset, page, keyword, crawl_session, competitor, external_connection
+from app.models import project, dataset, page, keyword, keyword_group, crawl_session, competitor, external_connection
+
 
 # Run idempotent column migrations & create missing database tables
 run_schema_migrations(engine)

@@ -5,7 +5,7 @@ from app.config.settings import _DB_PATH
 from app.config.database import Base
 
 # Import all models so Base.metadata contains all table definitions
-from app.models import project, dataset, page, keyword, crawl_session, competitor, external_connection
+from app.models import project, dataset, page, keyword, keyword_group, crawl_session, competitor, external_connection
 
 def get_sqlite_type(sql_type) -> str:
     st = str(sql_type).upper()
@@ -23,16 +23,22 @@ def get_sqlite_type(sql_type) -> str:
 def run_schema_migrations(engine: Engine = None):
     """
     Automatic, idempotent SQLite schema migration engine using raw sqlite3 connection.
-    Dynamically inspects all registered SQLAlchemy models and guarantees missing columns are added directly
-    to the SQLite database file on disk before ORM operations start.
-    Preserves 100% of existing tables, rows, primary keys, and relationships without recreation or data deletion.
+    Dynamically inspects all registered SQLAlchemy models and guarantees missing columns/tables are added directly
+    to all SQLite database files on disk before ORM operations start.
     """
-    db_file = os.path.abspath(_DB_PATH)
-    print(f"[MIGRATION] Checking database schema on '{db_file}'...", flush=True)
+    db_candidates = [
+        os.path.abspath(_DB_PATH),
+        os.path.abspath("backend/seo.db"),
+        os.path.abspath("seo.db")
+    ]
+    db_files = list(set([f for f in db_candidates if os.path.exists(f)]))
 
-    if not os.path.exists(db_file):
-        print(f"[MIGRATION] Database file '{db_file}' does not exist yet. SQLAlchemy create_all will initialize it.", flush=True)
-        return
+    for db_file in db_files:
+        print(f"[MIGRATION] Checking database schema on '{db_file}'...", flush=True)
+        _migrate_single_file(db_file)
+
+def _migrate_single_file(db_file: str):
+
 
     expected_tables = {
         "projects": {
@@ -42,6 +48,11 @@ def run_schema_migrations(engine: Engine = None):
             "description": "TEXT",
             "industry": "TEXT",
             "notes": "TEXT",
+            "target_type": "TEXT",
+            "search_engine": "TEXT",
+            "target_country": "TEXT",
+            "target_language": "TEXT",
+            "target_device": "TEXT",
             "created_at": "DATETIME",
             "updated_at": "DATETIME"
         },
@@ -70,6 +81,7 @@ def run_schema_migrations(engine: Engine = None):
             "id": "TEXT",
             "project_id": "TEXT",
             "dataset_id": "TEXT",
+            "group_id": "TEXT",
             "keyword": "TEXT",
             "target_url": "TEXT",
             "search_volume": "INTEGER",
@@ -77,7 +89,17 @@ def run_schema_migrations(engine: Engine = None):
             "intent": "TEXT",
             "position": "INTEGER",
             "country": "TEXT",
-            "device": "TEXT"
+            "device": "TEXT",
+            "cpc": "REAL",
+            "serp_features": "TEXT",
+            "source": "TEXT"
+        },
+        "keyword_groups": {
+            "id": "TEXT",
+            "project_id": "TEXT",
+            "name": "TEXT",
+            "description": "TEXT",
+            "created_at": "DATETIME"
         },
         "pages": {
             "id": "TEXT",
@@ -123,37 +145,27 @@ def run_schema_migrations(engine: Engine = None):
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         existing_tables = [row[0] for row in cursor.fetchall()]
 
-        # 1. Check metadata tables from SQLAlchemy models
-        for table_name, table in Base.metadata.tables.items():
+        # 1. Create missing tables if needed
+        for table_name, cols in expected_tables.items():
             if table_name not in existing_tables:
-                continue
+                print(f"[MIGRATION] Creating table '{table_name}'...", flush=True)
+                col_defs = []
+                for cname, ctype in cols.items():
+                    col_str = f"{cname} {ctype}"
+                    if cname == "id":
+                        col_str += " PRIMARY KEY"
+                    col_defs.append(col_str)
+                cursor.execute(f"CREATE TABLE IF NOT EXISTS {table_name} ({', '.join(col_defs)});")
+                conn.commit()
+                existing_tables.append(table_name)
 
+        # 2. Check each table for missing columns
+        for table_name, cols in expected_tables.items():
             cursor.execute(f"PRAGMA table_info('{table_name}');")
             col_info = cursor.fetchall()
             existing_col_names = {row[1].lower(): row for row in col_info}
 
-            for column in table.columns:
-                col_name = column.name
-                if col_name.lower() not in existing_col_names:
-                    col_type = get_sqlite_type(column.type)
-                    print(f"[MIGRATION] Adding missing column '{col_name}' ({col_type}) to table '{table_name}'...", flush=True)
-                    try:
-                        cursor.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type};")
-                        conn.commit()
-                        print(f"[MIGRATION] SUCCESS: Added '{col_name}' to '{table_name}'.", flush=True)
-                    except Exception as col_err:
-                        print(f"[MIGRATION] ERROR adding '{col_name}' to '{table_name}': {col_err}", flush=True)
-
-        # 2. Check fallback explicit expected_tables dict for double safety
-        for table_name, columns in expected_tables.items():
-            if table_name not in existing_tables:
-                continue
-
-            cursor.execute(f"PRAGMA table_info('{table_name}');")
-            col_info = cursor.fetchall()
-            existing_col_names = {row[1].lower(): row for row in col_info}
-
-            for col_name, col_type in columns.items():
+            for col_name, col_type in cols.items():
                 if col_name.lower() not in existing_col_names:
                     print(f"[MIGRATION] Adding missing column '{col_name}' ({col_type}) to table '{table_name}'...", flush=True)
                     try:

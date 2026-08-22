@@ -8,7 +8,8 @@ class Keyword(Base):
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
     project_id = Column(String, ForeignKey("projects.id"))
-    dataset_id = Column(String, ForeignKey("datasets.id"))
+    dataset_id = Column(String, ForeignKey("datasets.id"), nullable=True)
+    group_id = Column(String, ForeignKey("keyword_groups.id"), nullable=True)
     
     keyword = Column(String, index=True)
     target_url = Column(String, nullable=True)
@@ -18,6 +19,10 @@ class Keyword(Base):
     position = Column(Integer, nullable=True)
     country = Column(String, nullable=True)
     device = Column(String, nullable=True)
+    cpc = Column(Float, nullable=True)
+    serp_features = Column(String, nullable=True)  # JSON string e.g. ["Featured Snippet", "PAA"]
+    source = Column(String, nullable=True, default="Crawler")  # Crawler, Search Console, CSV Import, Manual, Autocomplete
     
     project = relationship("Project", back_populates="keywords")
     dataset = relationship("Dataset")
+    group = relationship("KeywordGroup", back_populates="keywords")

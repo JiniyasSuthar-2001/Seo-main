@@ -15,17 +15,45 @@ STATIC_ASSET_EXTENSIONS = (
 )
 
 class SEOCrawler:
-    def __init__(self, start_url: str, max_pages: int = 1000, request_timeout: float = 20.0):
+    def __init__(
+        self, 
+        start_url: str, 
+        max_pages: int = 5000, 
+        request_timeout: float = 20.0,
+        scope_type: str = "entire_domain",
+        max_depth: int = 0,
+        respect_robots_txt: bool = True,
+        crawl_delay_ms: int = 500,
+        user_agent: str = "SEO-Intelligence-Bot/1.0 (Mozilla/5.0 Compatible)",
+        include_patterns: Optional[List[str]] = None,
+        exclude_patterns: Optional[List[str]] = None,
+        ignore_utm_params: bool = True,
+        follow_redirects: bool = True
+    ):
         if not start_url or not start_url.startswith(("http://", "https://")):
             raise ValueError("Crawler requires a valid HTTP or HTTPS start URL.")
 
+        self.raw_start_url = start_url
+        self.ignore_utm_params = ignore_utm_params
         self.start_url = self.normalize_url(start_url, start_url)
         self.max_pages = max_pages
         self.request_timeout = request_timeout
-        
+        self.scope_type = scope_type
+        self.max_depth = max_depth
+        self.respect_robots_txt = respect_robots_txt
+        self.crawl_delay_ms = crawl_delay_ms
+        self.user_agent = user_agent
+        self.include_patterns = include_patterns or []
+        self.exclude_patterns = exclude_patterns or []
+        self.follow_redirects = follow_redirects
+
         parsed_url = urlparse(self.start_url)
         self.domain = parsed_url.netloc.lower()
         self.scheme = parsed_url.scheme
+        self.start_path = parsed_url.path or "/"
+        
+        # Track depth per URL
+        self.url_depths: Dict[str, int] = {self.start_url: 0}
         
         # Queue state tracking: PENDING, CRAWLING, CRAWLED, FAILED, BLOCKED, SKIPPED
         self.queue_status: Dict[str, str] = {self.start_url: "PENDING"}
@@ -44,7 +72,7 @@ class SEOCrawler:
         
         self.is_running = False
         self.seed_status_code = None
-        self.user_agent = "SEO-Intelligence-Platform/1.0 (Mozilla/5.0 Compatible)"
+
 
     def is_same_domain(self, url: str) -> bool:
         parsed = urlparse(url)
@@ -67,8 +95,17 @@ class SEOCrawler:
             path = "/"
         elif path != "/" and path.endswith("/"):
             path = path.rstrip("/")
-            
-        return f"{parsed.scheme}://{parsed.netloc}{path}".lower()
+
+        query_str = ""
+        if parsed.query:
+            if self.ignore_utm_params:
+                q_params = [q for q in parsed.query.split("&") if q and not q.startswith(("utm_", "fbclid=", "gclid=", "mc_cid=", "mc_eid="))]
+                if q_params:
+                    query_str = "?" + "&".join(q_params)
+            else:
+                query_str = "?" + parsed.query
+
+        return f"{parsed.scheme}://{parsed.netloc}{path}{query_str}".lower()
 
     async def fetch_robots_txt(self, client: httpx.AsyncClient):
         robots_url = f"{self.scheme}://{self.domain}/robots.txt"
@@ -102,8 +139,9 @@ class SEOCrawler:
                     discovered_count = 0
                     for loc in locs:
                         norm = self.normalize_url(loc, sm_url)
-                        if self.is_same_domain(norm) and not self.is_static_asset(norm) and norm not in self.queue_status:
+                        if self.is_same_domain(norm) and not self.is_static_asset(norm) and self.is_url_allowed_by_scope_and_rules(norm, 1) and norm not in self.queue_status:
                             self.queue_status[norm] = "PENDING"
+                            self.url_depths[norm] = 1
                             self.to_visit.append(norm)
                             discovered_count += 1
                     print(f"[SITEMAP] Discovered {discovered_count} HTML URLs from {sm_url}", flush=True)
@@ -111,12 +149,46 @@ class SEOCrawler:
                 print(f"[SITEMAP] Failed to parse sitemap {sm_url}: {e}", flush=True)
 
     def is_disallowed(self, url: str) -> bool:
+        if not self.respect_robots_txt:
+            return False
         parsed = urlparse(url)
         path = parsed.path
         for dis in self.disallowed_paths:
             if dis == "/" or path.startswith(dis):
                 return True
         return False
+
+    def is_url_allowed_by_scope_and_rules(self, url: str, current_depth: int = 0) -> bool:
+        if self.max_depth > 0 and current_depth > self.max_depth:
+            return False
+
+        parsed = urlparse(url)
+        path = parsed.path.lower()
+
+        if self.scope_type == "specific_path":
+            if not path.startswith(self.start_path.lower()):
+                return False
+        elif self.scope_type == "subdomain":
+            if parsed.netloc.lower() != self.domain:
+                return False
+
+        for pattern in self.exclude_patterns:
+            clean_pat = pattern.strip().lower()
+            if clean_pat and (clean_pat in path or clean_pat in url):
+                return False
+
+        if self.include_patterns:
+            matched = False
+            for pattern in self.include_patterns:
+                clean_pat = pattern.strip().lower()
+                if clean_pat and (clean_pat in path or clean_pat in url):
+                    matched = True
+                    break
+            if not matched:
+                return False
+
+        return True
+
 
     def evaluate_page_issues(self, page_data: Dict[str, Any]):
         url = page_data["url"]
@@ -354,9 +426,17 @@ class SEOCrawler:
                         "target": normalized,
                         "anchor_text": anchor_text
                     })
-                    if normalized not in self.visited and normalized not in self.to_visit and len(self.visited) + len(self.to_visit) < self.max_pages:
+                    curr_depth = self.url_depths.get(url, 0) + 1
+                    if (
+                        normalized not in self.visited 
+                        and normalized not in self.to_visit 
+                        and len(self.visited) + len(self.to_visit) < self.max_pages
+                        and self.is_url_allowed_by_scope_and_rules(normalized, curr_depth)
+                    ):
                         self.queue_status[normalized] = "PENDING"
+                        self.url_depths[normalized] = curr_depth
                         self.to_visit.append(normalized)
+
                 else:
                     self.external_links.append({
                         "source": url,

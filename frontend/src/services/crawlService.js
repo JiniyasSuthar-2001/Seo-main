@@ -2,11 +2,13 @@ import { apiClient } from './apiClient.js';
 import { resolveProjectId } from '../utils/projectResolver.js';
 
 export const crawlService = {
-    async startCrawl(projectId, url) {
+    async startCrawl(projectId, url, config = {}) {
         const id = resolveProjectId(projectId);
         if (!id) throw new Error("No active project selected for crawling.");
-        return await apiClient.post(`/api/projects/${id}/crawl`, { url: url });
+        const payload = { url: url, ...config };
+        return await apiClient.post(`/api/projects/${id}/crawl`, payload);
     },
+
     
     async getCrawlStatus(projectId, sessionId) {
         const id = resolveProjectId(projectId);

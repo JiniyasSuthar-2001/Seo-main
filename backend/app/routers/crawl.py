@@ -13,18 +13,45 @@ import os
 
 router = APIRouter()
 
+from typing import Optional, List, Dict, Any
+
 class CrawlRequest(BaseModel):
     url: Optional[str] = None
+    scope_type: Optional[str] = "entire_domain"
+    max_pages: Optional[int] = 5000
+    max_depth: Optional[int] = 0
+    respect_robots_txt: Optional[bool] = True
+    crawl_delay_ms: Optional[int] = 500
+    request_timeout: Optional[float] = 20.0
+    user_agent: Optional[str] = "SEO-Intelligence-Bot/1.0 (Mozilla/5.0 Compatible)"
+    include_patterns: Optional[List[str]] = []
+    exclude_patterns: Optional[List[str]] = []
+    ignore_utm_params: Optional[bool] = True
+    follow_redirects: Optional[bool] = True
 
-async def run_crawl_task(session_id: str, start_url: str):
+async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict[str, Any]] = None):
     db = SessionLocal()
+    opts = options or {}
     try:
         crawl_session = db.query(CrawlSession).filter(CrawlSession.id == session_id).first()
         if not crawl_session:
             return
             
-        print(f"[CRAWL] Starting crawl task for session {session_id} on {start_url}", flush=True)
-        crawler = SEOCrawler(start_url=start_url, max_pages=1000)
+        print(f"[CRAWL] Starting crawl task for session {session_id} on {start_url} with config: {opts}", flush=True)
+        crawler = SEOCrawler(
+            start_url=start_url,
+            max_pages=opts.get("max_pages", 5000),
+            request_timeout=float(opts.get("request_timeout", 20.0)),
+            scope_type=opts.get("scope_type", "entire_domain"),
+            max_depth=opts.get("max_depth", 0),
+            respect_robots_txt=opts.get("respect_robots_txt", True),
+            crawl_delay_ms=opts.get("crawl_delay_ms", 500),
+            user_agent=opts.get("user_agent", "SEO-Intelligence-Bot/1.0 (Mozilla/5.0 Compatible)"),
+            include_patterns=opts.get("include_patterns", []),
+            exclude_patterns=opts.get("exclude_patterns", []),
+            ignore_utm_params=opts.get("ignore_utm_params", True),
+            follow_redirects=opts.get("follow_redirects", True)
+        )
         results = await crawler.start()
         
         # Save & verify snapshot
@@ -67,7 +94,8 @@ async def start_crawl(project_id: str, request: CrawlRequest, background_tasks: 
             detail="A valid HTTP/HTTPS website URL is required to start crawling."
         )
 
-    print(f"[CRAWL REQUEST] Project ID: {project_id}, Target URL: {target_url}", flush=True)
+    options_dict = request.dict()
+    print(f"[CRAWL REQUEST] Project ID: {project_id}, Target URL: {target_url}, Options: {options_dict}", flush=True)
 
     # Create session
     new_session = CrawlSession(
@@ -81,9 +109,10 @@ async def start_crawl(project_id: str, request: CrawlRequest, background_tasks: 
     db.commit()
     db.refresh(new_session)
 
-    # Add background crawl task
-    background_tasks.add_task(run_crawl_task, new_session.id, target_url)
+    # Add background crawl task with options
+    background_tasks.add_task(run_crawl_task, new_session.id, target_url, options_dict)
     return {"message": "Crawl started", "session_id": new_session.id, "target_url": target_url}
+
 
 @router.get("/{project_id}/crawl/{session_id}")
 async def get_crawl_status(project_id: str, session_id: str, db: Session = Depends(get_db)):

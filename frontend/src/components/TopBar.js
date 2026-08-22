@@ -1,5 +1,19 @@
 import { projectStore } from '../core/projectStore.js';
 import { apiClient } from '../services/apiClient.js';
+import { crawlConfigModal } from './CrawlConfigModal.js';
+
+window.startCrawl = () => {
+    const selectedProj = projectStore.getSelectedProject();
+    if (selectedProj) {
+        crawlConfigModal.open(selectedProj.id, selectedProj.domain || selectedProj.url);
+    } else if (projectStore.projects && projectStore.projects.length > 0) {
+        const p = projectStore.projects[0];
+        crawlConfigModal.open(p.id, p.domain || p.url);
+    } else {
+        window.showCreateProjectModal();
+    }
+};
+
 
 window.showCreateProjectModal = () => {
   let modal = document.getElementById('create-project-modal');

@@ -4,9 +4,9 @@ import { projectStore } from '../core/projectStore.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
 import { apiClient } from '../services/apiClient.js';
 import { API_BASE_URL } from '../config/api.js';
-import { crawlProgressOverlay } from '../components/CrawlProgressOverlay.js';
+import { crawlConfigModal } from '../components/CrawlConfigModal.js';
 
-window.startCrawlFromOverview = async (explicitProjectId, explicitUrl) => {
+window.startCrawlFromOverview = (explicitProjectId, explicitUrl) => {
     let targetId = explicitProjectId || projectStore.getSelectedProjectId();
     let selectedProj = projectStore.getSelectedProject();
 
@@ -22,17 +22,19 @@ window.startCrawlFromOverview = async (explicitProjectId, explicitUrl) => {
     const url = explicitUrl || (selectedProj ? selectedProj.domain || selectedProj.url : null);
     
     if (!url) {
-        alert("Please enter a valid website URL to crawl.");
+        if (projectStore.projects && projectStore.projects.length > 0) {
+            targetId = projectStore.projects[0].id;
+            const pUrl = projectStore.projects[0].domain || projectStore.projects[0].url;
+            crawlConfigModal.open(targetId, pUrl);
+        } else {
+            window.showCreateProjectModal();
+        }
         return;
     }
 
-    try {
-        const data = await crawlService.startCrawl(targetId, url);
-        crawlProgressOverlay.start(targetId, data.session_id, url);
-    } catch(e) {
-        alert(`Backend API error starting crawl: ${e.message || 'Unable to start crawl.'}`);
-    }
+    crawlConfigModal.open(targetId, url);
 };
+
 
 window.navigateToAudit = (projectId) => {
     if (projectId) {

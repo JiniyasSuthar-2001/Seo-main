@@ -38,36 +38,29 @@ def normalize_domain(url_or_domain: str) -> str:
         return val.strip()
 
 
-def extract_location_info(project: Project) -> Dict[str, str]:
+from app.services.location_resolver import resolve_location, LocationConfidence
+
+
+def extract_location_info(project: Project) -> Dict[str, Any]:
     """
-    Extracts location details (city, state, country) from project metadata.
+    Extracts location details from project metadata using data-driven evidence resolution.
+    Never defaults country-code TLDs (.au, .uk, etc.) to arbitrary cities like Brisbane.
     """
-    text = f"{project.name or ''} {project.description or ''} {project.notes or ''} {project.url or ''}".lower()
-    
-    loc_info = {
-        "city": "Unknown",
-        "state": "Unknown",
-        "country": "Global"
+    resolved = resolve_location(
+        project_url=getattr(project, "url", None) or getattr(project, "domain", None),
+        target_country=getattr(project, "target_country", None),
+        notes=getattr(project, "notes", None),
+        description=getattr(project, "description", None)
+    )
+
+    return {
+        "city": resolved["city"] or "Unknown",
+        "state": resolved["region"] or "Unknown",
+        "country": resolved["country"] or "Global",
+        "confidence": resolved["confidence"],
+        "sources": resolved["sources"]
     }
-    
-    if "sydney" in text or "nsw" in text:
-        loc_info["city"] = "Sydney"
-        loc_info["state"] = "New South Wales"
-        loc_info["country"] = "Australia"
-    elif "melbourne" in text or "vic" in text:
-        loc_info["city"] = "Melbourne"
-        loc_info["state"] = "Victoria"
-        loc_info["country"] = "Australia"
-    elif "perth" in text or "wa" in text:
-        loc_info["city"] = "Perth"
-        loc_info["state"] = "Western Australia"
-        loc_info["country"] = "Australia"
-    elif "brisbane" in text or "qld" in text or "queensland" in text or ".au" in text:
-        loc_info["city"] = "Brisbane"
-        loc_info["state"] = "Queensland"
-        loc_info["country"] = "Australia"
-        
-    return loc_info
+
 
 
 def discover_competitors_for_project(project: Project, db: Session) -> List[Competitor]:

@@ -18,19 +18,14 @@ def import_data(project_id: str, request: ImportRequest, db: Session = Depends(g
     if request.data_type == "keywords":
         importer = KeywordImporter(db=db, project_id=project_id, filename=request.filename, source=request.source)
     else:
-        # Stub for other importers
         raise HTTPException(status_code=400, detail=f"Importer for {request.data_type} not implemented yet.")
         
     dataset = importer.start_import(request.data_type)
     success, errors = importer.process_records(request.records)
     dataset = importer.finish_import()
     
-    return {
-        "dataset_id": dataset.id,
-        "status": dataset.status,
-        "successful_records": success,
-        "error_records": errors
-    }
+    report = importer.get_structured_import_report()
+    return report
 
 @router.get("/")
 def get_imports(project_id: str, db: Session = Depends(get_db)):

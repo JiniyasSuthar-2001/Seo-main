@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "SEO Intelligence Platform"
     DATABASE_URL: str = f"sqlite:///{_DB_PATH.replace(os.sep, '/')}"
     CRAWL_DATA_DIR: str = os.path.join(_BACKEND_DIR, "data", "websites")
+    AUTOCOMPLETE_ENDPOINT_URL: str = os.environ.get("AUTOCOMPLETE_ENDPOINT_URL", "https://suggestqueries.google.com/complete/search")
+
 
     
     # Server & Host Settings

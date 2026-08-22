@@ -1,13 +1,20 @@
 import { apiClient } from './apiClient.js';
+import { resolveProjectId } from '../utils/projectResolver.js';
 
 export const keywordsService = {
     async getKeywords(projectId, limit = 50, offset = 0) {
-        return await apiClient.get(`/api/projects/${projectId}/keywords?limit=${limit}&offset=${offset}`);
+        const id = resolveProjectId(projectId);
+        if (!id) return [];
+        return await apiClient.get(`/api/projects/${id}/keywords?limit=${limit}&offset=${offset}`);
     },
     async getKeyword(projectId, keywordId) {
-        return await apiClient.get(`/api/projects/${projectId}/keywords/${keywordId}`);
+        const id = resolveProjectId(projectId);
+        if (!id) return null;
+        return await apiClient.get(`/api/projects/${id}/keywords/${keywordId}`);
     },
     async getKeywordPageAnalysis(projectId) {
-        return await apiClient.get(`/api/projects/${projectId}/keyword-page-analysis`);
+        const id = resolveProjectId(projectId);
+        if (!id) return [];
+        return await apiClient.get(`/api/projects/${id}/keyword-page-analysis`);
     }
 };

@@ -1,5 +1,6 @@
 import { projectStore } from '../core/projectStore.js';
 import { apiClient } from '../services/apiClient.js';
+import { resolveProjectId } from '../utils/projectResolver.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
 
 export class Rankings {
@@ -88,7 +89,7 @@ export class Rankings {
         const container = document.getElementById('rankings-tab-content');
         if (!container) return;
 
-        const projectId = projectStore.getSelectedProjectId();
+        const projectId = resolveProjectId();
         const selectedProj = projectStore.getSelectedProject();
 
         if (!projectId || !selectedProj) {

@@ -150,13 +150,17 @@ def generate_csv_report_package(project_name: str, domain: str, pages: List[Dict
         # keywords.csv
         kw_csv = "Keyword,Position,Target URL,Search Volume,Difficulty,Source\n"
         for k in keywords:
-            kw = f'"{k.get("keyword", "")}"'
-            pos = k.get("position", "Unranked")
-            t_url = f'"{k.get("target_url", "") or ""}"'
-            vol = k.get("search_volume", "Unavailable")
-            diff = k.get("difficulty", "Unavailable")
-            src = k.get("source", "Crawler")
+            if isinstance(k, str):
+                kw, pos, t_url, vol, diff, src = f'"{k}"', "Unranked", '""', "Unavailable", "Unavailable", "Crawler"
+            else:
+                kw = f'"{k.get("keyword", "")}"'
+                pos = k.get("position", "Unranked")
+                t_url = f'"{k.get("target_url", "") or ""}"'
+                vol = k.get("search_volume", "Unavailable")
+                diff = k.get("difficulty", "Unavailable")
+                src = k.get("source", "Crawler")
             kw_csv += f"{kw},{pos},{t_url},{vol},{diff},{src}\n"
+
         zf.writestr(f"{project_name}_keywords.csv", kw_csv)
 
     zip_buffer.seek(0)

@@ -1,9 +1,9 @@
 import { apiClient } from './apiClient.js';
-import { projectStore } from '../core/projectStore.js';
+import { resolveProjectId } from '../utils/projectResolver.js';
 
 export const dashboardService = {
     async getSummary(projectId) {
-        const id = projectId || projectStore.getSelectedProjectId();
+        const id = resolveProjectId(projectId);
         if (!id) return { status: 'empty', message: 'No project selected.' };
         return await apiClient.get(`/api/projects/${id}/summary`);
     }

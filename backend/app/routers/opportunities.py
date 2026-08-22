@@ -73,8 +73,10 @@ def get_project_opportunities(
         if o.affected_urls_json:
             try:
                 urls = json.loads(o.affected_urls_json)
-            except Exception:
-                urls = []
+            except Exception as e:
+                from app.config.logger import get_logger
+                get_logger("opportunities").warning(f"Error parsing affected URLs for opportunity {o.id}: {e}")
+
         result.append({
             "id": o.id,
             "project_id": o.project_id,

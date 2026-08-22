@@ -90,4 +90,6 @@ def validate_startup_config(strict: bool = True):
         if strict:
             raise RuntimeError(msg)
 
+    print(f"[DATABASE] Active DB path: '{_DB_PATH}'", flush=True)
     print("[STARTUP CONFIG] Configuration validation passed cleanly.", flush=True)
+

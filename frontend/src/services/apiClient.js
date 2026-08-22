@@ -42,7 +42,14 @@ class ApiClient {
     }
 
     async request(endpoint, options = {}) {
+        if (endpoint.includes('/projects/undefined') || endpoint.includes('/projects/null')) {
+            const err = new Error("Invalid API Request: Project ID is unresolvable (undefined or null).");
+            err.status = 400;
+            err.isNetworkError = false;
+            throw err;
+        }
         const url = `${API_BASE_URL}${endpoint}`;
+
         
         const defaultHeaders = {
             'Content-Type': 'application/json',

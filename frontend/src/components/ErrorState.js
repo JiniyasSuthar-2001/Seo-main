@@ -1,8 +1,10 @@
 import { API_BASE_URL } from '../config/api.js';
 import { apiClient } from '../services/apiClient.js';
 
-export function renderBackendOfflineState(container, message = "Unable to load data from backend server.", onRetry = null) {
+export function renderBackendOfflineState(container, message = null, onRetry = null) {
     if (!container) return;
+    const finalMessage = message || `Unable to connect to backend API server at ${API_BASE_URL}.`;
+
 
     container.innerHTML = `
         <div class="card" style="padding: 36px 24px; text-align: center; max-width: 520px; margin: 32px auto; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color, #334155);">
@@ -11,7 +13,8 @@ export function renderBackendOfflineState(container, message = "Unable to load d
             </div>
             <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px;">Backend Connection Unavailable</h3>
             <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 20px; line-height: 1.5;">
-                ${escapeHtml(message)}<br/>
+                ${escapeHtml(finalMessage)}<br/>
+
                 <span style="font-size: 12px; color: var(--text-tertiary);">API Endpoint: <code>${API_BASE_URL}</code> | Status: <strong id="offline-status-pill" style="color: #ef4444;">Offline</strong></span>
             </p>
             <div id="retry-feedback" style="display: none; margin-bottom: 16px; padding: 10px; border-radius: 6px; font-size: 13px;"></div>

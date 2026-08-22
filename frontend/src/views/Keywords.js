@@ -1,6 +1,8 @@
 import { projectStore } from '../core/projectStore.js';
 import { apiClient } from '../services/apiClient.js';
+import { resolveProjectId } from '../utils/projectResolver.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
+
 
 export class Keywords {
     constructor() {
@@ -98,7 +100,7 @@ export class Keywords {
     }
 
     async handleAutoCluster() {
-        const projectId = projectStore.getSelectedProjectId();
+        const projectId = resolveProjectId();
         if (!projectId) return;
         try {
             const res = await apiClient.post(`/api/projects/${projectId}/keywords/groups/auto-cluster`, {});
@@ -113,8 +115,9 @@ export class Keywords {
         const container = document.getElementById('kw-tab-content');
         if (!container) return;
 
-        const projectId = projectStore.getSelectedProjectId();
+        const projectId = resolveProjectId();
         const selectedProj = projectStore.getSelectedProject();
+
 
         if (!projectId || !selectedProj) {
             container.innerHTML = `<div class="card" style="padding: 32px; text-align: center;">Please select an SEO project workspace.</div>`;

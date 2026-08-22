@@ -266,8 +266,10 @@ def generate_custom_report_builder(
             issues_file = os.path.join(crawl_dir, "issues.json")
             if os.path.exists(issues_file):
                 issues = json.load(open(issues_file))
-        except Exception:
-            pass
+        except Exception as e:
+            from app.config.logger import get_logger
+            get_logger("reports").warning(f"Failed to load crawl snapshot for report builder: {e}")
+
 
     from app.services.audit_rules import evaluate_site_audit_rules
     from app.services.report_builder_service import generate_custom_pdf_report, generate_csv_report_package

@@ -139,7 +139,8 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
         categories["Content"]["passed"] += total_pages
 
     # 6. Headings (Missing H1)
-    missing_h1 = [p for p in pages if not p.get("h1") or p.get("h1", "").strip() == ""]
+    missing_h1 = [p for p in pages if not (p.get("h1") if isinstance(p.get("h1"), list) else str(p.get("h1") or "").strip())]
+
     if missing_h1:
         issues.append({
             "rule_id": "HEAD_001",

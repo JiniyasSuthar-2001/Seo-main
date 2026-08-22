@@ -118,8 +118,10 @@ def get_internal_link_opportunities(project_id: str, db: Session = Depends(get_d
             if os.path.exists(links_file):
                 with open(links_file, "r") as lf:
                     internal_links = json.load(lf)
-        except Exception:
-            pass
+        except Exception as e:
+            from app.config.logger import get_logger
+            get_logger("internal_links").warning(f"Failed to load crawl files for project {project.id}: {e}")
+
 
     incoming_map = defaultdict(int)
     for link in internal_links:

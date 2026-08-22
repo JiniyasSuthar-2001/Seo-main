@@ -44,8 +44,10 @@ def get_backlinks(project_id: str, limit: int = Query(50), offset: int = Query(0
             if os.path.exists(ext_file):
                 with open(ext_file, "r") as ef:
                     ext_links = json.load(ef)
-        except Exception:
-            pass
+        except Exception as e:
+            from app.config.logger import get_logger
+            get_logger("backlinks").warning(f"Failed to load external links for project {project.id}: {e}")
+
 
     ref_domains = set()
     for b in backlinks_data:

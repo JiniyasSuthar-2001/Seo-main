@@ -90,9 +90,10 @@ class OAuthProviderConfig:
         callback_url = f"{base_url}/api/integrations/{p}/callback"
 
         
-        if p == "google":
+        if p in ("google", "gemini"):
             client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
             client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+            google_callback_url = f"{base_url}/api/integrations/google/callback"
             return {
                 "auth_url": "https://accounts.google.com/o/oauth2/v2/auth",
                 "token_url": "https://oauth2.googleapis.com/token",
@@ -100,9 +101,10 @@ class OAuthProviderConfig:
                 "revoke_url": "https://oauth2.googleapis.com/revoke",
                 "client_id": client_id,
                 "client_secret": client_secret,
-                "scopes": "https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/business.manage",
-                "redirect_uri": callback_url
+                "scopes": "https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/business.manage https://www.googleapis.com/auth/generativelanguage",
+                "redirect_uri": google_callback_url
             }
+
 
         elif p in ("meta", "facebook", "instagram"):
             client_id = os.environ.get("META_APP_ID") or os.environ.get("FACEBOOK_CLIENT_ID", "")

@@ -36,13 +36,14 @@ export class Integrations {
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
                     </div>
                     <div style="flex: 1; min-width: 240px;">
-                        <div style="font-size: 14px; font-weight: 600; color: var(--text-primary);">User-Owned Credentials Guarantee</div>
+                        <div style="font-size: 14px; font-weight: 600; color: var(--text-primary);">User-Owned Credentials & AI Independence</div>
                         <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
-                            Every connection belongs strictly to your authenticated application user account. Credentials are encrypted at rest using AES-256. Third-party passwords are NEVER requested.
+                            ✨ <strong>AI Integration is 100% Optional.</strong> All core SEO crawling, technical audits, link graphs, keyword tracking, and ranking analytics operate fully without connecting an AI account. Credentials are encrypted at rest using Fernet AES-256.
                         </div>
                     </div>
                 </div>
             </div>
+
 
             <!-- URL STATUS ALERT BANNER -->
             <div id="url-status-banner" style="display: none; margin-bottom: 24px;"></div>
@@ -216,31 +217,26 @@ export class Integrations {
                 name: 'OpenAI',
                 category: 'AI & Automation',
                 desc: 'GPT-4o, GPT-3.5-Turbo & Text Embeddings for AI audit reasoning.',
-                type: 'key',
-                badge: 'User API Key',
-                placeholder: 'sk-proj-...',
-                keyPrefix: 'sk-'
+                type: 'oauth',
+                badge: 'Account Connection'
             },
             {
                 id: 'gemini',
                 name: 'Google Gemini',
                 category: 'AI & Automation',
-                desc: 'Gemini 1.5 Pro & Flash multimodal AI reasoning models.',
-                type: 'key',
-                badge: 'User API Key',
-                placeholder: 'AIzaSy...',
-                keyPrefix: 'AIza'
+                desc: 'Gemini 1.5 Pro & Flash multimodal AI reasoning models via Google Account.',
+                type: 'oauth',
+                badge: 'Google OAuth 2.0'
             },
             {
                 id: 'claude',
                 name: 'Claude AI (Anthropic)',
                 category: 'AI & Automation',
                 desc: 'Claude 3.5 Sonnet, Claude 3 Opus & Haiku AI models.',
-                type: 'key',
-                badge: 'User API Key',
-                placeholder: 'sk-ant-api03-...',
-                keyPrefix: 'sk-ant-'
+                type: 'oauth',
+                badge: 'Account Connection'
             },
+
             {
                 id: 'microsoft',
                 name: 'Microsoft',
@@ -471,6 +467,8 @@ export class Integrations {
             </div>
         `).join('');
 
+        const isGoogleOrGemini = provider.id === 'google' || provider.id === 'gemini';
+
         modalContainer.innerHTML = `
             <div class="modal-backdrop" style="position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px;">
                 <div class="card" style="width: 100%; max-width: 500px; padding: 28px; background: var(--bg-card); border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);">
@@ -479,21 +477,31 @@ export class Integrations {
                         <button id="btn-close-oauth-modal" style="background: none; border: none; font-size: 20px; color: var(--text-secondary); cursor: pointer;">&times;</button>
                     </div>
                     <p style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 16px;">
-                        Connect your personal ${provider.name} account to grant permission for SEO features inside this workspace. You will be redirected to official ${provider.name} authorization.
+                        ${isGoogleOrGemini 
+                            ? `Connect your Google account to grant authorization for ${provider.name} features. You will be redirected to official Google OAuth consent.` 
+                            : `Official third-party OAuth account login for ${provider.name} is not currently supported by the provider API. AI integration is 100% optional, and all core SEO features remain fully operational.`}
                     </p>
 
-                    <div style="background: var(--bg-subtle); border-radius: 8px; padding: 14px; margin-bottom: 20px;">
-                        <div style="font-size: 11px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; margin-bottom: 8px;">APPROVED PERMISSIONS</div>
-                        ${scopesList}
-                    </div>
+                    ${isGoogleOrGemini ? `
+                        <div style="background: var(--bg-subtle); border-radius: 8px; padding: 14px; margin-bottom: 20px;">
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; margin-bottom: 8px;">APPROVED PERMISSIONS</div>
+                            ${scopesList}
+                        </div>
+                    ` : `
+                        <div style="background: rgba(59, 130, 246, 0.08); border-left: 4px solid var(--primary); border-radius: 6px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: var(--text-secondary);">
+                            ℹ️ <strong>Optional Integration:</strong> Core SEO crawling, site audits, keyword rankings, and PDF reports operate 100% reliably without connecting an AI account.
+                        </div>
+                    `}
 
                     <div style="font-size: 12px; color: var(--text-tertiary); margin-bottom: 20px;">
-                        🔒 Your ${provider.name} password is NEVER requested or stored by this application.
+                        🔒 Your passwords and sensitive credentials are NEVER requested or stored by this application.
                     </div>
 
                     <div style="display: flex; justify-content: flex-end; gap: 10px;">
-                        <button type="button" id="btn-cancel-oauth-modal" class="btn btn-secondary">Cancel</button>
-                        <button type="button" id="btn-start-oauth-flow" class="btn btn-primary">Continue to ${provider.name.split(' ')[0]}</button>
+                        <button type="button" id="btn-cancel-oauth-modal" class="btn btn-secondary">Close</button>
+                        ${isGoogleOrGemini ? `
+                            <button type="button" id="btn-start-oauth-flow" class="btn btn-primary">Continue to Google OAuth</button>
+                        ` : ''}
                     </div>
                 </div>
             </div>
@@ -515,42 +523,6 @@ export class Integrations {
         }
     }
 
-    openKeyModal(provider) {
-        const modalContainer = this.element.querySelector('#integrations-modal-container');
-        if (!modalContainer) return;
-
-        modalContainer.innerHTML = `
-            <div class="modal-backdrop" style="position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px;">
-                <div class="card" style="width: 100%; max-width: 480px; padding: 28px; background: var(--bg-card); border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                        <h3 style="font-size: 18px; font-weight: 600; margin: 0; color: var(--text-primary);">Connect ${provider.name} Account</h3>
-                        <button id="btn-close-key-modal" style="background: none; border: none; font-size: 20px; color: var(--text-secondary); cursor: pointer;">&times;</button>
-                    </div>
-                    <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 20px;">
-                        Enter your personal ${provider.name} API Key. Your key will be encrypted at rest using AES-256 and used exclusively for your user account queries.
-                    </p>
-                    <form id="form-save-key">
-                        <div style="margin-bottom: 20px;">
-                            <label style="display: block; font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">Your ${provider.name} API Key *</label>
-                            <input type="password" id="modal-api-key-input" placeholder="${provider.placeholder || 'API Key...'}" required style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--bg-workspace); color: var(--text-primary); font-family: monospace;">
-                            <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 6px;">🔒 Encrypted at rest using AES-256. Third-party passwords are never requested.</div>
-                        </div>
-                        <div id="modal-key-error" style="display: none; color: #ef4444; font-size: 12px; margin-bottom: 16px;"></div>
-                        <div style="display: flex; justify-content: flex-end; gap: 10px;">
-                            <button type="button" id="btn-cancel-key-modal" class="btn btn-secondary">Cancel</button>
-                            <button type="submit" id="btn-submit-key" class="btn btn-primary">Encrypt & Connect Key</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        `;
-
-        const btnClose = modalContainer.querySelector('#btn-close-key-modal');
-        const btnCancel = modalContainer.querySelector('#btn-cancel-key-modal');
-        const form = modalContainer.querySelector('#form-save-key');
-        const errDiv = modalContainer.querySelector('#modal-key-error');
-
-        const closeModal = () => { modalContainer.innerHTML = ''; };
 
         if (btnClose) btnClose.addEventListener('click', closeModal);
         if (btnCancel) btnCancel.addEventListener('click', closeModal);

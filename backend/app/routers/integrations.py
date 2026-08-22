@@ -211,63 +211,15 @@ def handle_oauth_callback(
 
 
 @router.post("/{provider}/key")
-def save_user_api_key(
-    provider: str,
-    payload: dict = Body(...),
-    user_id: str = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
-):
+def save_user_api_key(provider: str):
     """
-    Saves and encrypts a user-provided API key for AI providers (OpenAI, Gemini, Claude).
-    Validates key format/ping against provider before storing encrypted ciphertext.
+    API keys are no longer accepted or requested. All integrations use account-level OAuth or provider connections.
     """
-    p = provider.lower()
-    if p not in ("openai", "gemini", "claude", "anthropic"):
-        raise HTTPException(status_code=400, detail=f"API key connection is supported for 'openai', 'gemini', and 'claude'. Got '{provider}'.")
+    raise HTTPException(
+        status_code=400, 
+        detail="Pasting raw API keys is deprecated. Please connect your account using the Connect Account button."
+    )
 
-    raw_key = (payload.get("api_key") or "").strip()
-    if not raw_key:
-        raise HTTPException(status_code=400, detail="API Key is required.")
-
-    try:
-        profile = validate_api_key_provider(p, raw_key)
-    except ValueError as err:
-        raise HTTPException(status_code=400, detail=str(err))
-
-    existing = db.query(ExternalConnection).filter(
-        ExternalConnection.user_id == user_id,
-        ExternalConnection.provider == p
-    ).first()
-
-    if existing:
-        existing.provider_account_id = profile["account_id"]
-        existing.provider_account_name = profile["account_name"]
-        existing.provider_email = profile["email"]
-        existing.set_api_key(raw_key)
-        existing.status = "CONNECTED"
-        existing.updated_at = datetime.utcnow()
-        existing.last_used_at = datetime.utcnow()
-        db.commit()
-        db.refresh(existing)
-        return existing.to_safe_dict()
-    else:
-        new_conn = ExternalConnection(
-            id=str(uuid.uuid4()),
-            user_id=user_id,
-            provider=p,
-            provider_account_id=profile["account_id"],
-            provider_account_name=profile["account_name"],
-            provider_email=profile["email"],
-            status="CONNECTED",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-            last_used_at=datetime.utcnow()
-        )
-        new_conn.set_api_key(raw_key)
-        db.add(new_conn)
-        db.commit()
-        db.refresh(new_conn)
-        return new_conn.to_safe_dict()
 
 
 @router.post("/{connection_id}/disconnect")

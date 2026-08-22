@@ -61,9 +61,25 @@ export class Technical {
 
 
             if (!selectedProj || !projectId) {
-                container.innerHTML = `<div class="card" style="padding: 32px; text-align: center;">Please select or create a project workspace.</div>`;
+                const projs = projectStore.projects || [];
+                const buttonsHtml = projs.map(p => `
+                    <button class="btn btn-secondary btn-sm" onclick="projectStore.setSelectedProjectId('${p.id}'); window.location.reload();" style="margin: 4px;">
+                        ${p.name} (${p.domain || p.url || 'website'})
+                    </button>
+                `).join('');
+
+                container.innerHTML = `
+                    <div class="card" style="padding: 40px; text-align: center;">
+                        <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px;">Select a Website to View Its SEO Audit</h3>
+                        <p style="color: var(--text-secondary); margin-bottom: 20px;">Detailed technical SEO audits, page findings, and status codes are specific to individual websites.</p>
+                        <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;">
+                            ${buttonsHtml || '<button class="btn btn-primary" onclick="window.showCreateProjectModal()">+ Add Website</button>'}
+                        </div>
+                    </div>
+                `;
                 return;
             }
+
 
             if (actionsContainer) {
                 actionsContainer.innerHTML = `

@@ -1,0 +1,124 @@
+================================================================================
+SEO INTELLIGENCE PLATFORM — ARCHITECTURE & PROJECT OVERVIEW GUIDE
+================================================================================
+
+1. WHAT ARE WE DOING? (PROJECT GOAL & VISION)
+--------------------------------------------------------------------------------
+We are building a production-grade, local-first SEO Intelligence & Website Audit
+Platform. The platform gives website owners, SEO specialists, and developers full
+control over their SEO data, crawler analysis, technical audits, keyword tracking,
+competitor insights, and automated executive reporting—without relying on costly
+SaaS subscriptions or sending proprietary data to third-party databases.
+
+KEY CAPABILITIES & FEATURES:
+  1. Website Crawler & HTML Parser:
+     - Asynchronously crawls target domain pages, extracts HTML titles, meta tags,
+       h1-h6 headings, canonical URLs, image alt attributes, and word counts.
+     - Maps internal link graphs and outgoing external links across pages.
+  2. Technical SEO Audit Engine:
+     - Detects technical issues (404 broken links, missing title tags, missing meta
+       descriptions, slow page load times, duplicate content, non-canonical URLs).
+  3. Real-Time Crawl Loading Overlay:
+     - Prominent floating progress bar on the UI displaying live audited page counts,
+       percentage progress, active status ticker, and success reload states.
+  4. Keyword Analysis & Search Suggestions:
+     - Automatically extracts page topics, entity phrases, and content keywords.
+     - Provides real-time Google Autocomplete keyword ideas.
+  5. Rank Tracking & SERP Positions:
+     - Tracks Google search position movements, ranking URLs, and SERP positions.
+  6. Competitor Intelligence & Gap Analysis:
+     - Tracks confirmed project competitors and performs keyword gap comparisons.
+     - Strictly enforces data integrity: No fake competitors (e.g. Fallon Solutions,
+       Mergetest) or fabricated rankings. Returns honest empty/unavailable states.
+  7. Automated Executive PDF & CSV Exports:
+     - Generates professional PDF reports and complete ZIP packages of CSV datasets.
+  8. External OAuth 2.0 Integrations (Google, Meta, AI):
+     - Authenticates user-owned Google Search Console, Google Analytics, Google Ads,
+       Meta, OpenAI, Gemini, and Claude AI accounts.
+     - Uses real OAuth token exchange with AES-256 Fernet encrypted key storage.
+  9. Subscribable 3-State System Health Pill:
+     - Real-time header indicator reflecting ONLINE, DEGRADED, or OFFLINE backend state.
+
+--------------------------------------------------------------------------------
+2. HOW ARE WE DOING IT? (TECHNICAL ARCHITECTURE & STACK)
+--------------------------------------------------------------------------------
+
+FRONTEND ARCHITECTURE:
+  - Stack: Vanilla JavaScript (ES Modules), HTML5, CSS Custom Design Tokens.
+  - Architecture: Lightweight Single Page Application (SPA) with component-based
+    views and routing (zero heavy framework bloat like React/Angular).
+  - Dev Server: Custom Python SPA server running on http://localhost:8030.
+  - UI Components:
+    * TopBar.js: Header search, project switcher, (+) project modal, health pill.
+    * Sidebar.js: Sidebar navigation across Dashboard, Pages, Technical, Links,
+      Keywords, Rankings, Competitors, Reports, Settings, Integrations, Help.
+    * CrawlProgressOverlay.js: Live floating crawl loading bar component.
+    * ErrorState.js: Backend offline & degraded state fallback UI cards.
+
+BACKEND ARCHITECTURE:
+  - Framework: FastAPI (Python 3.14 / 3.x) running on http://127.0.0.1:8020.
+  - Database: SQLAlchemy ORM with SQLite database (backend/seo.db).
+  - Configuration: pydantic-settings & python-dotenv reading backend/.env.
+  - Encryption & Security:
+    * AES-256 Fernet encryption (cryptography package) for token/key storage at rest.
+    * Cryptographically signed HMAC-SHA256 state tokens for OAuth CSRF protection.
+    * Multi-user session isolation via X-User-ID header.
+  - Data Integrity Policy:
+    * Zero fabricated SEO metrics, zero mock OAuth tokens (oauth_access_token_...),
+      zero fake emails (user@google.com), and zero fake Facebook pages.
+    * Returns honest empty/error states when integrations or data are missing.
+
+--------------------------------------------------------------------------------
+3. PROJECT FILE STRUCTURE & MAP
+--------------------------------------------------------------------------------
+seo new/
+├── start_dev.py               # One-Click Development Starter (Spawns Backend & Frontend)
+├── guide.txt                  # Step-by-step Google Cloud Console OAuth setup guide
+├── PROJECT_OVERVIEW.txt       # This comprehensive architecture & guide file
+├── backend/
+│   ├── app/
+│   │   ├── config/            # Database connection, Settings, Crypto AES-256, Migrations
+│   │   ├── crawler/           # Async Python HTML crawler & parser
+│   │   ├── llm/               # AI analyst context builder & provider adapters
+│   │   ├── models/            # SQLAlchemy database models (Project, Page, Keyword, Competitor, ExternalConnection, CrawlSession)
+│   │   ├── routers/           # FastAPI API endpoints (projects, pages, technical, internal_links, keywords, rankings, competitors, integrations, reports, crawl, ai)
+│   │   └── services/          # Business logic (crawl storage, competitor service, oauth provider service, PDF export service)
+│   ├── data/                  # Immutable local crawl snapshot JSON files
+│   ├── .env                   # Local backend environment variables (GOOGLE_CLIENT_ID, SECRET_KEY)
+│   ├── requirements.txt       # Python dependencies (fastapi, uvicorn, sqlalchemy, pydantic, python-dotenv, httpx, cryptography, reportlab)
+│   ├── verify_integrations.py # Security & integration test suite
+│   └── verify_deep_audit.py   # Full system 35-endpoint verification suite
+└── frontend/
+    ├── index.html             # Main HTML entry point
+    ├── serve_spa.py           # Local SPA development HTTP server (Port 8030)
+    ├── styles/                # CSS design tokens, base, layout, and component styles
+    └── src/
+        ├── main.js            # App shell & router initialization
+        ├── components/        # TopBar, Sidebar, ErrorState, CrawlProgressOverlay
+        ├── core/              # Router & Project Store state management
+        ├── services/          # API Client, Crawl Service, Dashboard Service, AI Service
+        └── views/             # Dashboard, Pages, Technical, Keywords, Rankings, Competitors, Reports, Integrations, Settings, Help
+
+--------------------------------------------------------------------------------
+4. HOW TO RUN & DEVELOP THE PROJECT
+--------------------------------------------------------------------------------
+1. Start Development Environment:
+   Run the one-click Python starter script from the project root:
+     python start_dev.py
+
+   This will:
+     - Start Backend API server on http://127.0.0.1:8020
+     - Start Frontend SPA server on http://localhost:8030
+     - Perform health checks and automatically open your browser.
+
+2. Access Interactive Web Application:
+   - Web App UI:  http://localhost:8030/
+   - API Docs:    http://127.0.0.1:8020/docs
+
+3. Run Automated System Test Suites:
+   - Security & OAuth Test Suite:
+     python backend/verify_integrations.py
+   - Endpoint Deep Audit Test Suite:
+     python backend/verify_deep_audit.py
+
+================================================================================

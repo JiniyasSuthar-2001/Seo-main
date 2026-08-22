@@ -101,7 +101,8 @@ class OAuthProviderConfig:
                 "revoke_url": "https://oauth2.googleapis.com/revoke",
                 "client_id": client_id,
                 "client_secret": client_secret,
-                "scopes": "https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/business.manage https://www.googleapis.com/auth/generativelanguage",
+                "scopes": "https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/webmasters.readonly https://www.googleapis.com/auth/business.manage",
+
                 "redirect_uri": google_callback_url
             }
 

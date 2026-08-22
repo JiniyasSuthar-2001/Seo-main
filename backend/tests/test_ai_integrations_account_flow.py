@@ -24,7 +24,8 @@ class TestAIIntegrationsAccountFlow(unittest.TestCase):
         """Verify Gemini resolves Google OAuth auth_url and Generative Language scope."""
         details = OAuthProviderConfig.get_provider_details("gemini")
         self.assertEqual(details["auth_url"], "https://accounts.google.com/o/oauth2/v2/auth")
-        self.assertIn("generativelanguage", details["scopes"])
+        self.assertIn("webmasters.readonly", details["scopes"])
+
         self.assertIn("/api/integrations/google/callback", details["redirect_uri"])
 
     def test_2_api_key_submission_deprecated(self):

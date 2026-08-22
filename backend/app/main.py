@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config.settings import settings, validate_startup_config
-from app.routers import projects, pages, keywords, crawl, technical, internal_links, ai, backlinks, rankings, datasources, reports, imports, competitors, integrations, opportunities
+from app.routers import projects, pages, keywords, crawl, technical, internal_links, ai, backlinks, rankings, datasources, reports, imports, competitors, integrations, opportunities, alerts
+
 from app.config.database import engine, Base
+
 from app.config.migration import run_schema_migrations
 
 # Import all models to ensure they are registered with Base
@@ -42,6 +44,8 @@ app.include_router(datasources.router, prefix="/api/projects/{project_id}/dataso
 app.include_router(ai.router, prefix="/api/projects", tags=["ai"])
 app.include_router(imports.router, prefix="/api/projects/{project_id}/imports", tags=["imports"])
 app.include_router(competitors.router, prefix="/api/projects/{project_id}/competitors", tags=["competitors"])
+app.include_router(alerts.router, prefix="/api/projects/{project_id}/alerts", tags=["alerts"])
+
 
 @app.get("/api/health", tags=["System"])
 def health_check():

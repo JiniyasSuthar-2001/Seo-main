@@ -28,3 +28,19 @@ def get_sanitized_domain(url_or_domain: str) -> str:
         # Fallback safe replace
         safe_domain = clean_str.replace("https://", "").replace("http://", "").replace("www.", "")
         return "".join([c if c.isalnum() else "_" for c in safe_domain]).strip("_")
+
+def sanitize_csv_cell(val: Any) -> Any:
+    """
+    Sanitizes values written to CSV files to prevent CSV Formula Injection vulnerability.
+    Neutralizes values starting with dangerous formula triggers (=, +, -, @, \t, \r).
+    """
+    if val is None:
+        return ""
+    s_val = str(val)
+    if s_val and s_val[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return f"'{s_val}"
+    return s_val
+
+def sanitize_csv_row(row: List[Any]) -> List[Any]:
+    return [sanitize_csv_cell(item) for item in row]
+

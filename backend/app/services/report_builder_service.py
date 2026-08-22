@@ -107,16 +107,24 @@ def generate_custom_pdf_report(
     # 3. Selected Optional Sections
     if "Technical Audit" in sections or "all" in sections:
         story.append(Paragraph("2. Technical Audit & Rule Engine Findings", h2_style))
-        cat_data = [["Audit Category", "Critical", "Warnings", "Passed"]]
+        cat_data = [["Audit Category", "Status", "Critical / Errors", "Warnings"]]
         categories = audit_summary.get("category_breakdown", {})
-        for cat_name, stats in list(categories.items())[:6]:
+        for cat_name, stats in categories.items():
+            evaluated = stats.get("evaluated", True)
+            if not evaluated:
+                cat_status = "Not Evaluated"
+            elif stats.get("status") == "Issues Found" or (stats.get("critical", 0) + stats.get("error", 0) + stats.get("warning", 0)) > 0:
+                cat_status = "Issues Found"
+            else:
+                cat_status = "Passed"
+
             cat_data.append([
                 cat_name,
+                cat_status,
                 str(stats.get("critical", 0) + stats.get("error", 0)),
-                str(stats.get("warning", 0)),
-                str(stats.get("passed", 0))
+                str(stats.get("warning", 0))
             ])
-        ct = Table(cat_data, colWidths=[180, 120, 120, 120])
+        ct = Table(cat_data, colWidths=[160, 130, 130, 120])
         ct.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f1f5f9")),
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
@@ -124,6 +132,7 @@ def generate_custom_pdf_report(
         ]))
         story.append(ct)
         story.append(Spacer(1, 14))
+
 
     doc.build(story)
     buffer.seek(0)

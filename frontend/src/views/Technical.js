@@ -113,21 +113,39 @@ export class Technical {
             const categories = auditData.category_breakdown || {};
 
             let catCardsHtml = Object.entries(categories).map(([catName, stats]) => {
+                const isEvaluated = stats.evaluated !== false;
                 const total = stats.critical + stats.error + stats.warning + stats.notice;
+
+                let statusBadgeText = "Passed";
+                let statusColor = "var(--success, #22c55e)";
+
+                if (!isEvaluated) {
+                    statusBadgeText = "Not Evaluated";
+                    statusColor = "#94a3b8";
+                } else if (total > 0 || stats.status === "Issues Found") {
+                    statusBadgeText = `${total} issue${total === 1 ? '' : 's'}`;
+                    statusColor = "var(--critical, #ef4444)";
+                }
+
                 return `
                     <div class="card" style="padding: 16px; font-size: 13px;">
                         <div style="display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 8px;">
                             <span>${catName}</span>
-                            <span style="color: ${total > 0 ? 'var(--critical)' : 'var(--success)'};">${total > 0 ? `${total} issues` : 'Passed'}</span>
+                            <span style="color: ${statusColor}; font-size: 12px; font-weight: 600;">${statusBadgeText}</span>
                         </div>
                         <div style="font-size: 11px; color: var(--text-secondary); display: flex; gap: 8px;">
-                            <span>Crit: ${stats.critical + stats.error}</span>
-                            <span>Warn: ${stats.warning}</span>
-                            <span>Pass: ${stats.passed}</span>
+                            ${isEvaluated ? `
+                                <span>Crit: ${stats.critical + stats.error}</span>
+                                <span>Warn: ${stats.warning}</span>
+                                <span>Pass: ${stats.passed}</span>
+                            ` : `
+                                <span>${stats.reason || 'Data unavailable'}</span>
+                            `}
                         </div>
                     </div>
                 `;
             }).join('');
+
 
             let tableRows = issues.map(iss => {
                 let badgeClass = 'badge-info';

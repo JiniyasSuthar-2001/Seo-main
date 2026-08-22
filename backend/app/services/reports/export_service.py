@@ -3,6 +3,8 @@ import csv
 import zipfile
 from typing import Dict, Any, List
 
+from app.config.utils import sanitize_csv_cell
+
 class CSVExportService:
     @staticmethod
     def generate_csv_string(headers: List[str], rows: List[List[Any]]) -> str:
@@ -10,7 +12,7 @@ class CSVExportService:
         writer = csv.writer(output)
         writer.writerow(headers)
         for row in rows:
-            writer.writerow([str(val) if val is not None else "" for val in row])
+            writer.writerow([sanitize_csv_cell(val) for val in row])
         return output.getvalue()
 
     @staticmethod
@@ -77,10 +79,11 @@ class CSVExportService:
                 r.get("change", 0),
                 r.get("engine", "Google"),
                 r.get("device", "Desktop"),
-                r.get("location", "US"),
+                r.get("location") or "Unknown",
                 r.get("date", "")
             ])
         return CSVExportService.generate_csv_string(headers, rows)
+
 
     @staticmethod
     def generate_backlinks_csv(backlinks: List[Dict[str, Any]]) -> str:

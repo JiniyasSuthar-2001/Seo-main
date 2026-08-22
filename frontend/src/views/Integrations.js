@@ -487,36 +487,8 @@ export class Integrations {
         }
     }
 
-
-        if (btnClose) btnClose.addEventListener('click', closeModal);
-        if (btnCancel) btnCancel.addEventListener('click', closeModal);
-
-        if (form) {
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const keyInput = modalContainer.querySelector('#modal-api-key-input');
-                const btnSub = modalContainer.querySelector('#btn-submit-key');
-                if (!keyInput || !keyInput.value.trim()) return;
-
-                btnSub.disabled = true;
-                btnSub.innerText = 'Validating & Encrypting...';
-                errDiv.style.display = 'none';
-
-                try {
-                    await apiClient.post(`/api/integrations/${provider.id}/key`, { api_key: keyInput.value.trim() });
-                    closeModal();
-                    await this.loadConnections();
-                } catch (err) {
-                    btnSub.disabled = false;
-                    btnSub.innerText = 'Encrypt & Connect Key';
-                    errDiv.style.display = 'block';
-                    errDiv.innerText = err.message || 'Key validation failed.';
-                }
-            });
-        }
-    }
-
     openManageModal(conn) {
+
         const modalContainer = this.element.querySelector('#integrations-modal-container');
         if (!modalContainer) return;
 

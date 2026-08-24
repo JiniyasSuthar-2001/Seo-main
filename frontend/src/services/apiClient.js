@@ -48,7 +48,7 @@ class ApiClient {
             err.isNetworkError = false;
             throw err;
         }
-        const url = `${API_BASE_URL}${endpoint}`;
+        const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
 
         const defaultHeaders = {
             'Content-Type': 'application/json',
@@ -110,6 +110,11 @@ class ApiClient {
         }
     }
 
+    // AJAX helper alias
+    ajax(endpoint, options = {}) {
+        return this.request(endpoint, options);
+    }
+
     get(endpoint, options = {}) {
         return this.request(endpoint, { ...options, method: 'GET' });
     }
@@ -118,7 +123,7 @@ class ApiClient {
         return this.request(endpoint, { 
             ...options, 
             method: 'POST',
-            body: JSON.stringify(data) 
+            body: data ? JSON.stringify(data) : undefined
         });
     }
 
@@ -126,7 +131,7 @@ class ApiClient {
         return this.request(endpoint, { 
             ...options, 
             method: 'PUT',
-            body: JSON.stringify(data) 
+            body: data ? JSON.stringify(data) : undefined
         });
     }
 
@@ -134,7 +139,7 @@ class ApiClient {
         return this.request(endpoint, { 
             ...options, 
             method: 'PATCH',
-            body: JSON.stringify(data) 
+            body: data ? JSON.stringify(data) : undefined
         });
     }
 
@@ -144,3 +149,4 @@ class ApiClient {
 }
 
 export const apiClient = new ApiClient();
+export const ajax = (endpoint, options = {}) => apiClient.request(endpoint, options);

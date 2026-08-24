@@ -88,8 +88,8 @@ export class TopBar {
   }
 
   render() {
-    const userEmail = authStore.user ? authStore.user.masked_email || authStore.user.email : 'user.seo@gmail.com';
-    const userInitial = authStore.user && authStore.user.name ? authStore.user.name.charAt(0).toUpperCase() : 'G';
+    const userEmail = authStore.user && authStore.user.email ? authStore.user.email : 'jiniyassuthar87@gmail.com';
+    const userInitial = authStore.user && authStore.user.name ? authStore.user.name.charAt(0).toUpperCase() : (userEmail.charAt(0).toUpperCase() || 'J');
 
     this.element.innerHTML = `
       <div style="height: 100%; padding: 0 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px;">

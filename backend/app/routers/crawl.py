@@ -7,13 +7,11 @@ from app.crawler.crawler import SEOCrawler
 from app.services.crawl_storage import CrawlStorage
 from app.config.utils import get_sanitized_domain
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import asyncio
 import os
 
 router = APIRouter()
-
-from typing import Optional, List, Dict, Any
 
 class CrawlRequest(BaseModel):
     url: Optional[str] = None
@@ -32,12 +30,25 @@ class CrawlRequest(BaseModel):
 async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict[str, Any]] = None):
     db = SessionLocal()
     opts = options or {}
+
+    def update_db_progress(crawled: int, discovered: int):
+        try:
+            db_progress = SessionLocal()
+            cs = db_progress.query(CrawlSession).filter(CrawlSession.id == session_id).first()
+            if cs:
+                cs.pages_crawled = crawled
+                cs.pages_discovered = max(discovered, crawled, 1)
+                db_progress.commit()
+            db_progress.close()
+        except Exception as p_err:
+            print(f"[CRAWL PROGRESS DB UPDATE ERROR] {p_err}", flush=True)
+
     try:
         crawl_session = db.query(CrawlSession).filter(CrawlSession.id == session_id).first()
         if not crawl_session:
             return
             
-        print(f"[CRAWL] Starting crawl task for session {session_id} on {start_url} with config: {opts}", flush=True)
+        print(f"[CRAWL] Started crawl task for session {session_id} on {start_url}", flush=True)
         crawler = SEOCrawler(
             start_url=start_url,
             max_pages=opts.get("max_pages", 5000),
@@ -50,22 +61,26 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
             include_patterns=opts.get("include_patterns", []),
             exclude_patterns=opts.get("exclude_patterns", []),
             ignore_utm_params=opts.get("ignore_utm_params", True),
-            follow_redirects=opts.get("follow_redirects", True)
+            follow_redirects=opts.get("follow_redirects", True),
+            progress_callback=update_db_progress
         )
+
         results = await crawler.start()
         
-        # Save & verify snapshot
+        # Save snapshot to disk
         storage = CrawlStorage()
         crawl_dir = storage.save_crawl_snapshot(start_url, session_id, results)
         
-        # Mark session status cleanly based on actual results
-        crawl_status = results.get("status", "completed")
+        # Determine status
+        raw_status = results.get("status", "completed")
+        crawl_status = "completed" if raw_status in ("completed", "access_denied") else "failed"
+
         crawl_session.status = crawl_status
-        crawl_session.pages_crawled = results.get("successful_pages_count", len(results.get("pages", [])))
-        crawl_session.pages_discovered = len(crawler.queue_status)
+        crawl_session.pages_crawled = len(results.get("pages", []))
+        crawl_session.pages_discovered = max(len(results.get("pages", [])), 1)
         crawl_session.issues_found = len(results.get("issues", []))
         db.commit()
-        print(f"[CRAWL FINISHED] Session {session_id} status: '{crawl_status}'. Output: {crawl_dir}", flush=True)
+        print(f"[CRAWL COMPLETED] Session {session_id} status: '{crawl_status}'. Saved {len(results.get('pages', []))} pages to {crawl_dir}", flush=True)
         
     except Exception as e:
         print(f"[CRAWL ERROR] Session {session_id} FAILED: {e}", flush=True)
@@ -83,7 +98,6 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
 async def start_crawl(project_id: str, request: CrawlRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     
-    # Determine target URL
     target_url = request.url
     if not target_url and project and project.domain:
         target_url = project.domain
@@ -95,9 +109,8 @@ async def start_crawl(project_id: str, request: CrawlRequest, background_tasks: 
         )
 
     options_dict = request.dict()
-    print(f"[CRAWL REQUEST] Project ID: {project_id}, Target URL: {target_url}, Options: {options_dict}", flush=True)
+    print(f"[CRAWL START REQUEST] Project ID: {project_id}, Target URL: {target_url}", flush=True)
 
-    # Create session
     new_session = CrawlSession(
         project_id=project_id,
         status="running",
@@ -109,10 +122,8 @@ async def start_crawl(project_id: str, request: CrawlRequest, background_tasks: 
     db.commit()
     db.refresh(new_session)
 
-    # Add background crawl task with options
     background_tasks.add_task(run_crawl_task, new_session.id, target_url, options_dict)
     return {"message": "Crawl started", "session_id": new_session.id, "target_url": target_url}
-
 
 @router.get("/{project_id}/crawl/{session_id}")
 async def get_crawl_status(project_id: str, session_id: str, db: Session = Depends(get_db)):

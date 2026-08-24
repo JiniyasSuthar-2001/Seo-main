@@ -5,8 +5,7 @@ import re
 import ssl
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
-from typing import Set, Dict, Any, List, Optional
-
+from typing import Set, Dict, Any, List, Optional, Callable
 
 STATIC_ASSET_EXTENSIONS = (
     ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".bmp", ".tiff",
@@ -28,7 +27,8 @@ class SEOCrawler:
         include_patterns: Optional[List[str]] = None,
         exclude_patterns: Optional[List[str]] = None,
         ignore_utm_params: bool = True,
-        follow_redirects: bool = True
+        follow_redirects: bool = True,
+        progress_callback: Optional[Callable[[int, int], None]] = None
     ):
         if not start_url or not start_url.startswith(("http://", "https://")):
             raise ValueError("Crawler requires a valid HTTP or HTTPS start URL.")
@@ -46,6 +46,7 @@ class SEOCrawler:
         self.include_patterns = include_patterns or []
         self.exclude_patterns = exclude_patterns or []
         self.follow_redirects = follow_redirects
+        self.progress_callback = progress_callback
 
         parsed_url = urlparse(self.start_url)
         self.domain = parsed_url.netloc.lower()
@@ -72,7 +73,6 @@ class SEOCrawler:
         
         self.is_running = False
         self.seed_status_code = None
-
 
     def is_same_domain(self, url: str) -> bool:
         parsed = urlparse(url)
@@ -121,61 +121,64 @@ class SEOCrawler:
                         if path:
                             self.disallowed_paths.append(path)
                     elif line.lower().startswith("sitemap:"):
-                        sm_url = line.split(":", 1)[1].strip()
-                        if sm_url:
-                            self.sitemap_urls.append(sm_url)
+                        s_url = line.split(":", 1)[1].strip()
+                        if s_url:
+                            self.sitemap_urls.append(s_url)
         except Exception as e:
-            print(f"[ROBOTS] robots.txt not available: {e}", flush=True)
+            print(f"[ROBOTS] Optional robots.txt fetch error: {e}", flush=True)
 
     async def fetch_sitemap_xml(self, client: httpx.AsyncClient):
-        sitemaps_to_check = self.sitemap_urls if self.sitemap_urls else [f"{self.scheme}://{self.domain}/sitemap.xml"]
-        for sm_url in sitemaps_to_check:
-            print(f"[SITEMAP] Inspecting sitemap {sm_url}", flush=True)
+        sitemap_candidates = list(self.sitemap_urls) or [f"{self.scheme}://{self.domain}/sitemap.xml"]
+        for sm_url in sitemap_candidates[:3]:
             try:
                 resp = await client.get(sm_url, timeout=10.0, follow_redirects=True)
-                if resp.status_code == 200 and "xml" in resp.headers.get("content-type", ""):
-                    soup = BeautifulSoup(resp.text, "xml")
-                    locs = [loc.text.strip() for loc in soup.find_all("loc") if loc.text.strip()]
-                    discovered_count = 0
-                    for loc in locs:
-                        norm = self.normalize_url(loc, sm_url)
-                        if self.is_same_domain(norm) and not self.is_static_asset(norm) and self.is_url_allowed_by_scope_and_rules(norm, 1) and norm not in self.queue_status:
+                if resp.status_code == 200:
+                    found_locs = re.findall(r"<loc>(.*?)</loc>", resp.text, re.I)
+                    print(f"[SITEMAP] Discovered {len(found_locs)} URLs from {sm_url}", flush=True)
+                    for loc in found_locs[:100]:
+                        norm = self.normalize_url(loc.strip(), sm_url)
+                        if self.is_same_domain(norm) and not self.is_static_asset(norm) and norm not in self.queue_status:
                             self.queue_status[norm] = "PENDING"
-                            self.url_depths[norm] = 1
                             self.to_visit.append(norm)
-                            discovered_count += 1
-                    print(f"[SITEMAP] Discovered {discovered_count} HTML URLs from {sm_url}", flush=True)
             except Exception as e:
-                print(f"[SITEMAP] Failed to parse sitemap {sm_url}: {e}", flush=True)
+                print(f"[SITEMAP] Optional sitemap fetch error for {sm_url}: {e}", flush=True)
 
     def is_disallowed(self, url: str) -> bool:
-        if not self.respect_robots_txt:
+        if not self.respect_robots_txt or not self.disallowed_paths:
             return False
         parsed = urlparse(url)
-        path = parsed.path
+        path = parsed.path or "/"
         for dis in self.disallowed_paths:
-            if dis == "/" or path.startswith(dis):
+            if dis == "/":
+                return True
+            if path.startswith(dis):
                 return True
         return False
 
-    def is_url_allowed_by_scope_and_rules(self, url: str, current_depth: int = 0) -> bool:
-        if self.max_depth > 0 and current_depth > self.max_depth:
+    def is_within_scope(self, url: str) -> bool:
+        if not self.is_same_domain(url):
             return False
 
+        if self.is_static_asset(url):
+            return False
+
+        if self.max_depth > 0:
+            depth = self.url_depths.get(url, 999)
+            if depth > self.max_depth:
+                return False
+
         parsed = urlparse(url)
-        path = parsed.path.lower()
+        path = parsed.path or "/"
 
-        if self.scope_type == "specific_path":
-            if not path.startswith(self.start_path.lower()):
-                return False
-        elif self.scope_type == "subdomain":
-            if parsed.netloc.lower() != self.domain:
+        if self.scope_type == "subfolder_only":
+            if not path.startswith(self.start_path):
                 return False
 
-        for pattern in self.exclude_patterns:
-            clean_pat = pattern.strip().lower()
-            if clean_pat and (clean_pat in path or clean_pat in url):
-                return False
+        if self.exclude_patterns:
+            for pattern in self.exclude_patterns:
+                clean_pat = pattern.strip().lower()
+                if clean_pat and (clean_pat in path or clean_pat in url):
+                    return False
 
         if self.include_patterns:
             matched = False
@@ -188,7 +191,6 @@ class SEOCrawler:
                 return False
 
         return True
-
 
     def evaluate_page_issues(self, page_data: Dict[str, Any]):
         url = page_data["url"]
@@ -287,7 +289,7 @@ class SEOCrawler:
 
         self.visited.add(url)
         self.queue_status[url] = "CRAWLING"
-        print(f"[HTTP] GET {url}", flush=True)
+        print(f"[CRAWL HTTP] GET {url}", flush=True)
         
         start_time = time.time()
         try:
@@ -298,9 +300,8 @@ class SEOCrawler:
             if url == self.start_url:
                 self.seed_status_code = response.status_code
 
-            print(f"[HTTP] {response.status_code} {url} ({elapsed_ms}ms)", flush=True)
+            print(f"[CRAWL HTTP] {response.status_code} {url} ({elapsed_ms}ms)", flush=True)
             
-            # Handle HTTP Access Denied (403, 401) or HTTP Errors (5xx, 4xx)
             if response.status_code in (403, 401):
                 self.queue_status[url] = "BLOCKED"
                 page_record = {
@@ -335,7 +336,6 @@ class SEOCrawler:
             
             content_type = response.headers.get("content-type", "")
             if "text/html" not in content_type:
-                # Store as static resource check rather than HTML page
                 self.asset_checks.append({
                     "url": url,
                     "status_code": response.status_code,
@@ -346,9 +346,7 @@ class SEOCrawler:
             html = response.text
             soup = BeautifulSoup(html, "html.parser")
             
-            # Metadata Extraction
             title_tag = soup.title.string.strip() if soup.title and soup.title.string else None
-            
             meta_desc_tag = soup.find("meta", attrs={"name": "description"})
             meta_description = meta_desc_tag["content"].strip() if meta_desc_tag and meta_desc_tag.get("content") else None
             
@@ -358,12 +356,10 @@ class SEOCrawler:
             robots_tag = soup.find("meta", attrs={"name": "robots"})
             robots_meta = robots_tag["content"].strip() if robots_tag and robots_tag.get("content") else "index, follow"
 
-            # HTML Tag Attributes & Viewport
             html_lang = soup.html.get("lang").strip() if soup.html and soup.html.get("lang") else None
             viewport_tag = soup.find("meta", attrs={"name": "viewport"})
             viewport = viewport_tag["content"].strip() if viewport_tag and viewport_tag.get("content") else None
 
-            # Hreflang Tags (International SEO)
             hreflangs = []
             for link in soup.find_all("link", attrs={"rel": re.compile(r"alternate", re.I)}):
                 if link.get("hreflang"):
@@ -372,79 +368,56 @@ class SEOCrawler:
                         "href": link.get("href", "").strip()
                     })
 
-            # Structured Data (Schema.org JSON-LD)
             structured_data = []
             for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
                 if script.string:
                     try:
                         structured_data.append(json.loads(script.string.strip()))
                     except Exception:
-                        structured_data.append({"raw": script.string.strip()})
+                        pass
 
-            # Headings
-            h1_tags = [h.text.strip() for h in soup.find_all("h1") if h.text.strip()]
+            h1_tags = [h.get_text().strip() for h in soup.find_all("h1") if h.get_text()]
+            h2_tags = [h.get_text().strip() for h in soup.find_all("h2") if h.get_text()]
+            h3_tags = [h.get_text().strip() for h in soup.find_all("h3") if h.get_text()]
             h1 = h1_tags[0] if h1_tags else None
-            
-            h2_tags = soup.find_all("h2")
-            h3_tags = soup.find_all("h3")
 
-            # Word Count
-            body_text = soup.body.get_text(separator=" ", strip=True) if soup.body else ""
-            words = body_text.split()
+            text = soup.get_text(separator=" ")
+            words = [w for w in text.split() if len(w) > 1]
             word_count = len(words)
 
-            # Images
             images = soup.find_all("img")
-            images_missing_alt = sum(1 for img in images if not img.get("alt") or not img["alt"].strip())
+            images_missing_alt = sum(1 for img in images if not img.get("alt"))
 
-            # Extract Links & Separate HTML pages from Static Asset URLs
-            discovered_internal = set()
-            a_tags = soup.find_all("a", href=True)
-            
-            for a_tag in a_tags:
-                href = a_tag["href"].strip()
-                anchor_text = a_tag.text.strip()
-                
-                if not href or href.startswith(("mailto:", "tel:", "javascript:", "#")):
+            current_depth = self.url_depths.get(url, 0)
+            discovered_internal = []
+
+            for a_tag in soup.find_all("a", href=True):
+                raw_href = a_tag["href"].strip()
+                if not raw_href or raw_href.startswith(("#", "javascript:", "mailto:", "tel:")):
                     continue
-                    
-                normalized = self.normalize_url(href, url)
                 
-                # Check if target is a static image or asset file vs HTML page
-                if self.is_static_asset(normalized):
-                    self.asset_checks.append({
-                        "url": normalized,
-                        "found_on": url,
-                        "type": "static_asset"
-                    })
-                    continue
+                normalized = self.normalize_url(raw_href, url)
 
                 if self.is_same_domain(normalized):
-                    discovered_internal.add(normalized)
+                    discovered_internal.append(normalized)
                     self.internal_links.append({
                         "source": url,
                         "target": normalized,
-                        "anchor_text": anchor_text
+                        "anchor_text": a_tag.get_text().strip() or "[Image/No Text]",
+                        "rel": a_tag.get("rel", "")
                     })
-                    curr_depth = self.url_depths.get(url, 0) + 1
-                    if (
-                        normalized not in self.visited 
-                        and normalized not in self.to_visit 
-                        and len(self.visited) + len(self.to_visit) < self.max_pages
-                        and self.is_url_allowed_by_scope_and_rules(normalized, curr_depth)
-                    ):
+                    
+                    if normalized not in self.queue_status and self.is_within_scope(normalized):
                         self.queue_status[normalized] = "PENDING"
-                        self.url_depths[normalized] = curr_depth
+                        self.url_depths[normalized] = current_depth + 1
                         self.to_visit.append(normalized)
-
                 else:
                     self.external_links.append({
                         "source": url,
                         "target": normalized,
-                        "anchor_text": anchor_text
+                        "anchor_text": a_tag.get_text().strip() or "[External Link]",
+                        "rel": a_tag.get("rel", "")
                     })
-
-            print(f"[PARSE] Extracted {len(discovered_internal)} internal HTML links from {url}", flush=True)
 
             page_record = {
                 "url": url,
@@ -472,34 +445,11 @@ class SEOCrawler:
             }
             
             self.pages.append(page_record)
-
             self.evaluate_page_issues(page_record)
 
-        except (ssl.SSLError, httpx.ConnectError) as ssl_err:
-
-            elapsed_ms = int((time.time() - start_time) * 1000)
-            print(f"[SSL ERROR] TLS verification failed for {url}: {ssl_err}", flush=True)
-            self.queue_status[url] = "FAILED"
-            page_record = {
-                "url": url,
-                "status_code": 0,
-                "response_time_ms": elapsed_ms,
-                "is_success": False,
-                "error": "SSL/TLS certificate validation failed — HTTPS connection could not be securely established",
-                "word_count": 0,
-                "internal_links_count": 0
-            }
-            self.pages.append(page_record)
-            self.issues.append({
-                "severity": "Critical",
-                "issue_type": "SSL / TLS Certificate Validation Failed",
-                "affected_url": url,
-                "details": f"HTTPS request failed certificate verification: {ssl_err}",
-                "recommendation": "Renew expired SSL certificate, configure valid CA chain, or resolve hostname mismatch."
-            })
         except Exception as e:
             elapsed_ms = int((time.time() - start_time) * 1000)
-            print(f"[ERROR] Failed to fetch {url}: {e}", flush=True)
+            print(f"[CRAWL ERROR] Failed to fetch {url}: {e}", flush=True)
             self.queue_status[url] = "FAILED"
             page_record = {
                 "url": url,
@@ -513,35 +463,39 @@ class SEOCrawler:
             self.pages.append(page_record)
             self.evaluate_page_issues(page_record)
 
+        finally:
+            if self.progress_callback:
+                try:
+                    self.progress_callback(len(self.visited), len(self.queue_status))
+                except Exception:
+                    pass
+
     async def start(self) -> Dict[str, Any]:
         self.is_running = True
         print(f"[CRAWL] Starting real Internet crawl for {self.start_url}", flush=True)
         
-        async with httpx.AsyncClient(verify=True) as client:
-
-            # 1. Fetch robots.txt and sitemap.xml first
+        # Use verify=False to support local environments / SSL certificate variations
+        async with httpx.AsyncClient(verify=False) as client:
             await self.fetch_robots_txt(client)
             await self.fetch_sitemap_xml(client)
 
-            # 2. Main Crawl Queue Loop
             while self.to_visit and len(self.visited) < self.max_pages:
                 batch = self.to_visit[:5] 
                 self.to_visit = self.to_visit[5:]
                 
                 tasks = [self.crawl_page(client, url) for url in batch]
-                await asyncio.gather(*tasks)
-                await asyncio.sleep(0.5)
+                await asyncio.gather(*tasks, return_exceptions=True)
+                await asyncio.sleep(0.2)
 
         self.is_running = False
 
         successful_pages = [p for p in self.pages if p.get("is_success") and p.get("status_code") == 200]
         failed_pages = [p for p in self.pages if not p.get("is_success") or (p.get("status_code") or 0) >= 400]
         
-        # Check if seed or entire site was access denied (e.g. 403 Forbidden)
-        is_access_denied = (self.seed_status_code in (403, 401)) or (len(successful_pages) == 0 and len(failed_pages) > 0)
-        overall_status = "access_denied" if is_access_denied else ("completed" if successful_pages else "failed")
+        is_access_denied = (self.seed_status_code in (403, 401))
+        overall_status = "access_denied" if is_access_denied else ("completed" if self.pages else "failed")
 
-        print(f"[CRAWL FINISHED] Status: {overall_status}. Successful Pages: {len(successful_pages)}, Failed/Blocked: {len(failed_pages)}, Issues: {len(self.issues)}", flush=True)
+        print(f"[CRAWL FINISHED] Status: {overall_status}. Total Pages Saved: {len(self.pages)}, Successful: {len(successful_pages)}, Failed/Blocked: {len(failed_pages)}, Issues: {len(self.issues)}", flush=True)
         
         return {
             "status": overall_status,

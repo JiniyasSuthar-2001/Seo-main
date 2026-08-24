@@ -57,7 +57,6 @@ export class Pages {
             const selectedProj = projectStore.getSelectedProject();
             const projectId = projectStore.getSelectedProjectId();
 
-
             if (!selectedProj || !projectId) {
                 container.innerHTML = `<div class="card" style="padding: 32px; text-align: center;">Please select or create a project workspace.</div>`;
                 return;
@@ -73,8 +72,12 @@ export class Pages {
                 `;
             }
 
-            const pages = await apiClient.get(`/api/projects/${projectId}/pages?limit=100&offset=0`);
-
+            console.log(`[PAGES UI] Fetching page inventory for project '${projectId}'...`);
+            const rawResponse = await apiClient.get(`/api/projects/${projectId}/pages?limit=100&offset=0`);
+            
+            // Safely parse pages array whether API returns direct list or {pages: [], total: X}
+            const pages = Array.isArray(rawResponse) ? rawResponse : (rawResponse.pages || []);
+            console.log(`[PAGES UI] Received ${pages.length} page records.`);
 
             if (!pages || pages.length === 0) {
                 container.innerHTML = `
@@ -105,7 +108,7 @@ export class Pages {
                     <td style="font-weight: 600;">${p.word_count || 0}</td>
                     <td style="font-size: 12px; font-family: monospace;">${p.canonical || '-'}</td>
                     <td><span class="badge badge-info">${p.robots_meta || 'index, follow'}</span></td>
-                    <td style="font-weight: 600;">${p.internal_links_count || 0}</td>
+                    <td>${p.internal_links_count || 0}</td>
                     <td>${p.response_time_ms ? `${p.response_time_ms}ms` : '-'}</td>
                 </tr>
             `).join('');
@@ -139,10 +142,16 @@ export class Pages {
                 </div>
             `;
         } catch (e) {
-            if (e.name === 'TypeError' || e.message.includes('fetch') || apiClient.status === 'OFFLINE') {
+            console.error('[PAGES UI ERROR]', e);
+            if (e.isNetworkError) {
                 renderBackendOfflineState(container, `Unable to connect to backend API server at ${API_BASE_URL}.`, () => this.mounted());
+            } else if (e.status === 401) {
+                renderFeatureErrorState(container, "Authentication Required (401)", "Please sign in with your Google account to view page inventory.", () => window.location.href = '/login');
+            } else if (e.status === 403) {
+                renderFeatureErrorState(container, "Access Denied (403)", "You are not authorized to view this project's SEO data.", () => window.location.href = '/');
+            } else if (e.status === 404) {
+                renderFeatureErrorState(container, "Project Not Found (404)", "The selected project or workspace data could not be found.", () => this.mounted());
             } else {
-
                 renderFeatureErrorState(container, "Crawled Pages Error", e.message || "Unable to load page records.", () => this.mounted());
             }
         }

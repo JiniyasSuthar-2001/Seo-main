@@ -83,13 +83,13 @@ class CrawlProgressOverlayManager {
             </div>
 
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12px;">
-                <span id="crawl-overlay-status-text" style="color: #cbd5e1; font-weight: 500;">Fetching pages & parsing HTML metadata...</span>
+                <span id="crawl-overlay-status-text" style="color: #cbd5e1; font-weight: 500;">Queuing URLs & scanning HTTP headers...</span>
                 <span id="crawl-overlay-stats" style="font-weight: 700; color: #38bdf8;">Starting...</span>
             </div>
 
             <!-- Animated Progress Bar Container -->
             <div style="width: 100%; height: 10px; background: rgba(255, 255, 255, 0.12); border-radius: 6px; overflow: hidden; position: relative;">
-                <div id="crawl-overlay-bar" class="crawl-progress-striped" style="width: 8%; height: 100%; background-color: #2563eb; border-radius: 6px; transition: width 0.4s ease, background-color 0.4s ease;"></div>
+                <div id="crawl-overlay-bar" class="crawl-progress-striped" style="width: 10%; height: 100%; background-color: #2563eb; border-radius: 6px; transition: width 0.4s ease, background-color 0.4s ease;"></div>
             </div>
 
             <div style="display: flex; justify-content: space-between; margin-top: 10px; font-size: 11px; color: #64748b;">
@@ -113,7 +113,6 @@ class CrawlProgressOverlayManager {
             clearInterval(this.activeInterval);
         }
 
-        // Disable all crawl buttons in DOM & show loading spinners on them
         this.setButtonsState(true);
 
         this.activeInterval = setInterval(async () => {
@@ -130,22 +129,24 @@ class CrawlProgressOverlayManager {
                 const discovered = statusData.pages_discovered || 1;
                 const crawled = statusData.pages_crawled || 0;
                 
-                // Calculate percentage
-                let pct = Math.max(8, Math.min(100, Math.round((crawled / Math.max(crawled, discovered)) * 100)));
+                let pct = 10;
+                if (crawled > 0) {
+                    pct = Math.min(100, Math.round((crawled / Math.max(crawled, discovered)) * 100));
+                }
 
                 if (statsEl) statsEl.innerText = `${crawled} / ${discovered} pages`;
                 if (percentEl) percentEl.innerText = `${pct}%`;
                 if (barEl) barEl.style.width = `${pct}%`;
 
                 if (crawled > 0 && statusTextEl) {
-                    statusTextEl.innerText = `Crawling HTML, extracted internal links & meta tags...`;
+                    statusTextEl.innerText = `Crawling HTML, extracting links & meta tags...`;
                 }
 
                 if (statusData.status === 'completed') {
                     clearInterval(this.activeInterval);
                     this.activeInterval = null;
 
-                    if (statsEl) statsEl.innerText = `${crawled} pages audited!`;
+                    if (statsEl) statsEl.innerText = `${crawled} page(s) audited!`;
                     if (statusTextEl) statusTextEl.innerHTML = `<span style="color: #4ade80; font-weight: 600;">✓ Website audit completed successfully!</span>`;
                     if (titleEl) titleEl.innerText = "Crawl Complete";
                     if (barEl) {
@@ -161,7 +162,7 @@ class CrawlProgressOverlayManager {
 
                     setTimeout(() => {
                         window.location.reload();
-                    }, 1200);
+                    }, 1000);
 
                 } else if (statusData.status === 'failed') {
                     clearInterval(this.activeInterval);
@@ -180,7 +181,7 @@ class CrawlProgressOverlayManager {
             } catch (err) {
                 console.error("[CRAWL OVERLAY] Status polling error:", err);
             }
-        }, 1200);
+        }, 1000);
     }
 
     setButtonsState(isCrawling) {

@@ -14,12 +14,11 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self):
-        masked = self.email[0] + "***" + self.email[self.email.find("@"):] if "@" in self.email else "user***@gmail.com"
         return {
             "id": self.id,
             "google_id": self.google_id,
             "email": self.email,
-            "masked_email": masked,
+            "masked_email": self.email,
             "name": self.name,
             "picture": self.picture,
             "created_at": self.created_at.isoformat() if self.created_at else None

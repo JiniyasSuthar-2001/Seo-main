@@ -4,12 +4,27 @@ class AuthStore {
   constructor() {
     this.TOKEN_KEY = 'seo_auth_token';
     this.USER_KEY = 'seo_user';
+    this.extractTokenFromUrl();
     this.user = this.getStoredUser();
     this.token = localStorage.getItem(this.TOKEN_KEY) || null;
     this.isAuthenticated = !!this.token;
     this.isCheckingSession = false;
     this.discoveredProperties = [];
     this.listeners = [];
+  }
+
+  extractTokenFromUrl() {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const tokenFromUrl = urlParams.get('token');
+      if (tokenFromUrl && tokenFromUrl.trim()) {
+        localStorage.setItem(this.TOKEN_KEY, tokenFromUrl.trim());
+        urlParams.delete('token');
+        const newSearch = urlParams.toString();
+        const newUrl = window.location.pathname + (newSearch ? `?${newSearch}` : '');
+        window.history.replaceState({}, document.title, newUrl);
+      }
+    } catch (e) {}
   }
 
   getStoredUser() {

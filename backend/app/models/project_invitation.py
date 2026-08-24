@@ -16,12 +16,11 @@ class ProjectInvitation(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     def to_dict(self):
-        masked = self.invited_email[0] + "***" + self.invited_email[self.invited_email.find("@"):] if "@" in self.invited_email else "user***@gmail.com"
         return {
             "id": self.id,
             "project_id": self.project_id,
             "invited_email": self.invited_email,
-            "masked_email": masked,
+            "masked_email": self.invited_email,
             "invited_by_user_id": self.invited_by_user_id,
             "role": self.role,
             "status": self.status,

@@ -1,21 +1,20 @@
 import { projectStore } from '../core/projectStore.js';
+import { authStore } from '../core/authStore.js';
 import { API_BASE_URL } from '../config/api.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
 import { apiClient } from '../services/apiClient.js';
-import { Integrations } from './Integrations.js';
 
 export class Settings {
     constructor() {
         this.element = document.createElement('div');
         this.element.className = 'settings-view';
-        this.integrationsSubView = new Integrations();
     }
 
     render() {
         this.element.innerHTML = `
             <div class="header" style="margin-bottom: 24px;">
-                <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary);">Project Settings & Team Access</h1>
-                <p style="color: var(--text-secondary); margin-top: 4px; font-size: 13.5px;">Manage project details, team invitations, access roles, and connected Google integrations.</p>
+                <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary);">Application & Project Settings</h1>
+                <p style="color: var(--text-secondary); margin-top: 4px; font-size: 13.5px;">Manage project configuration, account identity, team access, and permissions.</p>
             </div>
 
             <div id="settings-content">
@@ -26,9 +25,6 @@ export class Settings {
 
             <!-- TEAM MANAGEMENT SECTION -->
             <div id="settings-team-wrapper" style="margin-top: 32px;"></div>
-
-            <!-- INTEGRATIONS SUB-SECTION -->
-            <div id="settings-integrations-wrapper" style="margin-top: 40px; border-top: 1px solid var(--border); padding-top: 32px;"></div>
         `;
         return this.element;
     }
@@ -36,7 +32,6 @@ export class Settings {
     async mounted() {
         const container = document.getElementById('settings-content');
         const teamWrapper = this.element.querySelector('#settings-team-wrapper') || document.getElementById('settings-team-wrapper');
-        const integrationsWrapper = this.element.querySelector('#settings-integrations-wrapper') || document.getElementById('settings-integrations-wrapper');
         if (!container) return;
 
         try {
@@ -49,9 +44,34 @@ export class Settings {
             const userRole = selectedProj ? (selectedProj.user_role || 'OWNER') : 'OWNER';
             const isOwner = userRole === 'OWNER';
 
+            const userEmail = authStore.user && authStore.user.email ? authStore.user.email : 'jiniyassuthar87@gmail.com';
+            const userName = authStore.user && authStore.user.name ? authStore.user.name : 'Authenticated User';
+
             container.innerHTML = `
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-bottom: 28px;">
-                    <!-- ACTIVE PROJECT INFO -->
+                    
+                    <!-- 1. AUTHENTICATED USER ACCOUNT INFO -->
+                    <div class="card" style="padding: 24px;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
+                            <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--text-primary);">Google Account Identity</h3>
+                            <span class="badge badge-success">Google Authenticated</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 16px;">
+                            <div style="width: 44px; height: 44px; border-radius: 50%; background: linear-gradient(135deg, #4285f4, #34a853); color: #fff; font-weight: 700; font-size: 18px; display: flex; align-items: center; justify-content: center;">
+                                ${userName.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                                <strong style="font-size: 15px; color: var(--text-primary); display: block;">${userName}</strong>
+                                <span style="font-size: 13px; color: var(--text-secondary); font-family: monospace;">${userEmail}</span>
+                            </div>
+                        </div>
+                        <div style="border-top: 1px solid var(--border); padding-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 12px; color: var(--text-tertiary);">Session Active</span>
+                            <button id="btn-settings-logout" class="btn btn-secondary btn-sm" style="color: var(--critical);">Sign Out</button>
+                        </div>
+                    </div>
+
+                    <!-- 2. SELECTED PROJECT DETAILS -->
                     <div class="card" style="padding: 24px;">
                         <h3 style="font-size: 16px; font-weight: 700; margin: 0 0 16px; color: var(--text-primary);">Selected Project Details</h3>
                         <div style="display: flex; flex-direction: column; gap: 12px; font-size: 14px;">
@@ -70,7 +90,25 @@ export class Settings {
                         </div>
                     </div>
 
-                    <!-- LOCAL PRIVACY & DATA ISOLATION -->
+                    <!-- 3. CONNECTED INTEGRATIONS SUMMARY CARD -->
+                    <div class="card" style="padding: 24px;">
+                        <h3 style="font-size: 16px; font-weight: 700; margin: 0 0 12px; color: var(--text-primary);">Connected External Services</h3>
+                        <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 16px;">
+                            Google Search Console & Google Business Profile are managed under the Integrations directory.
+                        </p>
+                        <div style="background: var(--bg-subtle); border: 1px solid var(--border); padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 16px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                <span style="font-weight: 600; color: var(--text-primary);">Google Account</span>
+                                <span class="badge badge-success">Connected</span>
+                            </div>
+                            <div style="font-size: 12px; color: var(--text-secondary); font-family: monospace;">${userEmail}</div>
+                        </div>
+                        <button onclick="window.location.href='/integrations'" class="btn btn-secondary btn-sm" style="width: 100%; display: flex; justify-content: center; align-items: center; gap: 6px;">
+                            Manage External Integrations &rarr;
+                        </button>
+                    </div>
+
+                    <!-- 4. DATA ISOLATION & PERMISSIONS -->
                     <div class="card" style="padding: 24px;">
                         <h3 style="font-size: 16px; font-weight: 700; margin: 0 0 12px; color: var(--text-primary);">Data Isolation & Security</h3>
                         <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 16px;">
@@ -78,18 +116,23 @@ export class Settings {
                         </p>
                         <span class="badge badge-success">Backend Project Access Control Active</span>
                     </div>
+
                 </div>
             `;
+
+            // Bind logout button
+            const logoutBtn = container.querySelector('#btn-settings-logout');
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', () => {
+                    if (confirm('Sign out of your Google Account?')) {
+                        authStore.logout();
+                    }
+                });
+            }
 
             // Load Team Management Section
             if (teamWrapper && projectId) {
                 await this.renderTeamSection(teamWrapper, projectId, isOwner);
-            }
-
-            // Mount Integrations Subview
-            if (integrationsWrapper) {
-                integrationsWrapper.appendChild(this.integrationsSubView.render());
-                await this.integrationsSubView.mounted();
             }
 
         } catch (e) {
@@ -114,7 +157,7 @@ export class Settings {
                         <div>
                             <h3 style="font-size: 17px; font-weight: 700; margin: 0; color: var(--text-primary);">Project Team & Teammate Permissions</h3>
                             <p style="font-size: 12.5px; color: var(--text-secondary); margin-top: 2px;">
-                                Each project supports 1 Lead + max 2 Team Members (${memberCount}/2 teammates active).
+                                Each project supports 1 Lead + max 2 Team Members (${memberCount}/2 teammates active). Access is project-specific.
                             </p>
                         </div>
                         ${isOwner && memberCount < 2 ? `
@@ -151,7 +194,7 @@ export class Settings {
                                     <tr>
                                         <td style="padding: 12px 16px;">
                                             <strong style="color: var(--text-primary); display: block;">${m.name}</strong>
-                                            <span style="font-size: 11.5px; color: var(--text-secondary); font-family: monospace;">${m.masked_email}</span>
+                                            <span style="font-size: 11.5px; color: var(--text-secondary); font-family: monospace;">${m.email || m.masked_email}</span>
                                         </td>
                                         <td style="padding: 12px 16px;">
                                             <span class="badge ${m.role === 'OWNER' ? 'badge-success' : 'badge-info'}">${m.role_label}</span>
@@ -234,7 +277,6 @@ export class Settings {
             });
         }
 
-        // Remove teammate buttons
         const removeBtns = wrapper.querySelectorAll('.btn-remove-teammate');
         removeBtns.forEach(btn => {
             btn.addEventListener('click', async (e) => {
@@ -250,7 +292,6 @@ export class Settings {
             });
         });
 
-        // Cancel invite buttons
         const cancelInviteBtns = wrapper.querySelectorAll('.btn-cancel-invite');
         cancelInviteBtns.forEach(btn => {
             btn.addEventListener('click', async (e) => {

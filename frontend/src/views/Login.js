@@ -39,34 +39,34 @@ export class Login {
               Monitor your websites, technical SEO health, search performance, and Google properties from one intelligent workspace.
             </p>
 
-            <!-- SUBTLE SEO ANALYTICS PREVIEW VISUAL -->
+            <!-- PLATFORM CAPABILITIES FEATURE HIGHLIGHTS -->
             <div class="analytics-preview-card">
               <div class="preview-header">
-                <div class="preview-title">Portfolio Intelligence Overview</div>
-                <span class="preview-tag">LIVE AGGREGATION</span>
+                <div class="preview-title">Platform Capabilities Overview</div>
+                <span class="preview-tag">SECURE WORKSPACE</span>
               </div>
               
               <div class="preview-metrics-grid">
                 <div class="preview-metric">
-                  <span class="pm-label">SEO Health Score</span>
-                  <div class="pm-value" style="color: var(--success);">94 / 100</div>
-                  <span class="pm-subtext">↑ 6% vs last audit</span>
+                  <span class="pm-label">Search Console</span>
+                  <div class="pm-value" style="font-size: 14px; font-weight: 700; color: var(--text-primary);">Search Performance</div>
+                  <span class="pm-subtext">Official Google REST API</span>
                 </div>
                 <div class="preview-metric">
-                  <span class="pm-label">Google Properties</span>
-                  <div class="pm-value">Connected</div>
-                  <span class="pm-subtext">GSC, GA4, Business</span>
+                  <span class="pm-label">Business Profile</span>
+                  <div class="pm-value" style="font-size: 14px; font-weight: 700; color: var(--text-primary);">Locations & Accounts</div>
+                  <span class="pm-subtext">Google Workspace Integration</span>
                 </div>
               </div>
 
               <div class="preview-status-bars">
                 <div class="ps-bar-item">
-                  <div class="ps-label"><span>Technical Health</span><span>98%</span></div>
-                  <div class="ps-track"><div class="ps-fill" style="width: 98%; background: var(--success);"></div></div>
+                  <div class="ps-label"><span>Technical SEO Audits</span><span>On-Demand Crawling</span></div>
+                  <div class="ps-track"><div class="ps-fill" style="width: 100%; background: var(--primary);"></div></div>
                 </div>
                 <div class="ps-bar-item">
-                  <div class="ps-label"><span>Crawl Activity</span><span>Active</span></div>
-                  <div class="ps-track"><div class="ps-fill" style="width: 85%; background: var(--primary);"></div></div>
+                  <div class="ps-label"><span>Multi-Project Security</span><span>Lead & Team Access</span></div>
+                  <div class="ps-track"><div class="ps-fill" style="width: 100%; background: var(--accent-purple);"></div></div>
                 </div>
               </div>
             </div>

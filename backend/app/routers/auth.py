@@ -206,6 +206,14 @@ def google_oauth_callback(
     session_token = create_access_token(user_id=email)
     masked_email = email[0] + "***" + email[email.find("@"):] if "@" in email else "user***@gmail.com"
 
+    # If browser GET redirect, redirect directly to frontend discovery with token
+    if code:
+        target_url = build_frontend_redirect("/discovery", {
+            "token": session_token,
+            "auth": "success"
+        })
+        return RedirectResponse(url=target_url)
+
     return {
         "status": "success",
         "access_token": session_token,
@@ -224,45 +232,65 @@ def google_oauth_callback(
 @router.post("/google/login")
 def google_oauth_login(payload: dict = Body(default={}), db: Session = Depends(get_db)):
     """
-    Google OAuth login handler.
-    Exchanges credential or verifies authenticated Google session.
+    Google OAuth login endpoint for verified Google GIS / One-Tap ID tokens.
+    Rejects raw unauthenticated email strings to enforce 100% Google OAuth authentication.
     """
     token_str = payload.get("id_token") or payload.get("credential")
-    email = payload.get("email")
 
-    if not email and not token_str:
+    if not token_str:
         raise HTTPException(
-            status_code=400,
-            detail="Google OAuth authentication requires redirecting to Google's consent screen. Call GET /api/auth/google/login-url."
+            status_code=401,
+            detail="Google OAuth authentication requires a verified Google authorization code or ID token. Call GET /api/auth/google/login-url."
         )
 
-    clean_email = (email or "").strip().lower()
-    if not clean_email or "@" not in clean_email:
-        raise HTTPException(status_code=400, detail="Invalid Google email identity.")
+    # Verify ID token with Google tokeninfo endpoint
+    try:
+        req = urllib.request.Request(
+            f"https://oauth2.googleapis.com/tokeninfo?id_token={token_str}",
+            headers={"Accept": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            token_info = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Google ID token verification failed: {e}")
 
-    user = db.query(User).filter(User.email == clean_email).first()
+    email = (token_info.get("email") or "").strip().lower()
+    google_sub = token_info.get("sub")
+    email_verified = token_info.get("email_verified") in (True, "true", 1)
+
+    if not email or not google_sub or not email_verified:
+        raise HTTPException(status_code=401, detail="Unverified or invalid Google identity token.")
+
+    user = db.query(User).filter((User.google_id == google_sub) | (User.email == email)).first()
     if not user:
         user = User(
-            id=clean_email,
-            email=clean_email,
-            name=payload.get("name") or "Google User",
-            picture=payload.get("picture"),
-            google_id=f"google_{uuid.uuid4().hex[:8]}"
+            id=email,
+            email=email,
+            name=token_info.get("name") or "Google User",
+            picture=token_info.get("picture"),
+            google_id=google_sub
         )
         db.add(user)
         db.commit()
         db.refresh(user)
+    else:
+        user.google_id = google_sub
+        user.email = email
+        user.name = token_info.get("name") or user.name
+        user.picture = token_info.get("picture") or user.picture
+        user.updated_at = datetime.utcnow()
+        db.commit()
 
-    session_token = create_access_token(user_id=clean_email)
-    masked = clean_email[0] + "***" + clean_email[clean_email.find("@"):] if "@" in clean_email else "user***@gmail.com"
+    session_token = create_access_token(user_id=email)
+    masked = email[0] + "***" + email[email.find("@"):] if "@" in email else "user***@gmail.com"
 
     return {
         "access_token": session_token,
         "token_type": "bearer",
         "user": {
-            "id": clean_email,
+            "id": email,
             "google_id": user.google_id,
-            "email": clean_email,
+            "email": email,
             "masked_email": masked,
             "name": user.name,
             "picture": user.picture,

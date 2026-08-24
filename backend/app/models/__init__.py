@@ -1,4 +1,7 @@
 from app.models.project import Project
+from app.models.user import User
+from app.models.project_membership import ProjectMembership
+from app.models.project_invitation import ProjectInvitation
 from app.models.dataset import Dataset
 from app.models.page import Page
 from app.models.keyword import Keyword
@@ -11,6 +14,9 @@ from app.models.action_opportunity import ActionOpportunity
 
 __all__ = [
     "Project",
+    "User",
+    "ProjectMembership",
+    "ProjectInvitation",
     "Dataset",
     "Page",
     "Keyword",

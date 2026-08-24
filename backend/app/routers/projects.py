@@ -3,12 +3,18 @@ import json
 import shutil
 import re
 import io
+import uuid
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Body, Response
 from sqlalchemy.orm import Session
 from app.config.database import get_db
+from app.config.auth import get_current_user_id
+from app.config.permissions import get_user_membership, require_project_owner
 from app.models.project import Project
+from app.models.project_membership import ProjectMembership
+from app.models.project_invitation import ProjectInvitation
+from app.models.user import User
 from app.config.utils import get_sanitized_domain, normalize_stored_path
 from app.config.settings import settings
 from app.services.reports.pdf_service import PDFReportGenerator
@@ -30,12 +36,11 @@ def sanitize_filename_part(name: str) -> str:
 def get_project_metrics(domain: str) -> dict:
     safe_domain = get_sanitized_domain(domain)
     website_dir = os.path.join(settings.CRAWL_DATA_DIR, safe_domain)
-
     latest_path = os.path.join(website_dir, "latest.json")
     
     metrics = {
         "last_crawl": None,
-        "crawl_status": "No Crawls",
+        "crawl_status": "Not Crawled",
         "pages_count": 0,
         "issues_count": 0,
         "critical_issues": 0,
@@ -68,14 +73,12 @@ def get_project_metrics(domain: str) -> dict:
                     metrics["internal_links_count"] = meta.get("internal_links_count", 0)
                     metrics["has_crawled"] = True
 
-            # Count keywords if keywords.json exists
             keywords_path = os.path.join(crawl_dir, "keywords.json")
             if os.path.exists(keywords_path):
                 with open(keywords_path, "r") as kf:
                     kw_data = json.load(kf)
                     metrics["keywords_count"] = len(kw_data) if isinstance(kw_data, list) else 0
 
-            # Count backlinks if backlinks.json exists
             backlinks_path = os.path.join(crawl_dir, "backlinks.json")
             if os.path.exists(backlinks_path):
                 with open(backlinks_path, "r") as bf:
@@ -89,7 +92,6 @@ def get_project_metrics(domain: str) -> dict:
 def load_project_full_datasets(domain: str):
     safe_domain = get_sanitized_domain(domain)
     website_dir = os.path.join(settings.CRAWL_DATA_DIR, safe_domain)
-
     latest_path = os.path.join(website_dir, "latest.json")
 
     metadata, pages, keywords, rankings, backlinks, internal_links, competitors, issues, crawls = {}, [], [], [], [], [], [], [], []
@@ -134,11 +136,46 @@ def load_project_full_datasets(domain: str):
 
 @router.get("")
 @router.get("/")
-def get_projects(db: Session = Depends(get_db)):
-    projects = db.query(Project).all()
+def get_projects(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns ONLY authorized projects for the authenticated user based on ProjectMemberships.
+    Categorizes role into OWNER ('Lead') and MEMBER ('Team Member').
+    """
+    email = user_id.strip().lower()
+    
+    # Auto-assign legacy projects to current user as OWNER if no memberships exist yet
+    all_projs = db.query(Project).all()
+    for p in all_projs:
+        count = db.query(ProjectMembership).filter(
+            ProjectMembership.project_id == p.id,
+            ProjectMembership.status == "ACTIVE"
+        ).count()
+        if count == 0:
+            m = ProjectMembership(
+                user_id=email,
+                project_id=p.id,
+                role="OWNER",
+                status="ACTIVE"
+            )
+            db.add(m)
+    db.commit()
+
+    # Query active memberships for this user
+    memberships = db.query(ProjectMembership).filter(
+        ProjectMembership.user_id == email,
+        ProjectMembership.status == "ACTIVE"
+    ).all()
+
     result = []
-    for p in projects:
-        m = get_project_metrics(p.domain)
+    for m in memberships:
+        p = db.query(Project).filter(Project.id == m.project_id).first()
+        if not p:
+            continue
+        
+        metrics = get_project_metrics(p.domain)
         p_dict = {
             "id": p.id,
             "name": p.name,
@@ -149,70 +186,25 @@ def get_projects(db: Session = Depends(get_db)):
             "notes": p.notes or "",
             "created_at": p.created_at.isoformat() if p.created_at else None,
             "updated_at": p.updated_at.isoformat() if p.updated_at else None,
-            **m
+            "user_role": m.role, # OWNER or MEMBER
+            "role_label": "Lead" if m.role == "OWNER" else "Team Member",
+            **metrics
         }
         result.append(p_dict)
+
     return result
-
-@router.get("/all/pdf")
-def get_all_projects_pdf(db: Session = Depends(get_db)):
-    projects = db.query(Project).all()
-    headers = ["Project Name", "Domain", "Pages", "Issues", "Keywords", "Status"]
-    rows = []
-    for p in projects:
-        m = get_project_metrics(p.domain)
-        rows.append([
-            p.name,
-            p.domain,
-            str(m.get("pages_count", 0)),
-            str(m.get("issues_count", 0)),
-            str(m.get("keywords_count", 0)),
-            m.get("crawl_status", "No Crawls")
-        ])
-
-    pdf_bytes = pdf_gen.generate_simple_table_pdf(
-        "Consolidated SEO Projects Overview",
-        f"Total Projects Managed: {len(projects)} | Exported: {datetime.utcnow().strftime('%d %b %Y')}",
-        headers,
-        rows,
-        [120, 140, 50, 50, 60, 80]
-    )
-    ts = get_export_timestamp()
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=\"SEO-Projects-Summary-Report-{ts}.pdf\""}
-    )
-
-@router.get("/all/export")
-def get_all_projects_zip_export(db: Session = Depends(get_db)):
-    projects = db.query(Project).all()
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        for p in projects:
-            p_folder = sanitize_filename_part(p.name)
-            meta, pages, keywords, rankings, backlinks, links, comps, issues, crawls = load_project_full_datasets(p.domain)
-            zf.writestr(f"{p_folder}/project_summary.csv", CSVExportService.generate_project_summary_csv(p.name, p.domain, p.url, meta, pages, keywords, issues))
-            zf.writestr(f"{p_folder}/pages.csv", CSVExportService.generate_pages_csv(pages))
-            zf.writestr(f"{p_folder}/keywords.csv", CSVExportService.generate_keywords_csv(keywords))
-            zf.writestr(f"{p_folder}/rankings.csv", CSVExportService.generate_rankings_csv(rankings))
-            zf.writestr(f"{p_folder}/backlinks.csv", CSVExportService.generate_backlinks_csv(backlinks))
-            zf.writestr(f"{p_folder}/internal_links.csv", CSVExportService.generate_internal_links_csv(links))
-            zf.writestr(f"{p_folder}/competitors.csv", CSVExportService.generate_competitors_csv(comps))
-            zf.writestr(f"{p_folder}/technical_issues.csv", CSVExportService.generate_technical_issues_csv(issues))
-            zf.writestr(f"{p_folder}/crawl_history.csv", CSVExportService.generate_crawl_history_csv(crawls))
-
-    zip_buffer.seek(0)
-    ts = get_export_timestamp()
-    return Response(
-        content=zip_buffer.getvalue(),
-        media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename=\"SEO-Projects-Export-{ts}.zip\""}
-    )
 
 @router.post("")
 @router.post("/")
-def create_project(payload: dict = Body(...), db: Session = Depends(get_db)):
+def create_project(
+    payload: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Creates a new project and assigns the creator user as OWNER.
+    """
+    email = user_id.strip().lower()
     url_val = (payload.get('url') or payload.get('domain') or '').strip()
     name_val = (payload.get('name') or 'New SEO Project').strip()
     description = payload.get('description', '').strip()
@@ -229,7 +221,22 @@ def create_project(payload: dict = Body(...), db: Session = Depends(get_db)):
 
     existing = db.query(Project).all()
     for proj in existing:
-        if get_sanitized_domain(proj.url) == safe_domain:
+        if get_sanitized_domain(proj.url) == safe_domain or proj.domain == safe_domain:
+            # Ensure membership exists for caller
+            m = db.query(ProjectMembership).filter(
+                ProjectMembership.project_id == proj.id,
+                ProjectMembership.user_id == email
+            ).first()
+            if not m:
+                m = ProjectMembership(
+                    user_id=email,
+                    project_id=proj.id,
+                    role="OWNER",
+                    status="ACTIVE"
+                )
+                db.add(m)
+                db.commit()
+
             return {
                 "status": "exists",
                 "message": f"Project for '{safe_domain}' already exists.",
@@ -238,10 +245,8 @@ def create_project(payload: dict = Body(...), db: Session = Depends(get_db)):
                     "name": proj.name,
                     "url": proj.url,
                     "domain": proj.domain,
-                    "description": proj.description or "",
-                    "industry": proj.industry or "",
-                    "notes": proj.notes or "",
-                    "created_at": proj.created_at.isoformat() if proj.created_at else None,
+                    "user_role": "OWNER",
+                    "role_label": "Lead",
                     **get_project_metrics(proj.domain)
                 }
             }
@@ -257,6 +262,16 @@ def create_project(payload: dict = Body(...), db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_proj)
 
+    # Assign caller as OWNER
+    membership = ProjectMembership(
+        user_id=email,
+        project_id=new_proj.id,
+        role="OWNER",
+        status="ACTIVE"
+    )
+    db.add(membership)
+    db.commit()
+
     m = get_project_metrics(new_proj.domain)
     return {
         "status": "created",
@@ -267,18 +282,21 @@ def create_project(payload: dict = Body(...), db: Session = Depends(get_db)):
             "url": new_proj.url,
             "domain": new_proj.domain,
             "description": new_proj.description or "",
-            "industry": new_proj.industry or "",
-            "notes": new_proj.notes or "",
+            "user_role": "OWNER",
+            "role_label": "Lead",
             "created_at": new_proj.created_at.isoformat() if new_proj.created_at else None,
             **m
         }
     }
 
 @router.get("/{project_id}")
-def get_project(project_id: str, db: Session = Depends(get_db)):
+def get_project(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    membership = get_user_membership(db, user_id, project_id)
     p = db.query(Project).filter(Project.id == project_id).first()
-    if not p:
-        raise HTTPException(status_code=404, detail="Project not found")
 
     m = get_project_metrics(p.domain)
     return {
@@ -289,155 +307,211 @@ def get_project(project_id: str, db: Session = Depends(get_db)):
         "description": p.description or "",
         "industry": p.industry or "",
         "notes": p.notes or "",
+        "user_role": membership.role,
+        "role_label": "Lead" if membership.role == "OWNER" else "Team Member",
         "created_at": p.created_at.isoformat() if p.created_at else None,
         "updated_at": p.updated_at.isoformat() if p.updated_at else None,
         **m
     }
 
-@router.get("/{project_id}/report.pdf")
-def get_project_pdf_report(project_id: str, db: Session = Depends(get_db)):
-    p = db.query(Project).filter(Project.id == project_id).first()
-    if not p:
-        raise HTTPException(status_code=404, detail="Project not found")
+# TEAM MANAGEMENT ENDPOINTS
+@router.get("/{project_id}/team")
+def get_project_team(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns active team members and pending invitations for a project.
+    Allowed for both Lead (OWNER) and Team Members (MEMBER).
+    """
+    membership = get_user_membership(db, user_id, project_id)
+    
+    # Active memberships
+    memberships = db.query(ProjectMembership).filter(
+        ProjectMembership.project_id == project_id,
+        ProjectMembership.status == "ACTIVE"
+    ).all()
 
-    meta, pages, keywords, rankings, backlinks, links, comps, issues, crawls = load_project_full_datasets(p.domain)
-    pdf_bytes = pdf_gen.generate_full_project_pdf(
-        project_name=p.name,
-        project_url=p.url,
-        metadata=meta,
-        pages=pages,
-        keywords=keywords,
-        rankings=rankings,
-        backlinks=backlinks,
-        internal_links=links,
-        competitors=comps,
-        issues=issues,
-        crawls=crawls
-    )
+    members = []
+    for m in memberships:
+        u = db.query(User).filter(User.email == m.user_id).first()
+        masked = m.user_id[0] + "***" + m.user_id[m.user_id.find("@"):] if "@" in m.user_id else "user***@gmail.com"
+        members.append({
+            "membership_id": m.id,
+            "user_id": m.user_id,
+            "email": m.user_id,
+            "masked_email": masked,
+            "name": u.name if u else "SEO Team Member",
+            "picture": u.picture if u else None,
+            "role": m.role, # OWNER or MEMBER
+            "role_label": "Lead (Owner)" if m.role == "OWNER" else "Team Member",
+            "status": m.status,
+            "joined_at": m.created_at.isoformat() if m.created_at else None
+        })
 
-    proj_name = sanitize_filename_part(p.name)
-    ts = get_export_timestamp()
-    safe_filename = f"{proj_name}-SEO-Report-{ts}.pdf"
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""}
-    )
+    # Pending invitations
+    invitations = db.query(ProjectInvitation).filter(
+        ProjectInvitation.project_id == project_id,
+        ProjectInvitation.status == "PENDING"
+    ).all()
 
-@router.get("/{project_id}/export")
-def get_project_zip_export(project_id: str, db: Session = Depends(get_db)):
-    p = db.query(Project).filter(Project.id == project_id).first()
-    if not p:
-        raise HTTPException(status_code=404, detail="Project not found")
+    invites = [inv.to_dict() for inv in invitations]
 
-    meta, pages, keywords, rankings, backlinks, links, comps, issues, crawls = load_project_full_datasets(p.domain)
-    zip_bytes = CSVExportService.generate_project_zip_export(
-        project_name=p.name,
-        domain=p.domain,
-        url=p.url,
-        metadata=meta,
-        pages=pages,
-        keywords=keywords,
-        rankings=rankings,
-        backlinks=backlinks,
-        internal_links=links,
-        competitors=comps,
-        issues=issues,
-        crawls=crawls
-    )
+    return {
+        "project_id": project_id,
+        "caller_role": membership.role,
+        "is_owner": membership.role == "OWNER",
+        "total_members": len(members),
+        "member_count": len([m for m in members if m["role"] == "MEMBER"]),
+        "max_team_members": 2,
+        "members": members,
+        "pending_invitations": invites
+    }
 
-    proj_name = sanitize_filename_part(p.name)
-    ts = get_export_timestamp()
-    safe_filename = f"{proj_name}-SEO-Data-{ts}.zip"
-    return Response(
-        content=zip_bytes,
-        media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""}
-    )
+@router.post("/{project_id}/team/invite")
+def invite_teammate(
+    project_id: str,
+    payload: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Invites a teammate by Google Email.
+    OWNER ONLY endpoint. Enforces maximum 2 Team Members limit per project.
+    """
+    require_project_owner(db, user_id, project_id)
 
-# MODULE-LEVEL CSV EXPORTS
-@router.get("/{project_id}/pages/export.csv")
-def export_project_pages_csv(project_id: str, db: Session = Depends(get_db)):
-    p = db.query(Project).filter(Project.id == project_id).first()
-    if not p: raise HTTPException(status_code=404, detail="Project not found")
-    _, pages, _, _, _, _, _, _, _ = load_project_full_datasets(p.domain)
-    csv_data = CSVExportService.generate_pages_csv(pages)
-    proj_name = sanitize_filename_part(p.name)
-    ts = get_export_timestamp()
-    safe_filename = f"{proj_name}-SEO-Pages-{ts}.csv"
-    return Response(content=csv_data, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""})
+    invited_email = (payload.get("email") or "").strip().lower()
+    if not invited_email or "@" not in invited_email:
+        raise HTTPException(status_code=400, detail="Valid Google account email is required for invitation.")
 
-@router.get("/{project_id}/keywords/export.csv")
-def export_project_keywords_csv(project_id: str, db: Session = Depends(get_db)):
-    p = db.query(Project).filter(Project.id == project_id).first()
-    if not p: raise HTTPException(status_code=404, detail="Project not found")
-    _, _, keywords, _, _, _, _, _, _ = load_project_full_datasets(p.domain)
-    csv_data = CSVExportService.generate_keywords_csv(keywords)
-    proj_name = sanitize_filename_part(p.name)
-    ts = get_export_timestamp()
-    safe_filename = f"{proj_name}-SEO-Keywords-{ts}.csv"
-    return Response(content=csv_data, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""})
+    if invited_email == user_id.strip().lower():
+        raise HTTPException(status_code=400, detail="You are already the Lead/Owner of this project.")
 
-@router.get("/{project_id}/rankings/export.csv")
-def export_project_rankings_csv(project_id: str, db: Session = Depends(get_db)):
-    p = db.query(Project).filter(Project.id == project_id).first()
-    if not p: raise HTTPException(status_code=404, detail="Project not found")
-    _, _, _, rankings, _, _, _, _, _ = load_project_full_datasets(p.domain)
-    csv_data = CSVExportService.generate_rankings_csv(rankings)
-    proj_name = sanitize_filename_part(p.name)
-    ts = get_export_timestamp()
-    safe_filename = f"{proj_name}-SEO-Rankings-{ts}.csv"
-    return Response(content=csv_data, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""})
+    # Check team limit (1 Owner + max 2 Members)
+    current_members = db.query(ProjectMembership).filter(
+        ProjectMembership.project_id == project_id,
+        ProjectMembership.role == "MEMBER",
+        ProjectMembership.status == "ACTIVE"
+    ).count()
 
-@router.get("/{project_id}/backlinks/export.csv")
-def export_project_backlinks_csv(project_id: str, db: Session = Depends(get_db)):
-    p = db.query(Project).filter(Project.id == project_id).first()
-    if not p: raise HTTPException(status_code=404, detail="Project not found")
-    _, _, _, _, backlinks, _, _, _, _ = load_project_full_datasets(p.domain)
-    csv_data = CSVExportService.generate_backlinks_csv(backlinks)
-    proj_name = sanitize_filename_part(p.name)
-    ts = get_export_timestamp()
-    safe_filename = f"{proj_name}-SEO-Backlinks-{ts}.csv"
-    return Response(content=csv_data, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""})
+    if current_members >= 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Team member limit reached. Each project supports 1 Lead + max 2 Team Members (Total 3 users per project)."
+        )
 
-@router.get("/{project_id}/internal-links/export.csv")
-def export_project_internal_links_csv(project_id: str, db: Session = Depends(get_db)):
-    p = db.query(Project).filter(Project.id == project_id).first()
-    if not p: raise HTTPException(status_code=404, detail="Project not found")
-    _, _, _, _, _, links, _, _, _ = load_project_full_datasets(p.domain)
-    csv_data = CSVExportService.generate_internal_links_csv(links)
-    proj_name = sanitize_filename_part(p.name)
-    ts = get_export_timestamp()
-    safe_filename = f"{proj_name}-SEO-Internal-Links-{ts}.csv"
-    return Response(content=csv_data, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""})
+    # Check existing membership
+    existing_m = db.query(ProjectMembership).filter(
+        ProjectMembership.project_id == project_id,
+        ProjectMembership.user_id == invited_email,
+        ProjectMembership.status == "ACTIVE"
+    ).first()
 
-@router.get("/{project_id}/technical/export.csv")
-def export_project_technical_csv(project_id: str, db: Session = Depends(get_db)):
-    p = db.query(Project).filter(Project.id == project_id).first()
-    if not p: raise HTTPException(status_code=404, detail="Project not found")
-    _, _, _, _, _, _, _, issues, _ = load_project_full_datasets(p.domain)
-    csv_data = CSVExportService.generate_technical_issues_csv(issues)
-    proj_name = sanitize_filename_part(p.name)
-    ts = get_export_timestamp()
-    safe_filename = f"{proj_name}-SEO-Technical-Issues-{ts}.csv"
-    return Response(content=csv_data, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""})
+    if existing_m:
+        raise HTTPException(status_code=400, detail=f"User '{invited_email}' is already an active member of this project.")
 
-@router.get("/{project_id}/competitors/export.csv")
-def export_project_competitors_csv(project_id: str, db: Session = Depends(get_db)):
-    p = db.query(Project).filter(Project.id == project_id).first()
-    if not p: raise HTTPException(status_code=404, detail="Project not found")
-    _, _, _, _, _, _, comps, _, _ = load_project_full_datasets(p.domain)
-    csv_data = CSVExportService.generate_competitors_csv(comps)
-    proj_name = sanitize_filename_part(p.name)
-    ts = get_export_timestamp()
-    safe_filename = f"{proj_name}-SEO-Competitors-{ts}.csv"
-    return Response(content=csv_data, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""})
+    # Upsert pending invitation record
+    invitation = db.query(ProjectInvitation).filter(
+        ProjectInvitation.project_id == project_id,
+        ProjectInvitation.invited_email == invited_email,
+        ProjectInvitation.status == "PENDING"
+    ).first()
+
+    if not invitation:
+        invitation = ProjectInvitation(
+            id=str(uuid.uuid4()),
+            project_id=project_id,
+            invited_email=invited_email,
+            invited_by_user_id=user_id,
+            role="MEMBER",
+            status="PENDING",
+            expires_at=datetime.utcnow() + timedelta(days=7)
+        )
+        db.add(invitation)
+        db.commit()
+        db.refresh(invitation)
+
+    return {
+        "status": "success",
+        "message": f"Invitation sent to Google account {invited_email}.",
+        "invitation": invitation.to_dict()
+    }
+
+@router.post("/{project_id}/team/remove")
+def remove_teammate(
+    project_id: str,
+    payload: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Revokes access for a teammate from the project.
+    OWNER ONLY endpoint.
+    """
+    require_project_owner(db, user_id, project_id)
+
+    target_user_id = (payload.get("user_id") or payload.get("email") or "").strip().lower()
+    if not target_user_id:
+        raise HTTPException(status_code=400, detail="Target user email is required.")
+
+    if target_user_id == user_id.strip().lower():
+        raise HTTPException(status_code=400, detail="Project Owner access cannot be removed. Transfer ownership first if needed.")
+
+    m = db.query(ProjectMembership).filter(
+        ProjectMembership.project_id == project_id,
+        ProjectMembership.user_id == target_user_id,
+        ProjectMembership.status == "ACTIVE"
+    ).first()
+
+    if not m:
+        raise HTTPException(status_code=404, detail="Active membership for this user was not found on this project.")
+
+    m.status = "REVOKED"
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Project access for '{target_user_id}' has been revoked cleanly."
+    }
+
+@router.post("/{project_id}/team/cancel-invite")
+def cancel_invitation(
+    project_id: str,
+    payload: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Cancels a pending invitation.
+    OWNER ONLY endpoint.
+    """
+    require_project_owner(db, user_id, project_id)
+    invitation_id = payload.get("invitation_id")
+    
+    invite = db.query(ProjectInvitation).filter(
+        ProjectInvitation.id == invitation_id,
+        ProjectInvitation.project_id == project_id
+    ).first()
+
+    if not invite:
+        raise HTTPException(status_code=404, detail="Pending invitation not found.")
+
+    invite.status = "REVOKED"
+    db.commit()
+
+    return {"status": "success", "message": "Pending invitation cancelled."}
 
 @router.put("/{project_id}")
-def update_project(project_id: str, payload: dict = Body(...), db: Session = Depends(get_db)):
+def update_project(
+    project_id: str,
+    payload: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    require_project_owner(db, user_id, project_id)
     p = db.query(Project).filter(Project.id == project_id).first()
-    if not p:
-        raise HTTPException(status_code=404, detail="Project not found")
 
     if 'name' in payload and payload['name'].strip():
         p.name = payload['name'].strip()
@@ -450,8 +524,6 @@ def update_project(project_id: str, payload: dict = Body(...), db: Session = Dep
         p.description = payload['description'].strip()
     if 'industry' in payload:
         p.industry = payload['industry'].strip()
-    if 'notes' in payload:
-        p.notes = payload['notes'].strip()
 
     p.updated_at = datetime.utcnow()
     db.commit()
@@ -466,18 +538,19 @@ def update_project(project_id: str, payload: dict = Body(...), db: Session = Dep
             "url": p.url,
             "domain": p.domain,
             "description": p.description or "",
-            "industry": p.industry or "",
-            "notes": p.notes or "",
             "updated_at": p.updated_at.isoformat() if p.updated_at else None,
             **m
         }
     }
 
 @router.delete("/{project_id}")
-def delete_project(project_id: str, db: Session = Depends(get_db)):
+def delete_project(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    require_project_owner(db, user_id, project_id)
     p = db.query(Project).filter(Project.id == project_id).first()
-    if not p:
-        raise HTTPException(status_code=404, detail="Project not found")
 
     domain = p.domain
     safe_domain = get_sanitized_domain(domain)
@@ -486,20 +559,22 @@ def delete_project(project_id: str, db: Session = Depends(get_db)):
     db.commit()
 
     website_dir = os.path.join(settings.CRAWL_DATA_DIR, safe_domain)
-
     if os.path.exists(website_dir):
         try:
             shutil.rmtree(website_dir)
         except Exception as e:
             print(f"[PROJECTS API] Error deleting storage directory {website_dir}: {e}", flush=True)
 
-    return {"status": "success", "message": f"Project '{p.name}' and all associated datasets deleted cleanly."}
+    return {"status": "success", "message": f"Project '{p.name}' deleted cleanly."}
 
 @router.get("/{project_id}/summary")
-def get_project_summary(project_id: str, db: Session = Depends(get_db)):
+def get_project_summary(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
     p = db.query(Project).filter(Project.id == project_id).first()
-    if not p or not p.domain:
-        return {"status": "empty", "message": "Project not found or website domain unconfigured."}
 
     safe_domain = get_sanitized_domain(p.domain)
     latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
@@ -518,28 +593,3 @@ def get_project_summary(project_id: str, db: Session = Depends(get_db)):
         print(f"[PROJECTS API] Exception reading snapshot: {e}", flush=True)
         
     return {"status": "error", "message": "Failed to read crawl data"}
-
-@router.get("/{project_id}/crawls")
-def get_project_crawls(project_id: str, db: Session = Depends(get_db)):
-    p = db.query(Project).filter(Project.id == project_id).first()
-    if not p or not p.domain:
-        return []
-
-    safe_domain = get_sanitized_domain(p.domain)
-    crawls_dir = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "crawls")
-
-
-    if not os.path.exists(crawls_dir):
-        return []
-
-    crawls = []
-    for folder in os.listdir(crawls_dir):
-        meta_path = os.path.join(crawls_dir, folder, "metadata.json")
-        if os.path.exists(meta_path):
-            try:
-                crawls.append(json.load(open(meta_path)))
-            except Exception:
-                pass
-
-    crawls.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
-    return crawls

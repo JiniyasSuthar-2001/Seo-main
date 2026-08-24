@@ -1,8 +1,12 @@
+import { themeStore } from './core/themeStore.js';
+import { authStore } from './core/authStore.js';
 import { Router } from './core/router.js';
 import { Sidebar } from './components/Sidebar.js';
 import { TopBar } from './components/TopBar.js';
 
 // Views
+import { Login } from './views/Login.js';
+import { Discovery } from './views/Discovery.js';
 import { Dashboard } from './views/Dashboard.js';
 import { Projects } from './views/Projects.js';
 import { Pages } from './views/Pages.js';
@@ -22,6 +26,7 @@ import { Integrations } from './views/Integrations.js';
 import { Help } from './views/Help.js';
 
 document.addEventListener('DOMContentLoaded', () => {
+  themeStore.init();
   const appRoot = document.getElementById('app-root');
   
   // App Shell Structure
@@ -47,6 +52,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize Router
   const router = new Router(viewContainer);
   
+  router.addRoute('/login', Login);
+  router.addRoute('/discovery', Discovery);
   router.addRoute('/', Dashboard);
   router.addRoute('/projects', Projects);
   router.addRoute('/pages', Pages);
@@ -67,4 +74,3 @@ document.addEventListener('DOMContentLoaded', () => {
 
   router.init();
 });
-

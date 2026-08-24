@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 
 from app.config.database import get_db
 from app.config.settings import settings, build_frontend_redirect
+from app.config.auth import create_access_token, get_current_user_id
 from app.models.external_connection import ExternalConnection
-
+from app.models.user import User
 
 from app.services.oauth_provider_service import (
     build_authorization_url,
@@ -22,12 +23,7 @@ from app.services.oauth_provider_service import (
     OAuthProviderConfig
 )
 
-from app.config.auth import get_current_user_id
-
 router = APIRouter()
-
-
-
 
 @router.get("")
 @router.get("/")
@@ -62,7 +58,6 @@ def get_user_integrations(
         "supported_providers": all_providers
     }
 
-
 @router.get("/{provider}/connect")
 def connect_provider_oauth(
     provider: str,
@@ -71,18 +66,21 @@ def connect_provider_oauth(
 ):
     """
     Generates a secure OAuth authorization URL for the requested provider with CSRF state protection.
+    Binds the OAuth state to the currently authenticated SEO Intelligence user.
     """
     p = provider.lower()
+    print(f"[GOOGLE OAUTH] Explicit OAuth login URL requested for provider='{p}', user_id='{user_id}'", flush=True)
+
     if p in ("openai", "gemini", "claude"):
         raise HTTPException(
             status_code=400,
-            detail=f"{provider.title()} uses User API Key registration. Use POST /api/integrations/{p}/key to connect your account."
+            detail=f"{provider.title()} uses User API Key registration."
         )
 
     try:
         redirect_base = str(request.base_url).rstrip("/") if request else settings.API_BASE_URL
-
         auth_url = build_authorization_url(p, user_id=user_id, redirect_base=redirect_base)
+        
         return {
             "status": "ok",
             "provider": p,
@@ -90,8 +88,8 @@ def connect_provider_oauth(
             "authorization_url": auth_url
         }
     except ValueError as err:
+        print(f"[GOOGLE OAUTH] Failed to generate login URL: {err}", flush=True)
         raise HTTPException(status_code=400, detail=str(err))
-
 
 @router.get("/{provider}/callback")
 def handle_oauth_callback(
@@ -104,11 +102,15 @@ def handle_oauth_callback(
     db: Session = Depends(get_db)
 ):
     """
-    Validates the OAuth authorization callback, performs a REAL token exchange with the provider,
-    fetches authentic user profile details, encrypts credentials at rest, and associates connection.
+    Handles Google & Third-Party OAuth callback.
+    Validates state, performs token exchange, fetches authentic user profile,
+    encrypts credentials at rest, establishes user identity, and completes OAuth transaction cleanly.
     """
+    print(f"[GOOGLE OAUTH] Callback received for provider='{provider}'", flush=True)
+
     if error or not code or not state:
         err_msg = error_description or error or "Authorization request was cancelled or denied."
+        print(f"[GOOGLE OAUTH] Callback error or missing code: {err_msg}", flush=True)
         target_url = build_frontend_redirect("/settings", {
             "integration": "error",
             "provider": provider,
@@ -118,33 +120,62 @@ def handle_oauth_callback(
         return RedirectResponse(url=target_url)
 
     try:
-        # Validate OAuth state to prevent CSRF and session hijacking
+        # 1. Validate OAuth state to prevent CSRF / session injection
         state_data = validate_oauth_state(state)
-        user_id = state_data["user_id"]
+        state_user_id = state_data["user_id"]
         state_provider = state_data["provider"]
+        print(f"[GOOGLE OAUTH] State validated. Provider='{state_provider}', State User ID='{state_user_id}'", flush=True)
 
         if state_provider != provider:
             raise HTTPException(status_code=400, detail="OAuth state provider mismatch.")
 
         redirect_base = str(request.base_url).rstrip("/") if request else settings.API_BASE_URL
 
-        # Real token exchange with provider
+        # 2. Perform token exchange with provider
+        print(f"[GOOGLE OAUTH] Exchanging authorization code with provider endpoint...", flush=True)
         token_response = exchange_code_for_tokens(provider, code, redirect_base=redirect_base)
         access_token = token_response["access_token"]
         refresh_token = token_response.get("refresh_token")
         expires_in = token_response.get("expires_in", 3600)
         expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+        print(f"[GOOGLE OAUTH] Token exchange successful.", flush=True)
 
-        # Retrieve authentic user identity from provider
+        # 3. Retrieve authentic user identity from provider Userinfo API
         profile = fetch_provider_user_profile(provider, access_token)
         account_id = profile["account_id"]
         account_name = profile["account_name"]
         account_email = profile["email"]
         meta_data = profile.get("metadata", {})
+        print(f"[GOOGLE OAUTH] Google identity retrieved. Account ID='{account_id}', Email='{account_email}'", flush=True)
 
-        # Upsert connection record for user
+        # 4. Resolve SEO Intelligence User ID (use authenticated state_user_id or account_email)
+        final_user_id = state_user_id
+        if not final_user_id or final_user_id in ("anonymous_guest", "guest", "null", "undefined"):
+            final_user_id = account_email.lower() if account_email else f"user_{account_id}"
+
+        print(f"[GOOGLE OAUTH] Authenticated SEO user identified: '{final_user_id}'", flush=True)
+
+        # 5. Upsert User record in database
+        if account_email:
+            user = db.query(User).filter(User.email == account_email.lower()).first()
+            if not user:
+                user = User(
+                    id=final_user_id,
+                    email=account_email.lower(),
+                    name=account_name,
+                    google_id=account_id
+                )
+                db.add(user)
+                db.commit()
+            else:
+                user.google_id = account_id
+                user.name = account_name
+                user.updated_at = datetime.utcnow()
+                db.commit()
+
+        # 6. Upsert ExternalConnection record for user
         existing = db.query(ExternalConnection).filter(
-            ExternalConnection.user_id == user_id,
+            ExternalConnection.user_id == final_user_id,
             ExternalConnection.provider == provider
         ).first()
 
@@ -165,7 +196,7 @@ def handle_oauth_callback(
         else:
             new_conn = ExternalConnection(
                 id=str(uuid.uuid4()),
-                user_id=user_id,
+                user_id=final_user_id,
                 provider=provider,
                 provider_account_id=account_id,
                 provider_account_name=account_name,
@@ -184,13 +215,22 @@ def handle_oauth_callback(
             db.add(new_conn)
             db.commit()
 
+        print(f"[GOOGLE OAUTH] Google integration stored for user '{final_user_id}'.", flush=True)
+
+        # 7. Generate application session JWT token
+        session_token = create_access_token(user_id=final_user_id)
+
+        # 8. Complete OAuth transaction cleanly and redirect to frontend with session token
         success_url = build_frontend_redirect("/settings", {
             "integration": "success",
-            "provider": provider
+            "provider": provider,
+            "token": session_token
         })
+        print(f"[GOOGLE OAUTH] OAuth transaction completed cleanly. Redirecting to frontend settings without starting OAuth again.", flush=True)
         return RedirectResponse(url=success_url)
 
     except ValueError as val_err:
+        print(f"[GOOGLE OAUTH ERROR] State or token validation failed: {val_err}", flush=True)
         err_url = build_frontend_redirect("/settings", {
             "integration": "error",
             "provider": provider,
@@ -199,7 +239,7 @@ def handle_oauth_callback(
         })
         return RedirectResponse(url=err_url)
     except Exception as exc:
-        print(f"[OAUTH CALLBACK EXCEPTION] Provider '{provider}' callback error: {exc}", flush=True)
+        print(f"[GOOGLE OAUTH EXCEPTION] Callback error: {exc}", flush=True)
         err_url = build_frontend_redirect("/settings", {
             "integration": "error",
             "provider": provider,
@@ -208,148 +248,27 @@ def handle_oauth_callback(
         })
         return RedirectResponse(url=err_url)
 
-
-
-@router.post("/{provider}/key")
-def save_user_api_key(provider: str):
-    """
-    API keys are no longer accepted or requested. All integrations use account-level OAuth or provider connections.
-    """
-    raise HTTPException(
-        status_code=400, 
-        detail="Pasting raw API keys is deprecated. Please connect your account using the Connect Account button."
-    )
-
-
-
-@router.post("/{connection_id}/disconnect")
-def disconnect_external_account(
-    connection_id: str,
+@router.post("/{provider}/disconnect")
+def disconnect_provider(
+    provider: str,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """
-    Disconnects and securely revokes an external account connection.
-    Guarantees user isolation.
+    Disconnects external connection and purges stored OAuth tokens.
     """
     conn = db.query(ExternalConnection).filter(
-        ExternalConnection.id == connection_id,
-        ExternalConnection.user_id == user_id
+        ExternalConnection.user_id == user_id,
+        ExternalConnection.provider == provider
     ).first()
 
     if not conn:
-        raise HTTPException(status_code=404, detail="External connection not found or unauthorized.")
+        raise HTTPException(status_code=404, detail=f"No active '{provider}' connection found for user.")
 
-    provider = conn.provider
     db.delete(conn)
     db.commit()
 
     return {
-        "status": "disconnected",
-        "id": connection_id,
-        "provider": provider,
-        "message": f"Successfully disconnected {provider.title()} account."
+        "status": "success",
+        "message": f"{provider.title()} account disconnected successfully."
     }
-
-
-@router.post("/{connection_id}/refresh")
-def refresh_account_token(
-    connection_id: str,
-    user_id: str = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
-):
-    """
-    Triggers token refresh lifecycle for an expired OAuth access token.
-    If refresh token is invalid or unconfigured, sets status to REAUTH_REQUIRED.
-    """
-    conn = db.query(ExternalConnection).filter(
-        ExternalConnection.id == connection_id,
-        ExternalConnection.user_id == user_id
-    ).first()
-
-    if not conn:
-        raise HTTPException(status_code=404, detail="External connection not found or unauthorized.")
-
-    refresh_token = conn.get_refresh_token()
-    if not refresh_token:
-        conn.status = "REAUTH_REQUIRED"
-        db.commit()
-        raise HTTPException(status_code=400, detail="No refresh token available. Please reconnect your account.")
-
-    conn.status = "REAUTH_REQUIRED"
-    db.commit()
-    raise HTTPException(status_code=400, detail="Token refresh requires valid provider client credentials. Reauthorization required.")
-
-
-@router.post("/{connection_id}/meta/select-assets")
-def select_meta_assets(
-    connection_id: str,
-    payload: dict = Body(...),
-    user_id: str = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
-):
-    """
-    Updates user-selected Facebook Pages and Instagram accounts for Meta connection.
-    """
-    conn = db.query(ExternalConnection).filter(
-        ExternalConnection.id == connection_id,
-        ExternalConnection.user_id == user_id
-    ).first()
-
-    if not conn or conn.provider not in ("meta", "facebook", "instagram"):
-        raise HTTPException(status_code=404, detail="Meta connection not found or unauthorized.")
-
-    meta = conn.get_metadata()
-    meta["selected_pages"] = payload.get("selected_pages", meta.get("selected_pages", []))
-    meta["selected_instagram"] = payload.get("selected_instagram", meta.get("selected_instagram", []))
-
-    conn.set_metadata(meta)
-    conn.updated_at = datetime.utcnow()
-    db.commit()
-    db.refresh(conn)
-
-    return conn.to_safe_dict()
-
-
-@router.post("/{connection_id}/test")
-def test_connection_health(
-    connection_id: str,
-    user_id: str = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
-):
-    """
-    Performs a lightweight connection health check against the provider's API.
-    Updates connection status to HEALTHY or ERROR.
-    """
-    conn = db.query(ExternalConnection).filter(
-        ExternalConnection.id == connection_id,
-        ExternalConnection.user_id == user_id
-    ).first()
-
-    if not conn:
-        raise HTTPException(status_code=404, detail="External connection not found or unauthorized.")
-
-    p = conn.provider
-    try:
-        if p in ("openai", "gemini", "claude", "anthropic"):
-            key = conn.get_api_key()
-            if not key:
-                conn.status = "REAUTH_REQUIRED"
-                db.commit()
-                raise HTTPException(status_code=400, detail="Missing API Key. Reauthorization required.")
-            validate_api_key_provider(p, key)
-        
-        conn.status = "HEALTHY"
-        conn.last_used_at = datetime.utcnow()
-        db.commit()
-        db.refresh(conn)
-        return {
-            "status": "HEALTHY",
-            "provider": p,
-            "connection_id": conn.id,
-            "message": f"Connection test for {p.title()} succeeded. Status is HEALTHY."
-        }
-    except Exception as err:
-        conn.status = "ERROR"
-        db.commit()
-        raise HTTPException(status_code=400, detail=f"{p.title()} connection test failed: {err}")

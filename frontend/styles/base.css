@@ -4,17 +4,29 @@
   padding: 0;
 }
 
+html, body {
+  height: 100%;
+  width: 100%;
+}
+
 body {
-  font-family: var(--font-family);
-  background-color: var(--bg-secondary);
+  font-family: var(--font-sans);
+  background-color: var(--bg-workspace);
   color: var(--text-primary);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 a {
-  color: var(--accent-primary);
+  color: var(--primary);
   text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+a:hover {
+  color: var(--primary-hover);
 }
 
 button {
@@ -22,6 +34,34 @@ button {
   cursor: pointer;
   border: none;
   background: none;
+  outline: none;
+}
+
+input, select, textarea {
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--border-focus) !important;
+  box-shadow: 0 0 0 2px var(--primary-glow) !important;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
 }
 
 /* Base App Shell */
@@ -37,12 +77,12 @@ button {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--bg-primary);
-  border-left: 1px solid var(--border-subtle);
+  background-color: var(--bg-workspace);
+  transition: background-color 0.25s ease;
 }
 
 .view-container {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-8);
+  padding: 24px 32px 60px;
 }

@@ -87,7 +87,7 @@ def main():
     try:
         print(f"[STARTUP] Starting backend on http://{host}:{port}...", flush=True)
         backend_process = subprocess.Popen(
-            [backend_python, "-m", "uvicorn", "app.main:app", "--host", host, "--port", str(port)],
+            [backend_python, "-m", "uvicorn", "app.main:app", "--host", host, "--port", str(port), "--reload"],
             cwd=backend_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

@@ -140,12 +140,20 @@ export class Integrations {
         const urlParams = new URLSearchParams(window.location.search);
         const status = urlParams.get('integration');
         const provider = urlParams.get('provider');
-        const msg = urlParams.get('msg');
+        const token = urlParams.get('token');
         const banner = this.element.querySelector('#url-status-banner');
+
+        if (token) {
+            console.log('[GOOGLE UI] Returned from OAuth callback. Session token saved.');
+            localStorage.setItem('seo_auth_token', token);
+        }
         
         if (!banner) return;
 
         if (status === 'success') {
+            console.log('[GOOGLE UI] Integration success detected for provider:', provider);
+            console.log('[GOOGLE UI] Google integration connected. NOT starting OAuth again.');
+
             banner.style.display = 'block';
             banner.innerHTML = `
                 <div style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981; padding: 12px 16px; border-radius: 8px; font-size: 13px; display: flex; justify-content: space-between; align-items: center;">

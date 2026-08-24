@@ -35,7 +35,11 @@ class ProjectStore {
         });
     }
 
-    async ensureInitialized() {
+    async ensureInitialized(forceRefresh = false) {
+        if (forceRefresh) {
+            this.isInitialized = false;
+            this.initPromise = null;
+        }
         if (this.isInitialized && this.projects.length > 0) return this.projects;
         if (!this.initPromise) {
             this.initPromise = this.fetchProjects().then((projs) => {
@@ -73,6 +77,14 @@ class ProjectStore {
             this.projects = [];
         }
         return this.projects;
+    }
+
+    getMyProjects() {
+        return this.projects.filter(p => p.user_role === 'OWNER');
+    }
+
+    getMemberProjects() {
+        return this.projects.filter(p => p.user_role === 'MEMBER');
     }
 
     getSelectedProjectId() {

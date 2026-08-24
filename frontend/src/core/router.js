@@ -1,3 +1,5 @@
+import { authStore } from './authStore.js';
+
 export class Router {
   constructor(viewContainer) {
     this.routes = {};
@@ -6,7 +8,6 @@ export class Router {
     window.addEventListener('popstate', () => this.handleRoute());
     window.addEventListener('project:selected', () => this.handleRoute());
   }
-
 
   addRoute(path, ViewComponent) {
     this.routes[path] = ViewComponent;
@@ -18,10 +19,64 @@ export class Router {
   }
 
   async handleRoute() {
-    const path = window.location.pathname;
+    let path = window.location.pathname;
+
+    // 1. Check for token callback parameter in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenParam = urlParams.get('token');
+
+    if (tokenParam && tokenParam.trim()) {
+      console.log('[AUTH] OAuth callback token detected in URL.');
+      console.log('[AUTH] Application session token stored.');
+      
+      const cleanToken = tokenParam.trim();
+      localStorage.setItem('seo_auth_token', cleanToken);
+      authStore.token = cleanToken;
+      authStore.isAuthenticated = true;
+
+      // Remove token parameter from URL cleanly without page reload
+      urlParams.delete('token');
+      const newQuery = urlParams.toString();
+      const cleanUrl = window.location.pathname + (newQuery ? `?${newQuery}` : '');
+      window.history.replaceState({}, '', cleanUrl);
+    }
+
+    // 2. Validate persistent application authentication session
+    console.log('[AUTH] Establishing application session...');
+    const hasSession = await authStore.checkSession();
+
+    if (hasSession && authStore.user) {
+      console.log(`[AUTH] Current user loaded: ${authStore.user.email || authStore.user.id}`);
+      console.log('[AUTH] Authentication initialization complete.');
+    }
+
+    if (path === '/login' && hasSession) {
+      // Valid session exists — skip login and continue to authorized area
+      window.history.replaceState({}, '', '/');
+      path = '/';
+    } else if (path !== '/login' && !hasSession) {
+      // Unauthenticated — redirect to /login
+      console.warn('[AUTH] Unauthenticated user. Redirecting to /login.');
+      window.history.replaceState({}, '', '/login');
+      path = '/login';
+    }
+
+    const sidebarContainer = document.getElementById('sidebar-container');
+    const topbarContainer = document.getElementById('topbar-container');
+    const workspaceArea = document.querySelector('.workspace-area');
+
+    if (path === '/login') {
+      if (sidebarContainer) sidebarContainer.style.display = 'none';
+      if (topbarContainer) topbarContainer.style.display = 'none';
+      if (workspaceArea) workspaceArea.style.marginLeft = '0';
+    } else {
+      if (sidebarContainer) sidebarContainer.style.display = 'flex';
+      if (topbarContainer) topbarContainer.style.display = 'block';
+      if (workspaceArea) workspaceArea.style.marginLeft = '250px';
+    }
+
     const ViewComponent = this.routes[path] || this.routes['/'];
     
-    // Dispatch global routechange event for active navbar highlighting
     window.dispatchEvent(new CustomEvent('routechange', { detail: { path } }));
 
     if (ViewComponent) {
@@ -31,16 +86,15 @@ export class Router {
       const element = await view.render();
       this.viewContainer.appendChild(element);
       
-      if(view.mounted) {
+      if (view.mounted) {
         view.mounted();
       }
     }
   }
 
-  init() {
-    this.handleRoute();
+  async init() {
+    await this.handleRoute();
     
-    // Intercept all internal links
     document.body.addEventListener('click', e => {
       const linkEl = e.target.matches('[data-link]') ? e.target : e.target.closest('[data-link]');
       if (linkEl) {

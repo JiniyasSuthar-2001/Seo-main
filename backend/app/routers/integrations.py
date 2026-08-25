@@ -272,3 +272,8 @@ def disconnect_provider(
         "status": "success",
         "message": f"{provider.title()} account disconnected successfully."
     }
+
+@router.post("/{provider}/key")
+def submit_api_key_deprecated(provider: str):
+    raise HTTPException(status_code=400, detail="Pasting raw API keys is deprecated. Please use official provider authentication.")
+

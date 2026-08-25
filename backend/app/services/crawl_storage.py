@@ -8,12 +8,21 @@ class CrawlStorage:
     def __init__(self, base_dir: str = "data/websites"):
         self.base_dir = base_dir
 
-    def _get_website_folder(self, domain: str) -> str:
+    def _get_website_folder(self, key: str, domain: str = None) -> str:
+        if not key:
+            safe_domain = get_sanitized_domain(domain)
+            return os.path.join(self.base_dir, safe_domain)
+        proj_dir = os.path.join(self.base_dir, key)
+        if os.path.exists(proj_dir) or not domain:
+            return proj_dir
         safe_domain = get_sanitized_domain(domain)
-        return os.path.join(self.base_dir, safe_domain)
+        domain_dir = os.path.join(self.base_dir, safe_domain)
+        if os.path.exists(domain_dir):
+            return domain_dir
+        return proj_dir
 
-    def save_crawl_snapshot(self, domain: str, session_id: str, results: Dict[str, Any]) -> str:
-        website_dir = self._get_website_folder(domain)
+    def save_crawl_snapshot(self, key: str, session_id: str, results: Dict[str, Any], domain: str = None) -> str:
+        website_dir = self._get_website_folder(key, domain)
         timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
         crawl_dir = os.path.join(website_dir, "crawls", timestamp)
         os.makedirs(crawl_dir, exist_ok=True)
@@ -144,8 +153,8 @@ class CrawlStorage:
         print(f"[STORAGE] Snapshot saved successfully to {crawl_dir}", flush=True)
         return crawl_dir
 
-    def get_crawl_history(self, domain: str) -> List[Dict[str, Any]]:
-        website_dir = self._get_website_folder(domain)
+    def get_crawl_history(self, key: str, domain: str = None) -> List[Dict[str, Any]]:
+        website_dir = self._get_website_folder(key, domain)
         crawls_dir = os.path.join(website_dir, "crawls")
         if not os.path.exists(crawls_dir):
             return []

@@ -20,6 +20,7 @@ class Project(Base):
     target_country = Column(String, default="United States")
     target_language = Column(String, default="English")
     target_device = Column(String, default="Desktop")  # Desktop, Mobile, Tablet
+    crawl_config = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

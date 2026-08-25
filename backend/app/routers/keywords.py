@@ -17,6 +17,9 @@ from app.providers.nlp_keywords import NLPKeywordExtractor
 
 from app.providers.google_autocomplete import GoogleAutocompleteProvider
 
+from app.config.auth import get_current_user_id
+from app.config.permissions import get_user_membership
+
 router = APIRouter()
 nlp_extractor = NLPKeywordExtractor()
 autocomplete_provider = GoogleAutocompleteProvider()
@@ -44,7 +47,14 @@ def _serialize_keyword(k: Keyword, group_name: Optional[str] = None) -> dict:
 
 @router.get("")
 @router.get("/")
-def get_keywords(project_id: str, limit: int = Query(50), offset: int = Query(0), db: Session = Depends(get_db)):
+def get_keywords(
+    project_id: str,
+    limit: int = Query(50),
+    offset: int = Query(0),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
@@ -105,7 +115,12 @@ def get_keywords(project_id: str, limit: int = Query(50), offset: int = Query(0)
 # ==============================================================================
 
 @router.get("/groups")
-def get_keyword_groups(project_id: str, db: Session = Depends(get_db)):
+def get_keyword_groups(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
@@ -127,7 +142,13 @@ def get_keyword_groups(project_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/groups")
-def create_keyword_group(project_id: str, payload: dict = Body(...), db: Session = Depends(get_db)):
+def create_keyword_group(
+    project_id: str,
+    payload: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
     name = (payload.get("name") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Group name is required.")
@@ -145,10 +166,15 @@ def create_keyword_group(project_id: str, payload: dict = Body(...), db: Session
 
 
 @router.post("/groups/auto-cluster")
-def auto_cluster_keywords(project_id: str, db: Session = Depends(get_db)):
+def auto_cluster_keywords(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Automatically clusters project keywords into semantic topic groups based on common word tokens.
     """
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")

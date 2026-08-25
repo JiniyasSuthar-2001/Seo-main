@@ -27,24 +27,6 @@ def get_user_membership(db: Session, user_id: str, project_id: str) -> ProjectMe
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
 
-    # Backward compatibility migration: If project has no owner memberships yet, assign caller as OWNER
-    existing_memberships = db.query(ProjectMembership).filter(
-        ProjectMembership.project_id == project_id,
-        ProjectMembership.status == "ACTIVE"
-    ).count()
-
-    if existing_memberships == 0:
-        new_membership = ProjectMembership(
-            user_id=user_id,
-            project_id=project_id,
-            role="OWNER",
-            status="ACTIVE"
-        )
-        db.add(new_membership)
-        db.commit()
-        db.refresh(new_membership)
-        return new_membership
-
     raise HTTPException(
         status_code=403,
         detail="Access denied. You are not authorized to access this project's SEO data."

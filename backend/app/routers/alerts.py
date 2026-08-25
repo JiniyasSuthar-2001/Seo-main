@@ -10,15 +10,23 @@ from app.services.audit_rules import evaluate_site_audit_rules
 from app.config.utils import get_sanitized_domain, normalize_stored_path
 from app.config.settings import settings
 
+from app.config.auth import get_current_user_id
+from app.config.permissions import get_user_membership
+
 router = APIRouter()
 
 @router.get("")
 @router.get("/")
-def get_project_alerts(project_id: str, db: Session = Depends(get_db)) -> Dict[str, Any]:
+def get_project_alerts(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
     """
     Returns active technical & SEO alerts for a project based strictly on deterministic crawl and audit evidence.
     Never fabricates alerts or claims 'All Systems Normal' unless zero issues actually exist.
     """
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")

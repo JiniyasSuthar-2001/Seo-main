@@ -7,9 +7,22 @@ class DataSourceManager:
     def __init__(self, base_dir: str = "data/websites"):
         self.base_dir = base_dir
 
-    def get_project_datasources(self, domain: str) -> Dict[str, Any]:
+    def _get_project_dir(self, key: str, domain: str = None) -> str:
+        if not key:
+            safe_domain = get_sanitized_domain(domain)
+            return os.path.join(self.base_dir, safe_domain)
+        proj_dir = os.path.join(self.base_dir, key)
+        if os.path.exists(proj_dir) or not domain:
+            return proj_dir
         safe_domain = get_sanitized_domain(domain)
-        ds_file = os.path.join(self.base_dir, safe_domain, "datasources.json")
+        domain_dir = os.path.join(self.base_dir, safe_domain)
+        if os.path.exists(domain_dir):
+            return domain_dir
+        return proj_dir
+
+    def get_project_datasources(self, key: str, domain: str = None) -> Dict[str, Any]:
+        proj_dir = self._get_project_dir(key, domain)
+        ds_file = os.path.join(proj_dir, "datasources.json")
         
         default_sources = {
             "crawler": {
@@ -86,24 +99,22 @@ class DataSourceManager:
             }
         }
 
-
         if os.path.exists(ds_file):
             try:
                 with open(ds_file, "r") as f:
                     saved = json.load(f)
                     default_sources.update(saved)
             except Exception as e:
-                print(f"[DATASOURCES] Failed to read datasources.json for {domain}: {e}", flush=True)
+                print(f"[DATASOURCES] Failed to read datasources.json for key={key}: {e}", flush=True)
 
         return default_sources
 
-    def update_datasource(self, domain: str, source_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
-        safe_domain = get_sanitized_domain(domain)
-        proj_dir = os.path.join(self.base_dir, safe_domain)
+    def update_datasource(self, key: str, source_id: str, updates: Dict[str, Any], domain: str = None) -> Dict[str, Any]:
+        proj_dir = self._get_project_dir(key, domain)
         os.makedirs(proj_dir, exist_ok=True)
         ds_file = os.path.join(proj_dir, "datasources.json")
         
-        current = self.get_project_datasources(domain)
+        current = self.get_project_datasources(key, domain)
         if source_id in current:
             current[source_id].update(updates)
             

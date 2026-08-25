@@ -8,12 +8,21 @@ class LLMContextBuilder:
     def __init__(self, base_dir: Optional[str] = None):
         self.base_dir = base_dir or settings.CRAWL_DATA_DIR
 
-    def get_website_folder(self, domain: str) -> str:
+    def get_website_folder(self, key: str, domain: Optional[str] = None) -> str:
+        if not key:
+            safe_domain = get_sanitized_domain(domain)
+            return os.path.join(self.base_dir, safe_domain)
+        proj_dir = os.path.join(self.base_dir, key)
+        if os.path.exists(proj_dir) or not domain:
+            return proj_dir
         safe_domain = get_sanitized_domain(domain)
-        return os.path.join(self.base_dir, safe_domain)
+        domain_dir = os.path.join(self.base_dir, safe_domain)
+        if os.path.exists(domain_dir):
+            return domain_dir
+        return proj_dir
 
-    def build_project_context(self, domain: str) -> Dict[str, Any]:
-        website_dir = self.get_website_folder(domain)
+    def build_project_context(self, key: str, domain: Optional[str] = None) -> Dict[str, Any]:
+        website_dir = self.get_website_folder(key, domain)
         latest_path = os.path.join(website_dir, "latest.json")
 
         if not os.path.exists(latest_path):

@@ -191,7 +191,7 @@ export class Projects {
                 await projectStore.deleteProject(id);
                 const modal = document.getElementById('delete-proj-modal');
                 if (modal) modal.remove();
-                window.location.reload();
+                await this.mounted();
             } catch (err) {
                 alert(`Failed to delete project: ${err.message || "Server error"}`);
             }

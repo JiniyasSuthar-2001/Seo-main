@@ -283,6 +283,32 @@ def validate_api_key_provider(provider: str, api_key: str) -> dict:
             raise ValueError(f"Claude AI validation failed: HTTP {e.code}")
         except Exception as e:
             raise ValueError(f"Claude AI connection error: {e}")
+        req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization": f"Bearer {clean_key}", "User-Agent": "SEO-Intelligence-Platform/1.0"}
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                if resp.status == 200:
+                    return {
+                        "provider": "groq",
+                        "account_name": "Groq Platform AI Account",
+                        "email": "api-key-authenticated@groq.com",
+                        "account_id": "groq_user_key"
+                    }
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                raise ValueError("Invalid Groq API Key. Authentication failed (HTTP 401/403).")
+            elif e.code == 429:
+                return {
+                    "provider": "groq",
+                    "account_name": "Groq AI (Rate Limited)",
+                    "email": "api-key-rate-limited@groq.com",
+                    "account_id": "groq_user_key"
+                }
+            raise ValueError(f"Groq validation failed: HTTP {e.code}")
+        except Exception as e:
+            raise ValueError(f"Groq connection error: {e}")
 
     raise ValueError(f"Unsupported API Key provider: '{provider}'")
 

@@ -10,12 +10,22 @@ from app.models.competitor import Competitor
 from app.config.utils import get_sanitized_domain, normalize_stored_path
 from app.config.settings import settings
 
+from app.config.auth import get_current_user_id
+from app.config.permissions import get_user_membership
+
 router = APIRouter()
 
 
 @router.get("")
 @router.get("/")
-def get_backlinks(project_id: str, limit: int = Query(50), offset: int = Query(0), db: Session = Depends(get_db)):
+def get_backlinks(
+    project_id: str,
+    limit: int = Query(50),
+    offset: int = Query(0),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
         return {"backlinks": [], "referring_domains": [], "status": "not_connected", "message": "No project domain configured."}

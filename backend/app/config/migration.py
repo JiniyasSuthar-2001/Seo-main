@@ -25,9 +25,21 @@ def run_schema_migrations(engine: Engine = None):
     Automatic, idempotent SQLite schema migration engine using raw sqlite3 connection.
     Targeting strictly the authoritative database file path from application configuration.
     """
-    db_file = os.path.abspath(_DB_PATH)
-    print(f"[MIGRATION] Target database file: '{db_file}'", flush=True)
-    _migrate_single_file(db_file)
+    from app.config.settings import settings
+    db_paths = [os.path.abspath(_DB_PATH)]
+    if settings.DATABASE_URL and settings.DATABASE_URL.startswith("sqlite:///"):
+        raw_p = settings.DATABASE_URL.replace("sqlite:///", "")
+        db_paths.append(os.path.abspath(raw_p))
+
+    for db_file in set(db_paths):
+        print(f"[MIGRATION] Target database file: '{db_file}'", flush=True)
+        _migrate_single_file(db_file)
+
+    if engine:
+        try:
+            engine.dispose()
+        except Exception:
+            pass
 
 
 def _migrate_single_file(db_file: str):
@@ -49,6 +61,7 @@ def _migrate_single_file(db_file: str):
             "target_country": "TEXT",
             "target_language": "TEXT",
             "target_device": "TEXT",
+            "crawl_config": "TEXT",
             "created_at": "DATETIME",
             "updated_at": "DATETIME"
         },
@@ -208,6 +221,12 @@ def _migrate_single_file(db_file: str):
                         print(f"[MIGRATION] SUCCESS: Added '{col_name}' to '{table_name}'.", flush=True)
                     except Exception as col_err:
                         print(f"[MIGRATION] ERROR adding '{col_name}' to '{table_name}': {col_err}", flush=True)
+
+        try:
+            cursor.execute("ALTER TABLE projects ADD COLUMN crawl_config TEXT;")
+            conn.commit()
+        except Exception:
+            pass
 
         conn.close()
         print("[MIGRATION] Schema check & migrations completed successfully.", flush=True)

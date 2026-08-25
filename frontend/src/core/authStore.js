@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../config/api.js';
+import { projectStore } from './projectStore.js';
 
 class AuthStore {
   constructor() {
@@ -186,6 +187,9 @@ class AuthStore {
     this.discoveredProperties = [];
     localStorage.removeItem(this.TOKEN_KEY);
     localStorage.removeItem(this.USER_KEY);
+    try {
+      projectStore.reset();
+    } catch (e) {}
     this.notify();
   }
 

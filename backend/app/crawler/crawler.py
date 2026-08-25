@@ -23,7 +23,7 @@ class SEOCrawler:
         max_depth: int = 0,
         respect_robots_txt: bool = True,
         crawl_delay_ms: int = 500,
-        user_agent: str = "SEO-Intelligence-Bot/1.0 (Mozilla/5.0 Compatible)",
+        user_agent: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
         include_patterns: Optional[List[str]] = None,
         exclude_patterns: Optional[List[str]] = None,
         ignore_utm_params: bool = True,
@@ -164,7 +164,7 @@ class SEOCrawler:
 
         if self.max_depth > 0:
             depth = self.url_depths.get(url, 999)
-            if depth > self.max_depth:
+            if depth >= self.max_depth:
                 return False
 
         parsed = urlparse(url)
@@ -195,24 +195,36 @@ class SEOCrawler:
     def evaluate_page_issues(self, page_data: Dict[str, Any]):
         url = page_data["url"]
         status = page_data.get("status_code", 0)
+        fetch_st = page_data.get("fetch_status") or "FAILED"
         
-        if status == 403 or status == 401:
+        source_links = [l for l in self.internal_links if l.get("target") == url]
+        source_url = source_links[0]["source"] if source_links else page_data.get("source_url") or "Start URL"
+
+        if status in (403, 401) or fetch_st == "BLOCKED":
             self.issues.append({
+                "rule_id": "CRAWL_002",
+                "category": "Crawlability",
                 "severity": "Critical",
                 "issue_type": "Access Denied / Forbidden",
                 "affected_url": url,
-                "details": f"Server returned HTTP status {status} (Access Denied / Forbidden). Crawling blocked.",
+                "source_url": source_url,
+                "details": f"URL '{url}' returned HTTP status {status} (Access Denied / Forbidden). Crawling blocked.",
                 "recommendation": "Verify firewall policies, server permissions, or user-agent access controls."
             })
             return
 
-        if status >= 400 or status == 0:
+        if status >= 400 or status == 0 or not page_data.get("is_success", True):
+            err_msg = page_data.get("error") or f"HTTP {status}"
+            is_internal = (url != self.start_url)
             self.issues.append({
+                "rule_id": "LINK_002" if is_internal else "CRAWL_001",
+                "category": "Internal Links" if is_internal else "Crawlability",
                 "severity": "Critical",
-                "issue_type": "HTTP Error",
+                "issue_type": "Internal Broken Link" if is_internal else "HTTP Error / Broken Page",
                 "affected_url": url,
-                "details": f"Page returned HTTP status code {status}",
-                "recommendation": "Investigate server errors or update broken internal links."
+                "source_url": source_url,
+                "details": f"Page request failed ({err_msg}). Discovered on '{source_url}'.",
+                "recommendation": "Fix broken URL or update internal link anchor targets."
             })
             return
 
@@ -291,184 +303,229 @@ class SEOCrawler:
         self.queue_status[url] = "CRAWLING"
         print(f"[CRAWL HTTP] GET {url}", flush=True)
         
-        start_time = time.time()
-        try:
-            headers = {"User-Agent": self.user_agent}
-            response = await client.get(url, headers=headers, timeout=self.request_timeout, follow_redirects=True)
-            elapsed_ms = int((time.time() - start_time) * 1000)
-            
-            if url == self.start_url:
-                self.seed_status_code = response.status_code
+        attempt = 0
+        max_attempts = 2
+        response = None
+        elapsed_ms = 0
+        fetch_error = None
+        fetch_status = "FAILED"
 
-            print(f"[CRAWL HTTP] {response.status_code} {url} ({elapsed_ms}ms)", flush=True)
-            
-            if response.status_code in (403, 401):
-                self.queue_status[url] = "BLOCKED"
-                page_record = {
-                    "url": url,
-                    "status_code": response.status_code,
-                    "response_time_ms": elapsed_ms,
-                    "error": f"HTTP {response.status_code} Access Denied",
-                    "is_success": False,
-                    "word_count": 0,
-                    "internal_links_count": 0
+        while attempt < max_attempts:
+            attempt += 1
+            start_time = time.time()
+            try:
+                headers = {
+                    "User-Agent": self.user_agent,
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.9",
+                    "Upgrade-Insecure-Requests": "1"
                 }
-                self.pages.append(page_record)
-                self.evaluate_page_issues(page_record)
-                return
-
-            if response.status_code >= 400:
-                self.queue_status[url] = "FAILED"
-                page_record = {
-                    "url": url,
-                    "status_code": response.status_code,
-                    "response_time_ms": elapsed_ms,
-                    "error": f"HTTP {response.status_code} Error",
-                    "is_success": False,
-                    "word_count": 0,
-                    "internal_links_count": 0
-                }
-                self.pages.append(page_record)
-                self.evaluate_page_issues(page_record)
-                return
-
-            self.queue_status[url] = "CRAWLED"
-            
-            content_type = response.headers.get("content-type", "")
-            if "text/html" not in content_type:
-                self.asset_checks.append({
-                    "url": url,
-                    "status_code": response.status_code,
-                    "content_type": content_type
-                })
-                return
-
-            html = response.text
-            soup = BeautifulSoup(html, "html.parser")
-            
-            title_tag = soup.title.string.strip() if soup.title and soup.title.string else None
-            meta_desc_tag = soup.find("meta", attrs={"name": "description"})
-            meta_description = meta_desc_tag["content"].strip() if meta_desc_tag and meta_desc_tag.get("content") else None
-            
-            canonical_tag = soup.find("link", attrs={"rel": "canonical"})
-            canonical = canonical_tag["href"].strip() if canonical_tag and canonical_tag.get("href") else None
-            
-            robots_tag = soup.find("meta", attrs={"name": "robots"})
-            robots_meta = robots_tag["content"].strip() if robots_tag and robots_tag.get("content") else "index, follow"
-
-            html_lang = soup.html.get("lang").strip() if soup.html and soup.html.get("lang") else None
-            viewport_tag = soup.find("meta", attrs={"name": "viewport"})
-            viewport = viewport_tag["content"].strip() if viewport_tag and viewport_tag.get("content") else None
-
-            hreflangs = []
-            for link in soup.find_all("link", attrs={"rel": re.compile(r"alternate", re.I)}):
-                if link.get("hreflang"):
-                    hreflangs.append({
-                        "lang": link.get("hreflang").strip(),
-                        "href": link.get("href", "").strip()
-                    })
-
-            structured_data = []
-            for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
-                if script.string:
-                    try:
-                        structured_data.append(json.loads(script.string.strip()))
-                    except Exception:
-                        pass
-
-            h1_tags = [h.get_text().strip() for h in soup.find_all("h1") if h.get_text()]
-            h2_tags = [h.get_text().strip() for h in soup.find_all("h2") if h.get_text()]
-            h3_tags = [h.get_text().strip() for h in soup.find_all("h3") if h.get_text()]
-            h1 = h1_tags[0] if h1_tags else None
-
-            text = soup.get_text(separator=" ")
-            words = [w for w in text.split() if len(w) > 1]
-            word_count = len(words)
-
-            images = soup.find_all("img")
-            images_missing_alt = sum(1 for img in images if not img.get("alt"))
-
-            current_depth = self.url_depths.get(url, 0)
-            discovered_internal = []
-
-            for a_tag in soup.find_all("a", href=True):
-                raw_href = a_tag["href"].strip()
-                if not raw_href or raw_href.startswith(("#", "javascript:", "mailto:", "tel:")):
-                    continue
-                
-                normalized = self.normalize_url(raw_href, url)
-
-                if self.is_same_domain(normalized):
-                    discovered_internal.append(normalized)
-                    self.internal_links.append({
-                        "source": url,
-                        "target": normalized,
-                        "anchor_text": a_tag.get_text().strip() or "[Image/No Text]",
-                        "rel": a_tag.get("rel", "")
-                    })
-                    
-                    if normalized not in self.queue_status and self.is_within_scope(normalized):
-                        self.queue_status[normalized] = "PENDING"
-                        self.url_depths[normalized] = current_depth + 1
-                        self.to_visit.append(normalized)
+                response = await client.get(url, headers=headers, timeout=self.request_timeout, follow_redirects=True)
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                break
+            except httpx.TimeoutException:
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                fetch_status = "TIMEOUT"
+                fetch_error = f"Request timed out after {self.request_timeout}s"
+                if attempt < max_attempts:
+                    await asyncio.sleep(0.3)
+            except httpx.ConnectError as ce:
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                err_str = str(ce)
+                if "name" in err_str.lower() or "dns" in err_str.lower() or "getaddrinfo" in err_str.lower():
+                    fetch_status = "DNS_ERROR"
+                    fetch_error = "DNS resolution failed"
                 else:
-                    self.external_links.append({
-                        "source": url,
-                        "target": normalized,
-                        "anchor_text": a_tag.get_text().strip() or "[External Link]",
-                        "rel": a_tag.get("rel", "")
-                    })
+                    fetch_status = "CONNECTION_REFUSED"
+                    fetch_error = "Connection refused"
+                if attempt < max_attempts:
+                    await asyncio.sleep(0.3)
+            except Exception as e:
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                fetch_status = "NETWORK_ERROR"
+                fetch_error = f"Network request error: {str(e)[:120]}"
+                if attempt < max_attempts:
+                    await asyncio.sleep(0.3)
 
-            page_record = {
-                "url": url,
-                "final_url": str(response.url),
-                "redirect_history": [str(r.url) for r in response.history],
-                "status_code": response.status_code,
-                "response_time_ms": elapsed_ms,
-                "is_success": True,
-                "title": title_tag,
-                "meta_description": meta_description,
-                "canonical": canonical,
-                "robots_meta": robots_meta,
-                "html_lang": html_lang,
-                "viewport": viewport,
-                "hreflangs": hreflangs,
-                "structured_data": structured_data,
-                "h1": h1,
-                "h1_count": len(h1_tags),
-                "h2_count": len(h2_tags),
-                "h3_count": len(h3_tags),
-                "word_count": word_count,
-                "images_count": len(images),
-                "images_missing_alt": images_missing_alt,
-                "internal_links_count": len(discovered_internal)
-            }
-            
-            self.pages.append(page_record)
-            self.evaluate_page_issues(page_record)
-
-        except Exception as e:
-            elapsed_ms = int((time.time() - start_time) * 1000)
-            print(f"[CRAWL ERROR] Failed to fetch {url}: {e}", flush=True)
+        if not response:
+            print(f"[CRAWL FAILED] {fetch_status} for {url} ({fetch_error})", flush=True)
             self.queue_status[url] = "FAILED"
             page_record = {
                 "url": url,
                 "status_code": 0,
                 "response_time_ms": elapsed_ms,
+                "error": fetch_error,
                 "is_success": False,
-                "error": str(e),
+                "fetch_status": fetch_status,
+                "content_available": False,
                 "word_count": 0,
                 "internal_links_count": 0
             }
             self.pages.append(page_record)
             self.evaluate_page_issues(page_record)
+            return
 
-        finally:
-            if self.progress_callback:
+        if url == self.start_url:
+            self.seed_status_code = response.status_code
+
+        print(f"[CRAWL HTTP] {response.status_code} {url} ({elapsed_ms}ms)", flush=True)
+        
+        if response.status_code in (403, 401):
+            self.queue_status[url] = "BLOCKED"
+            page_record = {
+                "url": url,
+                "status_code": response.status_code,
+                "response_time_ms": elapsed_ms,
+                "error": f"HTTP {response.status_code} Access Denied",
+                "is_success": False,
+                "fetch_status": "BLOCKED",
+                "content_available": False,
+                "word_count": 0,
+                "internal_links_count": 0
+            }
+            self.pages.append(page_record)
+            self.evaluate_page_issues(page_record)
+            return
+
+        if response.status_code >= 400:
+            self.queue_status[url] = "FAILED"
+            page_record = {
+                "url": url,
+                "status_code": response.status_code,
+                "response_time_ms": elapsed_ms,
+                "error": f"HTTP {response.status_code} Error",
+                "is_success": False,
+                "fetch_status": "FAILED",
+                "content_available": False,
+                "word_count": 0,
+                "internal_links_count": 0
+            }
+            self.pages.append(page_record)
+            self.evaluate_page_issues(page_record)
+            return
+
+        self.queue_status[url] = "CRAWLED"
+        
+        content_type = response.headers.get("content-type", "")
+        if "text/html" not in content_type:
+            self.asset_checks.append({
+                "url": url,
+                "status_code": response.status_code,
+                "content_type": content_type
+            })
+            return
+
+        html = response.text
+        soup = BeautifulSoup(html, "html.parser")
+        
+        title_tag = soup.title.string.strip() if soup.title and soup.title.string else None
+        meta_desc_tag = soup.find("meta", attrs={"name": "description"})
+        meta_description = meta_desc_tag["content"].strip() if meta_desc_tag and meta_desc_tag.get("content") else None
+        
+        canonical_tag = soup.find("link", attrs={"rel": "canonical"})
+        canonical = canonical_tag["href"].strip() if canonical_tag and canonical_tag.get("href") else None
+        
+        robots_tag = soup.find("meta", attrs={"name": "robots"})
+        robots_meta = robots_tag["content"].strip() if robots_tag and robots_tag.get("content") else "index, follow"
+
+        html_lang = soup.html.get("lang").strip() if soup.html and soup.html.get("lang") else None
+        viewport_tag = soup.find("meta", attrs={"name": "viewport"})
+        viewport = viewport_tag["content"].strip() if viewport_tag and viewport_tag.get("content") else None
+
+        hreflangs = []
+        for link in soup.find_all("link", attrs={"rel": re.compile(r"alternate", re.I)}):
+            if link.get("hreflang"):
+                hreflangs.append({
+                    "lang": link.get("hreflang").strip(),
+                    "href": link.get("href", "").strip()
+                })
+
+        structured_data = []
+        for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
+            if script.string:
                 try:
-                    self.progress_callback(len(self.visited), len(self.queue_status))
+                    structured_data.append(json.loads(script.string.strip()))
                 except Exception:
                     pass
+
+        h1_tags = [h.get_text().strip() for h in soup.find_all("h1") if h.get_text()]
+        h2_tags = [h.get_text().strip() for h in soup.find_all("h2") if h.get_text()]
+        h3_tags = [h.get_text().strip() for h in soup.find_all("h3") if h.get_text()]
+        h1 = h1_tags[0] if h1_tags else None
+
+        text = soup.get_text(separator=" ")
+        words = [w for w in text.split() if len(w) > 1]
+        word_count = len(words)
+
+        images = soup.find_all("img")
+        images_missing_alt = sum(1 for img in images if not img.get("alt"))
+
+        current_depth = self.url_depths.get(url, 0)
+        discovered_internal = []
+
+        for a_tag in soup.find_all("a", href=True):
+            raw_href = a_tag["href"].strip()
+            if not raw_href or raw_href.startswith(("#", "javascript:", "mailto:", "tel:")):
+                continue
+            
+            normalized = self.normalize_url(raw_href, url)
+
+            if self.is_same_domain(normalized):
+                discovered_internal.append(normalized)
+                self.internal_links.append({
+                    "source": url,
+                    "target": normalized,
+                    "anchor_text": a_tag.get_text().strip() or "[Image/No Text]",
+                    "rel": a_tag.get("rel", "")
+                })
+                
+                if normalized not in self.queue_status and self.is_within_scope(normalized):
+                    self.queue_status[normalized] = "PENDING"
+                    self.url_depths[normalized] = current_depth + 1
+                    self.to_visit.append(normalized)
+            else:
+                self.external_links.append({
+                    "source": url,
+                    "target": normalized,
+                    "anchor_text": a_tag.get_text().strip() or "[External Link]",
+                    "rel": a_tag.get("rel", "")
+                })
+
+        page_record = {
+            "url": url,
+            "final_url": str(response.url),
+            "redirect_history": [str(r.url) for r in response.history],
+            "status_code": response.status_code,
+            "response_time_ms": elapsed_ms,
+            "is_success": True,
+            "fetch_status": "FETCHED",
+            "content_available": True,
+            "title": title_tag,
+            "meta_description": meta_description,
+            "canonical": canonical,
+            "robots_meta": robots_meta,
+            "html_lang": html_lang,
+            "viewport": viewport,
+            "hreflangs": hreflangs,
+            "structured_data": structured_data,
+            "h1": h1,
+            "h1_count": len(h1_tags),
+            "h2_count": len(h2_tags),
+            "h3_count": len(h3_tags),
+            "word_count": word_count,
+            "images_count": len(images),
+            "images_missing_alt": images_missing_alt,
+            "internal_links_count": len(discovered_internal)
+        }
+        
+        self.pages.append(page_record)
+        self.evaluate_page_issues(page_record)
+
+        if self.progress_callback:
+            try:
+                self.progress_callback(len(self.visited), len(self.queue_status))
+            except Exception:
+                pass
 
     async def start(self) -> Dict[str, Any]:
         self.is_running = True

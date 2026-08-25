@@ -14,10 +14,14 @@ from app.services.competitor_service import (
     perform_keyword_gap_analysis
 )
 
+from app.config.auth import get_current_user_id
+from app.config.permissions import get_user_membership
+
 router = APIRouter()
 
 
-def _get_project_or_404(project_id: str, db: Session) -> Project:
+def _get_project_or_404(project_id: str, db: Session, user_id: str) -> Project:
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail=f"SEO Project '{project_id}' not found.")
@@ -69,13 +73,14 @@ def _serialize_competitor(c: Competitor) -> dict:
 def get_competitors(
     project_id: str,
     status: Optional[str] = Query(None),
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """
     Returns confirmed competitors for the project. If status parameter is provided,
     filters by that status (e.g. ?status=Confirmed or ?status=Suggested).
     """
-    project = _get_project_or_404(project_id, db)
+    project = _get_project_or_404(project_id, db, user_id)
     
     query = db.query(Competitor).filter(Competitor.project_id == project.id)
     if status:
@@ -101,11 +106,15 @@ def get_competitors(
 
 
 @router.get("/discovered")
-def get_discovered_competitors(project_id: str, db: Session = Depends(get_db)):
+def get_discovered_competitors(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Returns suggested auto-discovered competitors for the project.
     """
-    project = _get_project_or_404(project_id, db)
+    project = _get_project_or_404(project_id, db, user_id)
     
     suggested = db.query(Competitor).filter(
         Competitor.project_id == project.id,
@@ -123,11 +132,15 @@ def get_discovered_competitors(project_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/discover")
-def run_competitor_discovery(project_id: str, db: Session = Depends(get_db)):
+def run_competitor_discovery(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Triggers automated competitor discovery for the project.
     """
-    project = _get_project_or_404(project_id, db)
+    project = _get_project_or_404(project_id, db, user_id)
     all_competitors = discover_competitors_for_project(project, db)
     
     suggested = [c for c in all_competitors if c.status == "Suggested"]
@@ -148,12 +161,13 @@ def run_competitor_discovery(project_id: str, db: Session = Depends(get_db)):
 def add_competitor(
     project_id: str,
     payload: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """
     Manually adds a new competitor for the project (sets status to 'Confirmed').
     """
-    project = _get_project_or_404(project_id, db)
+    project = _get_project_or_404(project_id, db, user_id)
 
     name = (payload.get("name") or "").strip()
     raw_url = (payload.get("url") or payload.get("domain") or "").strip()
@@ -225,12 +239,13 @@ def update_competitor(
     project_id: str,
     competitor_id: str,
     payload: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """
     Updates an existing competitor.
     """
-    project = _get_project_or_404(project_id, db)
+    project = _get_project_or_404(project_id, db, user_id)
     
     competitor = db.query(Competitor).filter(
         Competitor.id == competitor_id,
@@ -276,11 +291,16 @@ def update_competitor(
 
 
 @router.post("/{competitor_id}/approve")
-def approve_competitor(project_id: str, competitor_id: str, db: Session = Depends(get_db)):
+def approve_competitor(
+    project_id: str,
+    competitor_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Approves a suggested competitor, moving its status to 'Confirmed'.
     """
-    project = _get_project_or_404(project_id, db)
+    project = _get_project_or_404(project_id, db, user_id)
     
     competitor = db.query(Competitor).filter(
         Competitor.id == competitor_id,
@@ -302,11 +322,16 @@ def approve_competitor(project_id: str, competitor_id: str, db: Session = Depend
 
 
 @router.post("/{competitor_id}/ignore")
-def ignore_competitor(project_id: str, competitor_id: str, db: Session = Depends(get_db)):
+def ignore_competitor(
+    project_id: str,
+    competitor_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Ignores a suggested competitor, moving its status to 'Ignored'.
     """
-    project = _get_project_or_404(project_id, db)
+    project = _get_project_or_404(project_id, db, user_id)
     
     competitor = db.query(Competitor).filter(
         Competitor.id == competitor_id,
@@ -328,11 +353,16 @@ def ignore_competitor(project_id: str, competitor_id: str, db: Session = Depends
 
 
 @router.delete("/{competitor_id}")
-def delete_competitor(project_id: str, competitor_id: str, db: Session = Depends(get_db)):
+def delete_competitor(
+    project_id: str,
+    competitor_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Deletes a competitor from the database.
     """
-    project = _get_project_or_404(project_id, db)
+    project = _get_project_or_404(project_id, db, user_id)
     
     competitor = db.query(Competitor).filter(
         Competitor.id == competitor_id,
@@ -348,9 +378,13 @@ def delete_competitor(project_id: str, competitor_id: str, db: Session = Depends
 
 
 @router.get("/gap-analysis")
-def get_keyword_gap_analysis(project_id: str, db: Session = Depends(get_db)):
+def get_keyword_gap_analysis(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Returns Keyword Gap Analysis comparing target website vs confirmed competitors.
     """
-    project = _get_project_or_404(project_id, db)
+    project = _get_project_or_404(project_id, db, user_id)
     return perform_keyword_gap_analysis(project, db)

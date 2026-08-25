@@ -94,8 +94,18 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
     finally:
         db.close()
 
+from app.config.auth import get_current_user_id
+from app.config.permissions import get_user_membership
+
 @router.post("/{project_id}/crawl")
-async def start_crawl(project_id: str, request: CrawlRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def start_crawl(
+    project_id: str,
+    request: CrawlRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     
     target_url = request.url
@@ -126,8 +136,14 @@ async def start_crawl(project_id: str, request: CrawlRequest, background_tasks: 
     return {"message": "Crawl started", "session_id": new_session.id, "target_url": target_url}
 
 @router.get("/{project_id}/crawl/{session_id}")
-async def get_crawl_status(project_id: str, session_id: str, db: Session = Depends(get_db)):
-    crawl_session = db.query(CrawlSession).filter(CrawlSession.id == session_id).first()
+async def get_crawl_status(
+    project_id: str,
+    session_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    crawl_session = db.query(CrawlSession).filter(CrawlSession.id == session_id, CrawlSession.project_id == project_id).first()
     if not crawl_session:
         raise HTTPException(status_code=404, detail="Crawl session not found")
         
@@ -139,7 +155,12 @@ async def get_crawl_status(project_id: str, session_id: str, db: Session = Depen
     }
 
 @router.get("/{project_id}/crawl-history")
-async def get_crawl_history(project_id: str, db: Session = Depends(get_db)):
+async def get_crawl_history(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
         return []

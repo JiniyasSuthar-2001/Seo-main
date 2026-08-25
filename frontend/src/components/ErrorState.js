@@ -95,7 +95,7 @@ export function renderBackendOfflineState(container, message = null, onRetry = n
                     if (typeof onRetry === 'function') {
                         onRetry();
                     } else {
-                        window.location.reload();
+                        window.dispatchEvent(new CustomEvent('seo:retry-active-view'));
                     }
                 }, 800);
             } else {

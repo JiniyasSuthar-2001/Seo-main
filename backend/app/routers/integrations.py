@@ -33,6 +33,7 @@ def get_user_integrations(
 ):
     """
     Returns all connected external accounts for the current application user.
+    Includes platform AI (Groq) and customer AI connections.
     Sanitizes output to guarantee NO raw access tokens, refresh tokens, or API keys are exposed.
     """
     connections = db.query(ExternalConnection).filter(
@@ -41,10 +42,54 @@ def get_user_integrations(
 
     connected_providers = [c.to_safe_dict() for c in connections]
     
+    groq_key = os.environ.get("GROQ_API_KEY") or settings.GROQ_API_KEY
+    platform_ai = {
+        "provider": "groq",
+        "name": "Groq Platform AI",
+        "status": "AVAILABLE" if (groq_key and groq_key.strip()) else "NOT_CONFIGURED",
+        "model": settings.GROQ_MODEL or "llama-3.3-70b-versatile",
+        "is_platform_default": True,
+        "description": "Groq is provided by the platform and is available automatically when you don't use a personal AI provider."
+    }
+
+    conn_map = {c.provider.lower(): c for c in connections}
+
+    customer_ai_providers = [
+        {"provider": "openai", "name": "OpenAI / ChatGPT", "model_info": "GPT-4o & Mini models"},
+        {"provider": "gemini", "name": "Google Gemini", "model_info": "Gemini Flash & Pro models"},
+        {"provider": "claude", "name": "Anthropic Claude", "model_info": "Claude 3.5 Sonnet"}
+    ]
+
+    customer_ai = []
+    for p_info in customer_ai_providers:
+        p_name = p_info["provider"]
+        conn = conn_map.get(p_name)
+        if conn and conn.get_api_key():
+            customer_ai.append({
+                "provider": p_name,
+                "name": p_info["name"],
+                "model_info": p_info["model_info"],
+                "status": conn.status,
+                "connected": True,
+                "enabled": conn.status == "CONNECTED",
+                "masked_key": conn.to_safe_dict().get("masked_key", ""),
+                "updated_at": conn.updated_at.isoformat() if conn.updated_at else None
+            })
+        else:
+            customer_ai.append({
+                "provider": p_name,
+                "name": p_info["name"],
+                "model_info": p_info["model_info"],
+                "status": "NOT_CONNECTED",
+                "connected": False,
+                "enabled": False,
+                "masked_key": ""
+            })
+
     all_providers = [
         {"provider": "google", "name": "Google (Search Console / Profile / Business)", "category": "Search & Analytics", "supports_oauth": True},
         {"provider": "meta", "name": "Meta (Facebook Pages & Instagram)", "category": "Social & Marketing", "supports_oauth": True},
-        {"provider": "openai", "name": "OpenAI (GPT-4o & Embeddings)", "category": "AI & Automation", "supports_oauth": False},
+        {"provider": "openai", "name": "OpenAI (GPT-4o)", "category": "AI & Automation", "supports_oauth": False},
         {"provider": "gemini", "name": "Google Gemini AI", "category": "AI & Automation", "supports_oauth": False},
         {"provider": "claude", "name": "Claude AI (Anthropic)", "category": "AI & Automation", "supports_oauth": False},
         {"provider": "microsoft", "name": "Microsoft Workspace", "category": "Search & Analytics", "supports_oauth": True},
@@ -54,6 +99,8 @@ def get_user_integrations(
 
     return {
         "user_id": user_id,
+        "platform_ai": platform_ai,
+        "customer_ai": customer_ai,
         "connections": connected_providers,
         "supported_providers": all_providers
     }
@@ -248,6 +295,13 @@ def handle_oauth_callback(
         })
         return RedirectResponse(url=err_url)
 
+from app.llm.llm_provider import (
+    OpenAIProviderAdapter,
+    GeminiProviderAdapter,
+    AnthropicProviderAdapter,
+    AIProviderException
+)
+
 @router.post("/{provider}/disconnect")
 def disconnect_provider(
     provider: str,
@@ -255,7 +309,7 @@ def disconnect_provider(
     db: Session = Depends(get_db)
 ):
     """
-    Disconnects external connection and purges stored OAuth tokens.
+    Disconnects external connection and purges stored OAuth tokens / customer API keys.
     """
     conn = db.query(ExternalConnection).filter(
         ExternalConnection.user_id == user_id,
@@ -274,6 +328,162 @@ def disconnect_provider(
     }
 
 @router.post("/{provider}/key")
-def submit_api_key_deprecated(provider: str):
-    raise HTTPException(status_code=400, detail="Pasting raw API keys is deprecated. Please use official provider authentication.")
+def submit_customer_api_key(
+    provider: str,
+    body: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Saves and validates customer-provided API key for OpenAI, Gemini, or Claude.
+    Performs real provider verification before saving.
+    Encrypted at rest in database and bound strictly to current user_id.
+    """
+    p_clean = provider.lower().strip()
+    if p_clean not in ("openai", "gemini", "claude", "anthropic"):
+        raise HTTPException(status_code=400, detail=f"Provider '{provider}' is not supported for custom API key integration.")
+
+    api_key = (body.get("api_key") or body.get("key") or "").strip()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="API key cannot be empty.")
+
+    # 1. Perform real provider API verification
+    provider_adapter = None
+    try:
+        if p_clean in ("openai", "gpt"):
+            provider_adapter = OpenAIProviderAdapter(api_key=api_key)
+        elif p_clean == "gemini":
+            provider_adapter = GeminiProviderAdapter(api_key=api_key)
+        elif p_clean in ("claude", "anthropic"):
+            provider_adapter = AnthropicProviderAdapter(api_key=api_key)
+
+        if provider_adapter:
+            test_res = provider_adapter.test_connection()
+            print(f"[CUSTOMER AI KEY] Verified {p_clean} key for user '{user_id}': {test_res}", flush=True)
+    except AIProviderException as ai_err:
+        print(f"[CUSTOMER AI KEY ERROR] Verification failed for {p_clean}: {ai_err.message}", flush=True)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unable to verify {p_clean.title()} API Key: {ai_err.message}"
+        )
+    except Exception as err:
+        print(f"[CUSTOMER AI KEY ERROR] Unexpected verification error: {err}", flush=True)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unable to verify {p_clean.title()} API Key. Please check the key and try again."
+        )
+
+    # 2. Upsert ExternalConnection bound to user_id
+    existing = db.query(ExternalConnection).filter(
+        ExternalConnection.user_id == user_id,
+        ExternalConnection.provider == p_clean
+    ).first()
+
+    if existing:
+        existing.set_api_key(api_key)
+        existing.status = "CONNECTED"
+        existing.updated_at = datetime.utcnow()
+        existing.last_used_at = datetime.utcnow()
+        db.commit()
+        db.refresh(existing)
+        conn = existing
+    else:
+        conn = ExternalConnection(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            provider=p_clean,
+            provider_account_name=f"Customer {p_clean.title()} API Key",
+            status="CONNECTED",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+            last_used_at=datetime.utcnow()
+        )
+        conn.set_api_key(api_key)
+        db.add(conn)
+        db.commit()
+        db.refresh(conn)
+
+    return {
+        "status": "success",
+        "message": f"Customer {p_clean.title()} API key verified and connected successfully.",
+        "connection": conn.to_safe_dict()
+    }
+
+
+@router.post("/{provider}/toggle")
+def toggle_customer_api_key(
+    provider: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Toggles customer API key connection status between CONNECTED and DISABLED.
+    Disabling automatically reverts AI requests to Groq platform default.
+    """
+    p_clean = provider.lower().strip()
+    conn = db.query(ExternalConnection).filter(
+        ExternalConnection.user_id == user_id,
+        ExternalConnection.provider == p_clean
+    ).first()
+
+    if not conn or not conn.get_api_key():
+        raise HTTPException(status_code=404, detail=f"No saved API key found for '{provider}'.")
+
+    new_status = "DISABLED" if conn.status == "CONNECTED" else "CONNECTED"
+    conn.status = new_status
+    conn.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(conn)
+
+    return {
+        "status": "success",
+        "provider": p_clean,
+        "new_status": new_status,
+        "message": f"Customer {p_clean.title()} API key is now {new_status.lower()}.",
+        "connection": conn.to_safe_dict()
+    }
+
+
+@router.post("/{provider}/test")
+def test_customer_api_key(
+    provider: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Tests saved customer API key for OpenAI, Gemini, or Claude.
+    """
+    p_clean = provider.lower().strip()
+    conn = db.query(ExternalConnection).filter(
+        ExternalConnection.user_id == user_id,
+        ExternalConnection.provider == p_clean
+    ).first()
+
+    if not conn:
+        raise HTTPException(status_code=404, detail=f"No connection found for '{provider}'.")
+
+    api_key = conn.get_api_key()
+    if not api_key:
+        raise HTTPException(status_code=400, detail=f"No stored API key found for '{provider}'.")
+
+    try:
+        if p_clean in ("openai", "gpt"):
+            adapter = OpenAIProviderAdapter(api_key=api_key)
+        elif p_clean == "gemini":
+            adapter = GeminiProviderAdapter(api_key=api_key)
+        elif p_clean in ("claude", "anthropic"):
+            adapter = AnthropicProviderAdapter(api_key=api_key)
+        else:
+            raise HTTPException(status_code=400, detail=f"Testing is not supported for provider '{provider}'.")
+
+        res = adapter.test_connection()
+        return {
+            "status": "success",
+            "provider": p_clean,
+            "result": res
+        }
+    except AIProviderException as ai_err:
+        raise HTTPException(status_code=400, detail=ai_err.message)
+    except Exception as err:
+        raise HTTPException(status_code=400, detail=f"Test request failed: {err}")
 

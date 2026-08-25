@@ -93,12 +93,16 @@ export class Alerts {
             `;
         }).join('');
 
+        window.refreshAlertsFeed = async () => {
+            await this.mounted();
+        };
+
         container.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                 <div style="font-size: 13px; color: var(--text-secondary);">
                     Found <strong style="color: var(--text-primary);">${data.alerts.length}</strong> active project alerts.
                 </div>
-                <button class="btn btn-secondary btn-sm" onclick="window.location.reload()">Refresh Feed</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="window.refreshAlertsFeed()">Refresh Feed</button>
             </div>
             ${alertCards}
         `;

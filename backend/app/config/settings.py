@@ -53,6 +53,17 @@ class Settings(BaseSettings):
     META_APP_ID: Optional[str] = os.environ.get("META_APP_ID") or os.environ.get("FACEBOOK_CLIENT_ID")
     META_APP_SECRET: Optional[str] = os.environ.get("META_APP_SECRET") or os.environ.get("FACEBOOK_CLIENT_SECRET")
 
+    # Platform AI Provider Credentials (Groq is default platform provider)
+    AI_PROVIDER: Optional[str] = os.environ.get("AI_PROVIDER") or os.environ.get("LLM_PROVIDER") or "groq"
+    GROQ_API_KEY: Optional[str] = os.environ.get("GROQ_API_KEY")
+    GROQ_MODEL: Optional[str] = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+    AI_API_KEY: Optional[str] = os.environ.get("AI_API_KEY") or os.environ.get("GROQ_API_KEY") or os.environ.get("OPENAI_API_KEY") or os.environ.get("GEMINI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+    AI_MODEL: Optional[str] = os.environ.get("AI_MODEL") or os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+    GEMINI_API_KEY: Optional[str] = os.environ.get("GEMINI_API_KEY")
+    GEMINI_MODEL: Optional[str] = os.environ.get("GEMINI_MODEL", "models/gemini-flash-latest")
+    OPENAI_API_KEY: Optional[str] = os.environ.get("OPENAI_API_KEY")
+    ANTHROPIC_API_KEY: Optional[str] = os.environ.get("ANTHROPIC_API_KEY")
+
     FRONTEND_BASE_URL: str = os.environ.get(
         "FRONTEND_BASE_URL", 
         f"http://{os.environ.get('FRONTEND_HOST', '127.0.0.1')}:{os.environ.get('FRONTEND_PORT', '8030')}"

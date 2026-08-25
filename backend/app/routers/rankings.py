@@ -11,12 +11,22 @@ from app.models.crawl_session import CrawlSession
 from app.config.utils import get_sanitized_domain, normalize_stored_path
 from app.config.settings import settings
 
+from app.config.auth import get_current_user_id
+from app.config.permissions import get_user_membership
+
 router = APIRouter()
 
 
 @router.get("")
 @router.get("/")
-def get_rankings(project_id: str, limit: int = Query(50), offset: int = Query(0), db: Session = Depends(get_db)):
+def get_rankings(
+    project_id: str,
+    limit: int = Query(50),
+    offset: int = Query(0),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
         return {"rankings": [], "status": "not_connected", "competitors": [], "message": "No project domain configured."}
@@ -143,10 +153,16 @@ def get_position_tracking_overview(project_id: str, db: Session = Depends(get_db
 
 
 @router.post("/campaign-config")
-def update_campaign_config(project_id: str, payload: dict = Body(...), db: Session = Depends(get_db)):
+def update_campaign_config(
+    project_id: str,
+    payload: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Saves campaign configuration per project (Target type, search engine, country, language, device).
     """
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
@@ -176,11 +192,16 @@ def update_campaign_config(project_id: str, payload: dict = Body(...), db: Sessi
 # ==============================================================================
 
 @router.get("/winners-losers")
-def get_winners_losers(project_id: str, db: Session = Depends(get_db)):
+def get_winners_losers(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Detects New, Lost, Improved, and Declined ranking keywords across real snapshots.
     Production rule: Requires at least 2 completed snapshots. Never infers change from a single dataset.
     """
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")

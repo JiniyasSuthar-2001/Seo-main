@@ -72,9 +72,12 @@ window.submitNewProject = async (e) => {
   }
 
   try {
-    await projectStore.createProject({ name, url: domain });
+    const res = await projectStore.createProject({ name, url: domain });
     window.closeCreateProjectModal();
-    window.location.reload();
+    if (res && res.project && res.project.id) {
+      projectStore.setSelectedProjectId(res.project.id);
+      window.dispatchEvent(new CustomEvent('project:selected', { detail: { projectId: res.project.id } }));
+    }
   } catch (err) {
     alert(`Failed to create project: ${err.message || "Please check backend server status."}`);
   }

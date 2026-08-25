@@ -27,22 +27,37 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
     total_pages = len(pages) if pages else 0
     issues = []
 
+    # Separate HTTP 200 HTML pages from non-200 / blocked pages
+    html_pages = [
+        p for p in (pages or [])
+        if (p.get("status_code") or 0) == 200 and p.get("is_success", True) is not False
+    ]
+    html_count = len(html_pages)
+
+    blocked_pages = [
+        p for p in (pages or [])
+        if (p.get("status_code") or 0) in (401, 403) or p.get("fetch_status") == "BLOCKED"
+    ]
+    error_pages = [
+        p for p in (pages or [])
+        if (p.get("status_code") or 0) >= 400 and (p.get("status_code") or 0) not in (401, 403)
+    ]
+
     categories = {
         "Crawlability": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Indexability": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Indexability": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
         "HTTPS": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Metadata": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Content": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Headings": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Canonicals": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Images": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Internal Links": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "External Links": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Structured Data": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Mobile": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "International SEO": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Metadata": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Content": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Headings": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Canonicals": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Images": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Internal Links": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "External Links": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Structured Data": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Mobile": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "International SEO": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
         "Security": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        # Category requiring external PageSpeed API key integration
         "Performance": {"status": "Not Analyzed", "evaluated": False, "reason": "Requires PageSpeed API key configured in Settings -> Integrations", "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
     }
 
@@ -65,248 +80,270 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             }
         }
 
-    # 1. Crawlability & HTTP Status (404s & 5xx)
-    broken_pages = [p for p in pages if (p.get("status_code") or 200) >= 400]
-    if broken_pages:
+    # Mark non-evaluated HTML categories if no HTML pages were successfully fetched
+    if html_count == 0:
+        for cat_key in ["Indexability", "Metadata", "Content", "Headings", "Canonicals", "Images", "Internal Links", "External Links", "Structured Data", "Mobile", "International SEO"]:
+            categories[cat_key]["status"] = "Not Evaluated"
+            categories[cat_key]["evaluated"] = False
+            categories[cat_key]["reason"] = "HTML unavailable due to crawl block or HTTP error."
+
+    # 1. Crawlability & HTTP Status
+    if blocked_pages:
+        issues.append({
+            "rule_id": "CRAWL_002",
+            "category": "Crawlability",
+            "severity": "critical",
+            "title": "Crawl Blocked / Access Denied (HTTP 403)",
+            "description": f"{len(blocked_pages)} audited page(s) returned HTTP 401/403 Access Denied. Server firewall blocked crawler access. HTML-dependent checks were not evaluated.",
+            "evidence": f"Blocked URLs: {', '.join([p.get('url', '') for p in blocked_pages[:3]])}",
+            "affected_urls": [p.get("url") for p in blocked_pages],
+            "affected_count": len(blocked_pages),
+            "recommendation": "Verify server firewall access rules, Cloudflare WAF policies, or user-agent headers."
+        })
+        categories["Crawlability"]["critical"] += len(blocked_pages)
+        categories["Crawlability"]["status"] = "Issues Found"
+
+    if error_pages:
         issues.append({
             "rule_id": "CRAWL_001",
             "category": "Crawlability",
             "severity": "critical",
             "title": "HTTP 4xx / 5xx Broken Pages",
-            "description": f"{len(broken_pages)} audited pages returned broken client/server status codes.",
-            "evidence": f"Pages returning HTTP status >= 400: {', '.join([p.get('url', '') for p in broken_pages[:3]])}",
-            "affected_urls": [p.get("url") for p in broken_pages],
-            "affected_count": len(broken_pages),
+            "description": f"{len(error_pages)} audited pages returned broken client/server status codes.",
+            "evidence": f"Pages returning HTTP status >= 400: {', '.join([p.get('url', '') for p in error_pages[:3]])}",
+            "affected_urls": [p.get("url") for p in error_pages],
+            "affected_count": len(error_pages),
             "recommendation": "Fix broken page URLs or implement 301 redirects to active destination pages."
         })
-        categories["Crawlability"]["critical"] += len(broken_pages)
+        categories["Crawlability"]["critical"] += len(error_pages)
         categories["Crawlability"]["status"] = "Issues Found"
-    else:
+
+    if not blocked_pages and not error_pages:
         categories["Crawlability"]["passed"] += total_pages
 
-    # 2. Indexability (Noindex tags)
-    noindex_pages = [p for p in pages if "noindex" in (p.get("indexability") or p.get("robots_meta") or "").lower()]
-    if noindex_pages:
-        issues.append({
-            "rule_id": "INDEX_001",
-            "category": "Indexability",
-            "severity": "warning",
-            "title": "Pages Blocked with 'noindex' Robots Meta Tag",
-            "description": f"{len(noindex_pages)} pages contain noindex directives preventing search engine indexing.",
-            "evidence": f"URLs: {', '.join([p.get('url', '') for p in noindex_pages[:3]])}",
-            "affected_urls": [p.get("url") for p in noindex_pages],
-            "affected_count": len(noindex_pages),
-            "recommendation": "Remove noindex tag if pages are intended to rank in organic search results."
-        })
-        categories["Indexability"]["warning"] += len(noindex_pages)
-        categories["Indexability"]["status"] = "Issues Found"
-    else:
-        categories["Indexability"]["passed"] += total_pages
+    # Rules 2 to 13 evaluate ONLY html_pages (HTTP 200 OK)
+    if html_count > 0:
+        # 2. Indexability
+        noindex_pages = [p for p in html_pages if "noindex" in (p.get("indexability") or p.get("robots_meta") or "").lower()]
+        if noindex_pages:
+            issues.append({
+                "rule_id": "INDEX_001",
+                "category": "Indexability",
+                "severity": "warning",
+                "title": "Pages Blocked with 'noindex' Robots Meta Tag",
+                "description": f"{len(noindex_pages)} pages contain noindex directives preventing search engine indexing.",
+                "evidence": f"URLs: {', '.join([p.get('url', '') for p in noindex_pages[:3]])}",
+                "affected_urls": [p.get("url") for p in noindex_pages],
+                "affected_count": len(noindex_pages),
+                "recommendation": "Remove noindex tag if pages are intended to rank in organic search results."
+            })
+            categories["Indexability"]["warning"] += len(noindex_pages)
+            categories["Indexability"]["status"] = "Issues Found"
+        else:
+            categories["Indexability"]["passed"] += html_count
 
-    # 3. HTTPS & Insecure HTTP
-    http_pages = [p for p in pages if (p.get("url") or "").startswith("http://")]
-    if http_pages:
-        issues.append({
-            "rule_id": "HTTPS_001",
-            "category": "HTTPS",
-            "severity": "error",
-            "title": "Insecure HTTP Protocol URLs",
-            "description": f"{len(http_pages)} pages are served over unencrypted HTTP protocol.",
-            "evidence": f"Insecure URLs: {', '.join([p.get('url', '') for p in http_pages[:3]])}",
-            "affected_urls": [p.get("url") for p in http_pages],
-            "affected_count": len(http_pages),
-            "recommendation": "Enforce SSL encryption and redirect HTTP requests to secure HTTPS endpoints."
-        })
-        categories["HTTPS"]["error"] += len(http_pages)
-        categories["HTTPS"]["status"] = "Issues Found"
-    else:
-        categories["HTTPS"]["passed"] += total_pages
+        # 3. HTTPS
+        http_pages = [p for p in pages if (p.get("url") or "").startswith("http://")]
+        if http_pages:
+            issues.append({
+                "rule_id": "HTTPS_001",
+                "category": "HTTPS",
+                "severity": "error",
+                "title": "Insecure HTTP Protocol URLs",
+                "description": f"{len(http_pages)} pages are served over unencrypted HTTP protocol.",
+                "evidence": f"Insecure URLs: {', '.join([p.get('url', '') for p in http_pages[:3]])}",
+                "affected_urls": [p.get("url") for p in http_pages],
+                "affected_count": len(http_pages),
+                "recommendation": "Enforce SSL encryption and redirect HTTP requests to secure HTTPS endpoints."
+            })
+            categories["HTTPS"]["error"] += len(http_pages)
+            categories["HTTPS"]["status"] = "Issues Found"
+        else:
+            categories["HTTPS"]["passed"] += total_pages
 
-    # 4. Metadata (Missing Title & Meta Description)
-    missing_titles = [p for p in pages if not p.get("title") or p.get("title", "").strip() == ""]
-    if missing_titles:
-        issues.append({
-            "rule_id": "META_001",
-            "category": "Metadata",
-            "severity": "critical",
-            "title": "Pages Missing HTML Title Tags",
-            "description": f"{len(missing_titles)} pages lack primary HTML title tags required for search relevance.",
-            "evidence": f"Affected URLs: {', '.join([p.get('url', '') for p in missing_titles[:3]])}",
-            "affected_urls": [p.get("url") for p in missing_titles],
-            "affected_count": len(missing_titles),
-            "recommendation": "Specify unique 50-60 character title tags for all audited pages."
-        })
-        categories["Metadata"]["critical"] += len(missing_titles)
-        categories["Metadata"]["status"] = "Issues Found"
+        # 4. Metadata
+        missing_titles = [p for p in html_pages if not p.get("title") or p.get("title", "").strip() == ""]
+        if missing_titles:
+            issues.append({
+                "rule_id": "META_001",
+                "category": "Metadata",
+                "severity": "critical",
+                "title": "Pages Missing HTML Title Tags",
+                "description": f"{len(missing_titles)} pages lack primary HTML title tags required for search relevance.",
+                "evidence": f"Affected URLs: {', '.join([p.get('url', '') for p in missing_titles[:3]])}",
+                "affected_urls": [p.get("url") for p in missing_titles],
+                "affected_count": len(missing_titles),
+                "recommendation": "Specify unique 50-60 character title tags for all audited pages."
+            })
+            categories["Metadata"]["critical"] += len(missing_titles)
+            categories["Metadata"]["status"] = "Issues Found"
 
-    missing_desc = [p for p in pages if not p.get("meta_description") or p.get("meta_description", "").strip() == ""]
-    if missing_desc:
-        issues.append({
-            "rule_id": "META_002",
-            "category": "Metadata",
-            "severity": "warning",
-            "title": "Pages Missing Meta Descriptions",
-            "description": f"{len(missing_desc)} pages are missing meta descriptions for search snippet optimization.",
-            "evidence": f"Affected URLs: {', '.join([p.get('url', '') for p in missing_desc[:3]])}",
-            "affected_urls": [p.get("url") for p in missing_desc],
-            "affected_count": len(missing_desc),
-            "recommendation": "Write compelling 140-160 character meta descriptions summarizing page topic."
-        })
-        categories["Metadata"]["warning"] += len(missing_desc)
-        categories["Metadata"]["status"] = "Issues Found"
+        missing_desc = [p for p in html_pages if not p.get("meta_description") or p.get("meta_description", "").strip() == ""]
+        if missing_desc:
+            issues.append({
+                "rule_id": "META_002",
+                "category": "Metadata",
+                "severity": "warning",
+                "title": "Pages Missing Meta Descriptions",
+                "description": f"{len(missing_desc)} pages are missing meta descriptions for search snippet optimization.",
+                "evidence": f"Affected URLs: {', '.join([p.get('url', '') for p in missing_desc[:3]])}",
+                "affected_urls": [p.get("url") for p in missing_desc],
+                "affected_count": len(missing_desc),
+                "recommendation": "Write compelling 140-160 character meta descriptions summarizing page topic."
+            })
+            categories["Metadata"]["warning"] += len(missing_desc)
+            categories["Metadata"]["status"] = "Issues Found"
 
-    if not missing_titles and not missing_desc:
-        categories["Metadata"]["passed"] += total_pages
+        if not missing_titles and not missing_desc:
+            categories["Metadata"]["passed"] += html_count
 
-    # 5. Content (Thin content < 150 words)
-    thin_pages = [p for p in pages if (p.get("word_count") or 0) > 0 and (p.get("word_count") or 0) < 150]
-    if thin_pages:
-        issues.append({
-            "rule_id": "CONT_001",
-            "category": "Content",
-            "severity": "warning",
-            "title": "Thin Content Pages (< 150 Words)",
-            "description": f"{len(thin_pages)} pages contain minimal body copy, increasing risk of low-quality content flags.",
-            "evidence": f"Thin pages: {', '.join([p.get('url', '') for p in thin_pages[:3]])}",
-            "affected_urls": [p.get("url") for p in thin_pages],
-            "affected_count": len(thin_pages),
-            "recommendation": "Expand body copy depth with relevant topic headings and helpful content."
-        })
-        categories["Content"]["warning"] += len(thin_pages)
-        categories["Content"]["status"] = "Issues Found"
-    else:
-        categories["Content"]["passed"] += total_pages
+        # 5. Content
+        thin_pages = [p for p in html_pages if (p.get("word_count") or 0) > 0 and (p.get("word_count") or 0) < 150]
+        if thin_pages:
+            issues.append({
+                "rule_id": "CONT_001",
+                "category": "Content",
+                "severity": "warning",
+                "title": "Thin Content Pages (< 150 Words)",
+                "description": f"{len(thin_pages)} pages contain minimal body copy, increasing risk of low-quality content flags.",
+                "evidence": f"Thin pages: {', '.join([p.get('url', '') for p in thin_pages[:3]])}",
+                "affected_urls": [p.get("url") for p in thin_pages],
+                "affected_count": len(thin_pages),
+                "recommendation": "Expand body copy depth with relevant topic headings and helpful content."
+            })
+            categories["Content"]["warning"] += len(thin_pages)
+            categories["Content"]["status"] = "Issues Found"
+        else:
+            categories["Content"]["passed"] += html_count
 
-    # 6. Headings (Missing H1)
-    missing_h1 = [p for p in pages if not (p.get("h1") if isinstance(p.get("h1"), list) else str(p.get("h1") or "").strip())]
-    if missing_h1:
-        issues.append({
-            "rule_id": "HEAD_001",
-            "category": "Headings",
-            "severity": "warning",
-            "title": "Pages Missing Main H1 Heading",
-            "description": f"{len(missing_h1)} pages lack a primary <h1> heading element.",
-            "evidence": f"URLs: {', '.join([p.get('url', '') for p in missing_h1[:3]])}",
-            "affected_urls": [p.get("url") for p in missing_h1],
-            "affected_count": len(missing_h1),
-            "recommendation": "Include exactly one descriptive <h1> tag matching the page topic."
-        })
-        categories["Headings"]["warning"] += len(missing_h1)
-        categories["Headings"]["status"] = "Issues Found"
-    else:
-        categories["Headings"]["passed"] += total_pages
+        # 6. Headings
+        missing_h1 = [p for p in html_pages if not (p.get("h1") if isinstance(p.get("h1"), list) else str(p.get("h1") or "").strip())]
+        if missing_h1:
+            issues.append({
+                "rule_id": "HEAD_001",
+                "category": "Headings",
+                "severity": "warning",
+                "title": "Pages Missing Main H1 Heading",
+                "description": f"{len(missing_h1)} pages lack a primary <h1> heading element.",
+                "evidence": f"URLs: {', '.join([p.get('url', '') for p in missing_h1[:3]])}",
+                "affected_urls": [p.get("url") for p in missing_h1],
+                "affected_count": len(missing_h1),
+                "recommendation": "Include exactly one descriptive <h1> tag matching the page topic."
+            })
+            categories["Headings"]["warning"] += len(missing_h1)
+            categories["Headings"]["status"] = "Issues Found"
+        else:
+            categories["Headings"]["passed"] += html_count
 
-    # 7. Canonicals (Missing Canonical Tag)
-    missing_canon = [p for p in pages if not p.get("canonical") or p.get("canonical", "").strip() == ""]
-    if missing_canon:
-        issues.append({
-            "rule_id": "CANON_001",
-            "category": "Canonicals",
-            "severity": "notice",
-            "title": "Pages Missing Self-Referential Canonical Tag",
-            "description": f"{len(missing_canon)} pages do not specify a rel='canonical' Link tag.",
-            "evidence": f"URLs: {', '.join([p.get('url', '') for p in missing_canon[:3]])}",
-            "affected_urls": [p.get("url") for p in missing_canon],
-            "affected_count": len(missing_canon),
-            "recommendation": "Add canonical link tags to establish authoritative URLs."
-        })
-        categories["Canonicals"]["notice"] += len(missing_canon)
-        categories["Canonicals"]["status"] = "Issues Found"
-    else:
-        categories["Canonicals"]["passed"] += total_pages
+        # 7. Canonicals
+        missing_canon = [p for p in html_pages if not p.get("canonical") or p.get("canonical", "").strip() == ""]
+        if missing_canon:
+            issues.append({
+                "rule_id": "CANON_001",
+                "category": "Canonicals",
+                "severity": "notice",
+                "title": "Pages Missing Self-Referential Canonical Tag",
+                "description": f"{len(missing_canon)} pages do not specify a rel='canonical' Link tag.",
+                "evidence": f"URLs: {', '.join([p.get('url', '') for p in missing_canon[:3]])}",
+                "affected_urls": [p.get("url") for p in missing_canon],
+                "affected_count": len(missing_canon),
+                "recommendation": "Add canonical link tags to establish authoritative URLs."
+            })
+            categories["Canonicals"]["notice"] += len(missing_canon)
+            categories["Canonicals"]["status"] = "Issues Found"
+        else:
+            categories["Canonicals"]["passed"] += html_count
 
-    # 8. Images (Missing Alt Text)
-    def _has_missing_alt(p_obj):
-        v = p_obj.get("images_missing_alt")
-        if not v: return False
-        if isinstance(v, int): return v > 0
-        if isinstance(v, (list, tuple, set)): return len(v) > 0
-        return False
+        # 8. Images
+        def _has_missing_alt(p_obj):
+            v = p_obj.get("images_missing_alt")
+            if not v: return False
+            if isinstance(v, int): return v > 0
+            if isinstance(v, (list, tuple, set)): return len(v) > 0
+            return False
 
-    missing_alt_pages = [p for p in pages if _has_missing_alt(p)]
-    if missing_alt_pages:
-        issues.append({
-            "rule_id": "IMG_001",
-            "category": "Images",
-            "severity": "notice",
-            "title": "Images Missing Descriptive Alt Text",
-            "description": f"{len(missing_alt_pages)} pages contain image tags missing descriptive alt text attributes.",
-            "evidence": f"URLs: {', '.join([p.get('url', '') for p in missing_alt_pages[:3]])}",
-            "affected_urls": [p.get("url") for p in missing_alt_pages],
-            "affected_count": len(missing_alt_pages),
-            "recommendation": "Add descriptive alt attributes to all content images for accessibility and image SEO."
-        })
-        categories["Images"]["notice"] += len(missing_alt_pages)
-        categories["Images"]["status"] = "Issues Found"
-    else:
-        categories["Images"]["passed"] += total_pages
+        missing_alt_pages = [p for p in html_pages if _has_missing_alt(p)]
+        if missing_alt_pages:
+            issues.append({
+                "rule_id": "IMG_001",
+                "category": "Images",
+                "severity": "notice",
+                "title": "Images Missing Descriptive Alt Text",
+                "description": f"{len(missing_alt_pages)} pages contain image tags missing descriptive alt text attributes.",
+                "evidence": f"URLs: {', '.join([p.get('url', '') for p in missing_alt_pages[:3]])}",
+                "affected_urls": [p.get("url") for p in missing_alt_pages],
+                "affected_count": len(missing_alt_pages),
+                "recommendation": "Add descriptive alt attributes to all content images for accessibility and image SEO."
+            })
+            categories["Images"]["notice"] += len(missing_alt_pages)
+            categories["Images"]["status"] = "Issues Found"
+        else:
+            categories["Images"]["passed"] += html_count
 
-    # 9. Internal Links (Orphan pages)
-    orphan_pages = [p for p in pages if p.get("internal_links_count", 1) == 0 and not p.get("url", "").endswith("/")]
-    if orphan_pages:
-        issues.append({
-            "rule_id": "LINK_001",
-            "category": "Internal Links",
-            "severity": "warning",
-            "title": "Orphan Pages (0 Inbound Internal Links)",
-            "description": f"{len(orphan_pages)} pages have zero internal links pointing to them.",
-            "evidence": f"Orphan URLs: {', '.join([p.get('url', '') for p in orphan_pages[:3]])}",
-            "affected_urls": [p.get("url") for p in orphan_pages],
-            "affected_count": len(orphan_pages),
-            "recommendation": "Add internal links from relevant contextually related category or hub pages."
-        })
-        categories["Internal Links"]["warning"] += len(orphan_pages)
-        categories["Internal Links"]["status"] = "Issues Found"
-    else:
-        categories["Internal Links"]["passed"] += total_pages
+        # 9. Internal Links
+        orphan_pages = [p for p in html_pages if p.get("internal_links_count", 1) == 0 and not p.get("url", "").endswith("/")]
+        if orphan_pages:
+            issues.append({
+                "rule_id": "LINK_001",
+                "category": "Internal Links",
+                "severity": "warning",
+                "title": "Orphan Pages (0 Inbound Internal Links)",
+                "description": f"{len(orphan_pages)} pages have zero internal links pointing to them.",
+                "evidence": f"Orphan URLs: {', '.join([p.get('url', '') for p in orphan_pages[:3]])}",
+                "affected_urls": [p.get("url") for p in orphan_pages],
+                "affected_count": len(orphan_pages),
+                "recommendation": "Add internal links from relevant contextually related category or hub pages."
+            })
+            categories["Internal Links"]["warning"] += len(orphan_pages)
+            categories["Internal Links"]["status"] = "Issues Found"
+        else:
+            categories["Internal Links"]["passed"] += html_count
 
-    # 10. External Links (Insecure external link targets)
-    # Passed by default unless explicit external link issues discovered
-    categories["External Links"]["passed"] += total_pages
+        # 10. External Links
+        categories["External Links"]["passed"] += html_count
 
-    # 11. Structured Data (Schema.org JSON-LD)
-    missing_schema_pages = [p for p in pages if "structured_data" in p and (not p.get("structured_data") or len(p.get("structured_data", [])) == 0)]
-    if missing_schema_pages:
-        issues.append({
-            "rule_id": "SCHEMA_001",
-            "category": "Structured Data",
-            "severity": "notice",
-            "title": "Pages Missing Schema.org Structured Data",
-            "description": f"{len(missing_schema_pages)} pages lack JSON-LD structured data markups.",
-            "evidence": f"URLs: {', '.join([p.get('url', '') for p in missing_schema_pages[:3]])}",
-            "affected_urls": [p.get("url") for p in missing_schema_pages],
-            "affected_count": len(missing_schema_pages),
-            "recommendation": "Implement JSON-LD structured data (Article, Organization, Product) for rich snippet eligibility."
-        })
-        categories["Structured Data"]["notice"] += len(missing_schema_pages)
-        categories["Structured Data"]["status"] = "Issues Found"
-    else:
-        categories["Structured Data"]["passed"] += total_pages
+        # 11. Structured Data
+        missing_schema_pages = [p for p in html_pages if "structured_data" in p and (not p.get("structured_data") or len(p.get("structured_data", [])) == 0)]
+        if missing_schema_pages:
+            issues.append({
+                "rule_id": "SCHEMA_001",
+                "category": "Structured Data",
+                "severity": "notice",
+                "title": "Pages Missing Schema.org Structured Data",
+                "description": f"{len(missing_schema_pages)} pages lack JSON-LD structured data markups.",
+                "evidence": f"URLs: {', '.join([p.get('url', '') for p in missing_schema_pages[:3]])}",
+                "affected_urls": [p.get("url") for p in missing_schema_pages],
+                "affected_count": len(missing_schema_pages),
+                "recommendation": "Implement JSON-LD structured data (Article, Organization, Product) for rich snippet eligibility."
+            })
+            categories["Structured Data"]["notice"] += len(missing_schema_pages)
+            categories["Structured Data"]["status"] = "Issues Found"
+        else:
+            categories["Structured Data"]["passed"] += html_count
 
-    # 12. Mobile (Viewport meta tag)
-    missing_viewport_pages = [p for p in pages if "viewport" in p and not p.get("viewport")]
-    if missing_viewport_pages:
-        issues.append({
-            "rule_id": "MOB_001",
-            "category": "Mobile",
-            "severity": "warning",
-            "title": "Pages Missing Mobile Viewport Meta Tag",
-            "description": f"{len(missing_viewport_pages)} pages lack a mobile viewport meta tag.",
-            "evidence": f"URLs: {', '.join([p.get('url', '') for p in missing_viewport_pages[:3]])}",
-            "affected_urls": [p.get("url") for p in missing_viewport_pages],
-            "affected_count": len(missing_viewport_pages),
-            "recommendation": "Add <meta name='viewport' content='width=device-width, initial-scale=1.0'>."
-        })
-        categories["Mobile"]["warning"] += len(missing_viewport_pages)
-        categories["Mobile"]["status"] = "Issues Found"
-    else:
-        categories["Mobile"]["passed"] += total_pages
+        # 12. Mobile
+        missing_viewport_pages = [p for p in html_pages if "viewport" in p and not p.get("viewport")]
+        if missing_viewport_pages:
+            issues.append({
+                "rule_id": "MOB_001",
+                "category": "Mobile",
+                "severity": "warning",
+                "title": "Pages Missing Mobile Viewport Meta Tag",
+                "description": f"{len(missing_viewport_pages)} pages lack a mobile viewport meta tag.",
+                "evidence": f"URLs: {', '.join([p.get('url', '') for p in missing_viewport_pages[:3]])}",
+                "affected_urls": [p.get("url") for p in missing_viewport_pages],
+                "affected_count": len(missing_viewport_pages),
+                "recommendation": "Add <meta name='viewport' content='width=device-width, initial-scale=1.0'>."
+            })
+            categories["Mobile"]["warning"] += len(missing_viewport_pages)
+            categories["Mobile"]["status"] = "Issues Found"
+        else:
+            categories["Mobile"]["passed"] += html_count
 
+        # 13. International SEO
+        categories["International SEO"]["passed"] += html_count
 
-    # 13. International SEO (Hreflang validation)
-    categories["International SEO"]["passed"] += total_pages
-
-    # 14. Security (SSL/TLS & Protocol Security)
+    # 14. Security
     ssl_error_pages = [p for p in pages if "ssl" in (p.get("error") or "").lower() or "tls" in (p.get("error") or "").lower()]
     if ssl_error_pages:
         issues.append({
@@ -325,14 +362,15 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
     else:
         categories["Security"]["passed"] += total_pages
 
-    # Factual Health Score Math based on Evaluated Rules (14 evaluated categories)
+    # Health Score Math based on Evaluated Rules
     crit_cnt = sum(i["affected_count"] for i in issues if i["severity"] == "critical")
     err_cnt = sum(i["affected_count"] for i in issues if i["severity"] == "error")
     warn_cnt = sum(i["affected_count"] for i in issues if i["severity"] == "warning")
     not_cnt = sum(i["affected_count"] for i in issues if i["severity"] == "notice")
 
     EVALUATED_RULE_COUNT = sum(1 for c in categories.values() if c.get("evaluated", False))
-    total_evaluated_checks = total_pages * EVALUATED_RULE_COUNT
+    evaluated_pages_for_score = html_count if html_count > 0 else total_pages
+    total_evaluated_checks = evaluated_pages_for_score * EVALUATED_RULE_COUNT
     total_weighted_penalty = (crit_cnt * 3.0) + (err_cnt * 2.0) + (warn_cnt * 1.0) + (not_cnt * 0.25)
     
     if total_evaluated_checks > 0:
@@ -344,6 +382,8 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
     return {
         "health_score": health_score,
         "total_audited_pages": total_pages,
+        "successful_html_pages_count": html_count,
+        "blocked_pages_count": len(blocked_pages),
         "summary": {
             "critical_errors": crit_cnt,
             "errors": err_cnt,

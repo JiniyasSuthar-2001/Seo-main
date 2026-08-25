@@ -8,12 +8,13 @@ from app.config.database import engine, Base
 
 from app.config.migration import run_schema_migrations
 
-# Import all models to ensure they are registered with Base
-from app.models import project, dataset, page, keyword, keyword_group, crawl_session, competitor, external_connection, audit_issue, action_opportunity
-
 # Run startup configuration validation & schema migrations
 validate_startup_config(strict=False)
 run_schema_migrations(engine)
+
+# Import all models to ensure they are registered with Base
+from app.models import project, dataset, page, keyword, keyword_group, crawl_session, competitor, external_connection, audit_issue, action_opportunity
+
 Base.metadata.create_all(bind=engine)
 
 from fastapi.responses import JSONResponse
@@ -50,6 +51,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"])
 
 app.include_router(integrations.router, prefix="/api/integrations", tags=["integrations"])
+app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 
 app.include_router(reports.router, prefix="/api/projects/{project_id}", tags=["reports"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])

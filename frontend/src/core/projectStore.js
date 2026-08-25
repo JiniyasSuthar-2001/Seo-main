@@ -9,6 +9,15 @@ class ProjectStore {
         this.initPromise = null;
     }
 
+    reset() {
+        this.projects = [];
+        this.selectedProjectId = null;
+        this.isInitialized = false;
+        this.initPromise = null;
+        localStorage.removeItem('seo_selected_project_id');
+        this.notify();
+    }
+
     cleanId(id) {
         if (!id) return null;
         if (typeof id === 'object') {

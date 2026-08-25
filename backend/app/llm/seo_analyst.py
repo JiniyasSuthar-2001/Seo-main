@@ -6,42 +6,55 @@ from app.llm.provider import EvidenceReasoningProvider, get_llm_provider
 from app.llm.llm_provider import LLMProvider, AIProviderException
 
 SYSTEM_ANALYSIS_PROMPT = """You are an expert SEO Intelligence Analyst auditing website evidence.
-Your task is to analyze the provided SEO crawl metrics and findings and produce structured insights and action recommendations.
+Your job is to analyze real SEO data, find opportunities, prioritize work, and recommend actionable solutions based ONLY on available evidence.
 
-CRITICAL CONSTRAINTS:
-1. You MUST NOT invent, guess, or modify any numerical data, HTTP status codes, page titles, or URLs not present in the evidence.
-2. Every finding MUST cite exact evidence provided in the context.
-3. If specific metrics or data are missing, state 'Data not available.'
-4. Output MUST be valid JSON strictly adhering to the following schema:
+AI WORKING GUIDELINES:
+1. REAL DATA FIRST: You are an analyst, not the source of SEO data. The source of truth is crawler data, audit results, GSC, ranking providers, and user data.
+2. NEVER FABRICATE DATA: Never invent rankings, search volume, traffic, CTR, impressions, backlinks, competitors, authority, difficulty, or scores. If data is missing, state 'Data unavailable'.
+3. SEPARATE FACTS FROM SUGGESTIONS: Clearly distinguish measured SEO facts from AI suggestions. Label non-measured ideas as 'AI Suggested'.
+4. EVIDENCE STRUCTURE: Every finding must state Issue, Evidence, Why it matters, Recommended Action, Priority, and Affected URL.
+5. DETERMINISTIC ENGINE: Factual SEO checks (status codes, title tags, canonicals) come from the crawler engine. Explain them without altering factual results.
+6. REAL KEYWORDS ONLY: Do not invent ranking positions or volume for keywords.
+7. REAL COMPETITORS ONLY: Analyze real competitor domains from evidence only.
+8. NO UNFOUNDED CAUSATION: State 'The metric changed after this event' rather than asserting causation without proof.
+9. PRIORITIZATION: Classify issues logically as Critical, High, Medium, or Low based on business impact and technical severity.
+10. ACTIONABLE SOLUTIONS: Provide concrete steps, target URLs, and suggested anchor text rather than generic advice.
+11. SIMPLE LANGUAGE: Explain technical SEO simply: What is wrong? Why does it matter? What should I do?
 
+Output MUST be valid JSON strictly adhering to the following schema:
 {
   "summary": "High-level strategic analysis summary of the website SEO state",
   "findings": [
     {
       "finding": "Descriptive title of the finding",
       "category": "technical_seo | content_structure | content_quality | executive_summary",
-      "severity": "Critical | Warning | Notice",
+      "severity": "Critical | High | Medium | Low",
       "confidence": 0.95,
       "evidence": [{"type": "affected_url | page_url | total_crawled", "value": "..."}],
-      "impact": "Detailed explanation of business and search engine indexing impact",
+      "impact": "Detailed explanation of business and search engine snippet impact",
       "recommendation": "Actionable fix recommendation",
       "affected_urls": ["url1", "url2"]
     }
   ],
   "actions": [
     {
-      "priority": "High | Medium | Low",
+      "priority": "Critical | High | Medium | Low",
       "title": "Action title",
-      "description": "Step-by-step resolution path"
+      "description": "Step-by-step resolution path with target URLs and anchor recommendations"
     }
   ]
 }
 """
 
-SYSTEM_CHAT_PROMPT = """You are an AI SEO Assistant answering questions about a website audit.
-Answer the user's question accurately using ONLY the provided crawl context.
-Do NOT invent numbers, rankings, or facts not present in the context.
-If the information is not in the context, explicitly say: 'Data not available in the latest crawl snapshot.'
+SYSTEM_CHAT_PROMPT = """You are an AI SEO Assistant answering questions about a specific website project.
+
+AI WORKING GUIDELINES:
+1. Use ONLY the provided crawl context and project data.
+2. Do NOT invent numbers, rankings, backlinks, search volume, or facts.
+3. If data is missing or unmeasured, explicitly say: 'Data unavailable'.
+4. Clearly label generated ideas or recommendations as 'AI Suggested'.
+5. Avoid claiming causation without evidence.
+6. Provide clear, simple explanations and actionable next steps.
 """
 
 class SEOAnalystAgent:
@@ -49,8 +62,9 @@ class SEOAnalystAgent:
         self.context_builder = LLMContextBuilder()
         self.deterministic_engine = EvidenceReasoningProvider()
 
-    def analyze_project(self, domain: str, user_id: Optional[str] = None, db: Optional[Session] = None) -> Dict[str, Any]:
-        context = self.context_builder.build_project_context(domain)
+    def analyze_project(self, key: Optional[str] = None, domain: Optional[str] = None, user_id: Optional[str] = None, db: Optional[Session] = None) -> Dict[str, Any]:
+        target_key = key or domain
+        context = self.context_builder.build_project_context(target_key, domain)
         
         if not context.get("has_data"):
             return {
@@ -59,28 +73,28 @@ class SEOAnalystAgent:
                 "insights": []
             }
 
-        # Check if real LLM Provider is configured for user
+        # Check for active LLM Provider (user override or platform credentials)
         llm_provider = get_llm_provider(user_id, db)
 
         if not llm_provider:
-            # Deterministic evidence reasoning pass (AI Not Configured)
-            deterministic_findings = self.deterministic_engine.analyze(context)
             return {
-                "status": "AI_NOT_CONFIGURED",
+                "status": "AI_TEMPORARILY_UNAVAILABLE",
                 "provider": "none",
                 "is_llm_generated": False,
-                "message": "No active LLM provider configured. Configure OpenAI, Claude, or Gemini in Settings -> Integrations to enable real LLM analysis.",
+                "message": "AI analysis is temporarily unavailable. Your deterministic SEO analysis is still available.",
+                "summary": "AI analysis is temporarily unavailable. Your deterministic SEO analysis is still available.",
                 "domain": domain,
                 "crawl_id": context.get("crawl_id"),
                 "timestamp": context.get("timestamp"),
                 "total_pages_analyzed": context.get("pages_count"),
-                "total_findings": len(deterministic_findings),
-                "insights": deterministic_findings
+                "total_findings": 0,
+                "insights": [],
+                "actions": []
             }
 
         # Real External LLM API Call
         try:
-            user_prompt = f"Analyze the following SEO evidence snapshot for domain '{domain}':"
+            user_prompt = f"Analyze the following real SEO evidence snapshot for domain '{domain}':"
             llm_result = llm_provider.analyze(
                 system_instructions=SYSTEM_ANALYSIS_PROMPT,
                 user_prompt=user_prompt,
@@ -105,24 +119,23 @@ class SEOAnalystAgent:
                 "actions": actions
             }
         except AIProviderException:
-            # Re-raise controlled application-level AI provider errors without falling back to fake LLM output
             raise
         except Exception as e:
             raise AIProviderException(f"Failed to process AI analysis: {e}", status_code=502, code="LLM_EXECUTION_FAILED")
 
-    def chat_with_data(self, domain: str, query: str, user_id: Optional[str] = None, db: Optional[Session] = None) -> Dict[str, Any]:
-        context = self.context_builder.build_project_context(domain)
+    def chat_with_data(self, query: str, key: Optional[str] = None, domain: Optional[str] = None, user_id: Optional[str] = None, db: Optional[Session] = None) -> Dict[str, Any]:
+        target_key = key or domain
+        context = self.context_builder.build_project_context(target_key, domain)
         
         llm_provider = get_llm_provider(user_id, db)
 
         if not llm_provider:
-            answer = self.deterministic_engine.chat(query, context)
             return {
-                "status": "AI_NOT_CONFIGURED",
+                "status": "AI_TEMPORARILY_UNAVAILABLE",
                 "provider": "none",
                 "is_llm_generated": False,
                 "query": query,
-                "answer": answer,
+                "answer": "AI analysis is temporarily unavailable. Your deterministic SEO analysis is still available.",
                 "context_used": {
                     "domain": domain,
                     "pages_analyzed": context.get("pages_count", 0),

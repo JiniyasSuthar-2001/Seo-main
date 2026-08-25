@@ -11,6 +11,9 @@ from app.services.reports.pdf_service import PDFReportGenerator
 from app.config.settings import settings
 from app.providers.nlp_keywords import NLPKeywordExtractor
 
+from app.config.auth import get_current_user_id
+from app.config.permissions import get_user_membership
+
 router = APIRouter()
 
 
@@ -30,11 +33,13 @@ def sanitize_filename_part(name: str) -> str:
 @router.get("/report.pdf")
 @router.get("/crawl/{crawl_id}/report.pdf")
 @router.get("/reports/crawl")
-def get_crawl_pdf_report(project_id: str, crawl_id: str = "latest", db: Session = Depends(get_db)):
-    if project_id == "all":
-        from app.routers.projects import get_all_projects_pdf
-        return get_all_projects_pdf(db)
-
+def get_crawl_pdf_report(
+    project_id: str,
+    crawl_id: str = "latest",
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -64,11 +69,12 @@ def get_crawl_pdf_report(project_id: str, crawl_id: str = "latest", db: Session 
     return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=\"{safe_filename}\""})
 
 @router.get("/export")
-def export_project_data(project_id: str, db: Session = Depends(get_db)):
-    if project_id == "all":
-        from app.routers.projects import get_all_projects_zip_export
-        return get_all_projects_zip_export(db)
-
+def export_project_data(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -113,7 +119,12 @@ def export_project_data(project_id: str, db: Session = Depends(get_db)):
 
 @router.get("/pages/report.pdf")
 @router.get("/reports/pages")
-def get_pages_pdf_report(project_id: str, db: Session = Depends(get_db)):
+def get_pages_pdf_report(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -146,7 +157,12 @@ def get_pages_pdf_report(project_id: str, db: Session = Depends(get_db)):
 
 @router.get("/technical/report.pdf")
 @router.get("/reports/technical")
-def get_technical_pdf_report(project_id: str, db: Session = Depends(get_db)):
+def get_technical_pdf_report(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -179,7 +195,12 @@ def get_technical_pdf_report(project_id: str, db: Session = Depends(get_db)):
 
 @router.get("/keywords/report.pdf")
 @router.get("/reports/keywords")
-def get_keywords_pdf_report(project_id: str, db: Session = Depends(get_db)):
+def get_keywords_pdf_report(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -213,7 +234,12 @@ def get_keywords_pdf_report(project_id: str, db: Session = Depends(get_db)):
 
 @router.get("/internal-links/report.pdf")
 @router.get("/reports/internal-links")
-def get_internal_links_pdf_report(project_id: str, db: Session = Depends(get_db)):
+def get_internal_links_pdf_report(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -250,8 +276,10 @@ def get_internal_links_pdf_report(project_id: str, db: Session = Depends(get_db)
 def generate_custom_report_builder(
     project_id: str,
     payload: dict = {},
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
         raise HTTPException(status_code=404, detail="Project not found")

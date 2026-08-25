@@ -160,9 +160,9 @@ class CrawlProgressOverlayManager {
 
                     this.setButtonsState(false);
 
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1000);
+                    // Notify store and dispatch async event without page reload
+                    projectStore.fetchProjects().catch(() => {});
+                    window.dispatchEvent(new CustomEvent('seo:crawl-completed', { detail: { projectId, sessionId } }));
 
                 } else if (statusData.status === 'failed') {
                     clearInterval(this.activeInterval);

@@ -6,13 +6,15 @@ from fastapi import APIRouter, Depends, Query, HTTPException, Body
 from sqlalchemy.orm import Session
 
 from app.config.database import get_db
+from app.config.settings import settings
 from app.models.project import Project
 from app.models.page import Page
 from app.models.audit_issue import AuditIssue
 from app.models.crawl_session import CrawlSession
 from app.config.utils import get_sanitized_domain, normalize_stored_path
 from app.services.audit_rules import evaluate_site_audit_rules
-from app.config.settings import settings
+from app.config.auth import get_current_user_id
+from app.config.permissions import get_user_membership
 
 router = APIRouter()
 
@@ -24,8 +26,10 @@ def get_technical_audit(
     severity: Optional[str] = Query(None),
     limit: int = Query(50),
     offset: int = Query(0),
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
         return {
@@ -39,8 +43,10 @@ def get_technical_audit(
     domain = project.domain
     safe_domain = get_sanitized_domain(domain)
     
-    # 1. Load latest crawl pages
-    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+    # 1. Load latest crawl pages (check project_id folder first, fallback to safe_domain)
+    latest_path = os.path.join(settings.CRAWL_DATA_DIR, project.id, "latest.json")
+    if not os.path.exists(latest_path):
+        latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
 
     pages = []
     if os.path.exists(latest_path):
@@ -90,10 +96,15 @@ def get_technical_audit(
 
 
 @router.get("/issue-history")
-def get_audit_issue_history(project_id: str, db: Session = Depends(get_db)):
+def get_audit_issue_history(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Compares recent crawl snapshots to detect New, Resolved, Persistent, Worsened, and Improved issues.
     """
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")

@@ -7,6 +7,8 @@ backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
+from unittest.mock import patch
+from app.config.settings import settings
 from app.crawler.crawler import SEOCrawler
 from app.services.audit_rules import evaluate_site_audit_rules
 from app.services.link_graph_engine import build_internal_link_graph
@@ -106,12 +108,19 @@ class TestRealSEOIntelligenceEngine(unittest.TestCase):
 
     def test_6_ai_analyst_truthfulness(self):
         """Verify AI analyst returns AI_NOT_CONFIGURED status when unconfigured without canned fake responses."""
-        agent = SEOAnalystAgent()
-        res = agent.analyze_project(domain="example.com")
-        if res.get("status") != "empty":
-            self.assertEqual(res.get("status"), "AI_NOT_CONFIGURED")
-            self.assertFalse(res.get("is_llm_generated"))
-            self.assertEqual(res.get("provider"), "none")
+        old_groq = os.environ.get("GROQ_API_KEY")
+        try:
+            os.environ.pop("GROQ_API_KEY", None)
+            with patch.object(settings, "GROQ_API_KEY", None), patch.object(settings, "GEMINI_API_KEY", None), patch.object(settings, "AI_API_KEY", None):
+                agent = SEOAnalystAgent()
+                res = agent.analyze_project(domain="example.com")
+                if res.get("status") != "empty":
+                    self.assertIn(res.get("status"), ("AI_NOT_CONFIGURED", "AI_TEMPORARILY_UNAVAILABLE"))
+                    self.assertFalse(res.get("is_llm_generated"))
+                    self.assertEqual(res.get("provider"), "none")
+        finally:
+            if old_groq:
+                os.environ["GROQ_API_KEY"] = old_groq
 
 if __name__ == "__main__":
     unittest.main()

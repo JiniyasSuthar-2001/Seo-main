@@ -4,6 +4,7 @@ import shutil
 import re
 import io
 import uuid
+import copy
 import zipfile
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Body, Response
@@ -146,23 +147,6 @@ def get_projects(
     """
     email = user_id.strip().lower()
     
-    # Auto-assign legacy projects to current user as OWNER if no memberships exist yet
-    all_projs = db.query(Project).all()
-    for p in all_projs:
-        count = db.query(ProjectMembership).filter(
-            ProjectMembership.project_id == p.id,
-            ProjectMembership.status == "ACTIVE"
-        ).count()
-        if count == 0:
-            m = ProjectMembership(
-                user_id=email,
-                project_id=p.id,
-                role="OWNER",
-                status="ACTIVE"
-            )
-            db.add(m)
-    db.commit()
-
     # Query active memberships for this user
     memberships = db.query(ProjectMembership).filter(
         ProjectMembership.user_id == email,
@@ -219,34 +203,25 @@ def create_project(
 
     safe_domain = get_sanitized_domain(url_val)
 
-    existing = db.query(Project).all()
-    for proj in existing:
-        if get_sanitized_domain(proj.url) == safe_domain or proj.domain == safe_domain:
-            # Ensure membership exists for caller
-            m = db.query(ProjectMembership).filter(
-                ProjectMembership.project_id == proj.id,
-                ProjectMembership.user_id == email
-            ).first()
-            if not m:
-                m = ProjectMembership(
-                    user_id=email,
-                    project_id=proj.id,
-                    role="OWNER",
-                    status="ACTIVE"
-                )
-                db.add(m)
-                db.commit()
+    # Check if caller already has a project matching this domain
+    user_memberships = db.query(ProjectMembership).filter(
+        ProjectMembership.user_id == email,
+        ProjectMembership.status == "ACTIVE"
+    ).all()
 
+    for m in user_memberships:
+        proj = db.query(Project).filter(Project.id == m.project_id).first()
+        if proj and (get_sanitized_domain(proj.url) == safe_domain or proj.domain == safe_domain):
             return {
                 "status": "exists",
-                "message": f"Project for '{safe_domain}' already exists.",
+                "message": f"Project for '{safe_domain}' already exists in your workspace.",
                 "project": {
                     "id": proj.id,
                     "name": proj.name,
                     "url": proj.url,
                     "domain": proj.domain,
-                    "user_role": "OWNER",
-                    "role_label": "Lead",
+                    "user_role": m.role,
+                    "role_label": "Lead" if m.role == "OWNER" else "Team Member",
                     **get_project_metrics(proj.domain)
                 }
             }
@@ -593,3 +568,106 @@ def get_project_summary(
         print(f"[PROJECTS API] Exception reading snapshot: {e}", flush=True)
         
     return {"status": "error", "message": "Failed to read crawl data"}
+
+
+DEFAULT_CRAWL_CONFIG = {
+    "ignore_tracking_parameters": True,
+    "audit_modules": {
+        "technical_http": True,
+        "metadata": True,
+        "headings": True,
+        "images": True,
+        "links": True,
+        "canonicals_robots": True
+    },
+    "performance_analysis": {
+        "available": False,
+        "reason": "Core Web Vitals and Lighthouse performance analysis are currently unavailable for this crawl run."
+    },
+    "scope_type": "entire_domain",
+    "custom_path": "",
+    "max_pages": 5000,
+    "max_depth": 0,
+    "request_timeout": 20.0,
+    "crawl_delay_ms": 500,
+    "respect_robots_txt": True,
+    "discover_sitemap": True,
+    "discover_internal_links": True,
+    "user_agent": "SEO-Intelligence-Bot/1.0 (Mozilla/5.0 Compatible)",
+    "follow_redirects": True,
+    "exclude_patterns": ["/admin/*", "/login/*", "/cart/*"]
+}
+
+@router.get("/{project_id}/crawl-config")
+def get_crawl_config(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    config = copy.deepcopy(DEFAULT_CRAWL_CONFIG)
+    if p.crawl_config:
+        try:
+            saved_cfg = json.loads(p.crawl_config)
+            if isinstance(saved_cfg, dict):
+                for k, v in saved_cfg.items():
+                    if k == "audit_modules" and isinstance(v, dict):
+                        config["audit_modules"].update(v)
+                    else:
+                        config[k] = v
+        except Exception:
+            pass
+
+    return {
+        "status": "success",
+        "project_id": project_id,
+        "config": config
+    }
+
+@router.patch("/{project_id}/crawl-config")
+@router.put("/{project_id}/crawl-config")
+def update_crawl_config(
+    project_id: str,
+    payload: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    current_config = copy.deepcopy(DEFAULT_CRAWL_CONFIG)
+    if p.crawl_config:
+        try:
+            saved_cfg = json.loads(p.crawl_config)
+            if isinstance(saved_cfg, dict):
+                for k, v in saved_cfg.items():
+                    if k == "audit_modules" and isinstance(v, dict):
+                        current_config["audit_modules"].update(v)
+                    else:
+                        current_config[k] = v
+        except Exception:
+            pass
+
+    for k, v in payload.items():
+        if k == "audit_modules" and isinstance(v, dict):
+            current_config["audit_modules"].update(v)
+        else:
+            current_config[k] = v
+
+    p.crawl_config = json.dumps(current_config)
+    p.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(p)
+
+    return {
+        "status": "success",
+        "project_id": project_id,
+        "config": current_config
+    }
+

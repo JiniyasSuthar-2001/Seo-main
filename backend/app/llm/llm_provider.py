@@ -13,9 +13,10 @@ from app.config.logger import get_logger
 logger = get_logger(__name__)
 
 # Default Provider Model Configurations
+DEFAULT_GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 DEFAULT_OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 DEFAULT_ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
-DEFAULT_GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+DEFAULT_GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "models/gemini-flash-latest")
 
 
 class AIProviderException(Exception):
@@ -64,6 +65,7 @@ class OpenAIProviderAdapter(LLMProvider):
         context_data: Dict[str, Any], 
         timeout: float = 30.0
     ) -> Dict[str, Any]:
+        endpoint = "https://api.openai.com/v1/chat/completions"
         payload = {
             "model": self.model,
             "messages": [
@@ -75,12 +77,11 @@ class OpenAIProviderAdapter(LLMProvider):
         }
 
         req = urllib.request.Request(
-            "https://api.openai.com/v1/chat/completions",
+            endpoint,
             data=json.dumps(payload).encode("utf-8"),
             headers={
-                "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
-                "User-Agent": "SEO-Intelligence-Platform/1.0"
+                "Authorization": f"Bearer {self.api_key}"
             },
             method="POST"
         )
@@ -92,20 +93,46 @@ class OpenAIProviderAdapter(LLMProvider):
                 duration = time.time() - start_time
                 logger.info(f"OpenAI API request completed successfully in {duration:.2f}s using model '{self.model}'.")
                 
-                content_str = resp_data["choices"][0]["message"]["content"]
-                parsed_json = json.loads(content_str)
-                return parsed_json
+                content_text = resp_data["choices"][0]["message"]["content"]
+                return json.loads(content_text.strip())
         except urllib.error.HTTPError as e:
             err_body = e.read().decode("utf-8", errors="replace")
             logger.error(f"OpenAI API HTTP {e.code} error: {err_body[:200]}")
-            if e.code in (401, 403):
-                raise AIProviderException("OpenAI API authentication failed. Please verify your API Key.", status_code=401, code="AUTH_FAILED")
+            if e.code == 401:
+                raise AIProviderException("Invalid OpenAI API Key provided.", status_code=401, code="AUTH_FAILED")
             elif e.code == 429:
-                raise AIProviderException("OpenAI API rate limit or quota exceeded.", status_code=429, code="RATE_LIMITED")
+                raise AIProviderException("OpenAI API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
             raise AIProviderException(f"OpenAI API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
         except Exception as e:
             logger.error(f"OpenAI request failed: {e}")
             raise AIProviderException(f"OpenAI connection error: {e}", status_code=502, code="CONNECTION_FAILED")
+
+    def test_connection(self, timeout: float = 15.0) -> Dict[str, Any]:
+        endpoint = "https://api.openai.com/v1/models"
+        req = urllib.request.Request(
+            endpoint,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "User-Agent": "SEO-Intelligence-Platform/1.0"
+            },
+            method="GET"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return {
+                    "status": "connected",
+                    "provider": "openai",
+                    "model": self.model,
+                    "message": "OpenAI connection successful."
+                }
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                raise AIProviderException("OpenAI API key is invalid or unauthorized.", status_code=401, code="AUTH_FAILED")
+            elif e.code == 429:
+                raise AIProviderException("OpenAI API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
+            raise AIProviderException(f"OpenAI API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
+        except Exception as e:
+            raise AIProviderException(f"OpenAI connection error: {str(e)[:120]}", status_code=502, code="CONNECTION_FAILED")
 
     def chat(
         self, 
@@ -114,6 +141,7 @@ class OpenAIProviderAdapter(LLMProvider):
         context_data: Dict[str, Any], 
         timeout: float = 30.0
     ) -> str:
+        endpoint = "https://api.openai.com/v1/chat/completions"
         payload = {
             "model": self.model,
             "messages": [
@@ -124,12 +152,11 @@ class OpenAIProviderAdapter(LLMProvider):
         }
 
         req = urllib.request.Request(
-            "https://api.openai.com/v1/chat/completions",
+            endpoint,
             data=json.dumps(payload).encode("utf-8"),
             headers={
-                "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
-                "User-Agent": "SEO-Intelligence-Platform/1.0"
+                "Authorization": f"Bearer {self.api_key}"
             },
             method="POST"
         )
@@ -139,8 +166,8 @@ class OpenAIProviderAdapter(LLMProvider):
                 resp_data = json.loads(resp.read().decode("utf-8"))
                 return resp_data["choices"][0]["message"]["content"]
         except urllib.error.HTTPError as e:
-            if e.code in (401, 403):
-                raise AIProviderException("OpenAI API authentication failed.", status_code=401, code="AUTH_FAILED")
+            if e.code == 401:
+                raise AIProviderException("Invalid OpenAI API Key.", status_code=401, code="AUTH_FAILED")
             elif e.code == 429:
                 raise AIProviderException("OpenAI API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
             raise AIProviderException(f"OpenAI API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
@@ -162,23 +189,23 @@ class AnthropicProviderAdapter(LLMProvider):
         context_data: Dict[str, Any], 
         timeout: float = 30.0
     ) -> Dict[str, Any]:
+        endpoint = "https://api.anthropic.com/v1/messages"
         payload = {
             "model": self.model,
-            "max_tokens": 3000,
-            "system": f"{system_instructions}\nIMPORTANT: Respond ONLY with valid JSON.",
+            "max_tokens": 4096,
+            "system": system_instructions,
             "messages": [
                 {"role": "user", "content": f"{user_prompt}\n\nEVIDENCE CONTEXT:\n{json.dumps(context_data, indent=2)}"}
             ]
         }
 
         req = urllib.request.Request(
-            "https://api.anthropic.com/v1/messages",
+            endpoint,
             data=json.dumps(payload).encode("utf-8"),
             headers={
-                "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01",
                 "Content-Type": "application/json",
-                "User-Agent": "SEO-Intelligence-Platform/1.0"
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01"
             },
             method="POST"
         )
@@ -188,27 +215,21 @@ class AnthropicProviderAdapter(LLMProvider):
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 resp_data = json.loads(resp.read().decode("utf-8"))
                 duration = time.time() - start_time
-                logger.info(f"Claude API request completed successfully in {duration:.2f}s using model '{self.model}'.")
+                logger.info(f"Anthropic API request completed successfully in {duration:.2f}s using model '{self.model}'.")
                 
                 content_text = resp_data["content"][0]["text"]
-                # Clean code blocks if present
-                if "```json" in content_text:
-                    content_text = content_text.split("```json")[1].split("```")[0].strip()
-                elif "```" in content_text:
-                    content_text = content_text.split("```")[1].split("```")[0].strip()
-
                 return json.loads(content_text.strip())
         except urllib.error.HTTPError as e:
             err_body = e.read().decode("utf-8", errors="replace")
-            logger.error(f"Claude API HTTP {e.code} error: {err_body[:200]}")
-            if e.code in (401, 403):
-                raise AIProviderException("Claude AI / Anthropic API authentication failed.", status_code=401, code="AUTH_FAILED")
+            logger.error(f"Anthropic API HTTP {e.code} error: {err_body[:200]}")
+            if e.code == 401:
+                raise AIProviderException("Invalid Anthropic API Key provided.", status_code=401, code="AUTH_FAILED")
             elif e.code == 429:
-                raise AIProviderException("Claude AI / Anthropic API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
-            raise AIProviderException(f"Claude AI API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
+                raise AIProviderException("Anthropic API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
+            raise AIProviderException(f"Anthropic API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
         except Exception as e:
-            logger.error(f"Claude request failed: {e}")
-            raise AIProviderException(f"Claude connection error: {e}", status_code=502, code="CONNECTION_FAILED")
+            logger.error(f"Anthropic request failed: {e}")
+            raise AIProviderException(f"Anthropic connection error: {e}", status_code=502, code="CONNECTION_FAILED")
 
     def chat(
         self, 
@@ -217,9 +238,10 @@ class AnthropicProviderAdapter(LLMProvider):
         context_data: Dict[str, Any], 
         timeout: float = 30.0
     ) -> str:
+        endpoint = "https://api.anthropic.com/v1/messages"
         payload = {
             "model": self.model,
-            "max_tokens": 2000,
+            "max_tokens": 2048,
             "system": system_instructions,
             "messages": [
                 {"role": "user", "content": f"EVIDENCE CONTEXT:\n{json.dumps(context_data, indent=2)}\n\nUSER QUESTION: {query}"}
@@ -227,13 +249,12 @@ class AnthropicProviderAdapter(LLMProvider):
         }
 
         req = urllib.request.Request(
-            "https://api.anthropic.com/v1/messages",
+            endpoint,
             data=json.dumps(payload).encode("utf-8"),
             headers={
-                "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01",
                 "Content-Type": "application/json",
-                "User-Agent": "SEO-Intelligence-Platform/1.0"
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01"
             },
             method="POST"
         )
@@ -243,13 +264,306 @@ class AnthropicProviderAdapter(LLMProvider):
                 resp_data = json.loads(resp.read().decode("utf-8"))
                 return resp_data["content"][0]["text"]
         except urllib.error.HTTPError as e:
-            if e.code in (401, 403):
-                raise AIProviderException("Claude API authentication failed.", status_code=401, code="AUTH_FAILED")
+            if e.code == 401:
+                raise AIProviderException("Invalid Anthropic API Key.", status_code=401, code="AUTH_FAILED")
             elif e.code == 429:
-                raise AIProviderException("Claude API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
-            raise AIProviderException(f"Claude API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
+                raise AIProviderException("Anthropic API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
+            raise AIProviderException(f"Anthropic API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
         except Exception as e:
-            raise AIProviderException(f"Claude connection error: {e}", status_code=502, code="CONNECTION_FAILED")
+            raise AIProviderException(f"Anthropic connection error: {e}", status_code=502, code="CONNECTION_FAILED")
+
+    def test_connection(self, timeout: float = 15.0) -> Dict[str, Any]:
+        endpoint = "https://api.anthropic.com/v1/messages"
+        payload = {
+            "model": self.model,
+            "max_tokens": 10,
+            "messages": [{"role": "user", "content": "Ping"}]
+        }
+        req = urllib.request.Request(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": self.api_key,
+                "anthropic-version": "2023-06-01"
+            },
+            method="POST"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return {
+                    "status": "connected",
+                    "provider": "anthropic",
+                    "model": self.model,
+                    "message": "Anthropic Claude connection successful."
+                }
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                raise AIProviderException("Anthropic API key is invalid or unauthorized.", status_code=401, code="AUTH_FAILED")
+            elif e.code == 429:
+                raise AIProviderException("Anthropic API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
+            raise AIProviderException(f"Anthropic API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
+        except Exception as e:
+            raise AIProviderException(f"Anthropic connection error: {str(e)[:120]}", status_code=502, code="CONNECTION_FAILED")
+
+
+class GroqProviderAdapter(LLMProvider):
+    def __init__(self, api_key: str, model: Optional[str] = None):
+        if not api_key or not api_key.strip():
+            raise AIProviderException("Groq API Key is required.", status_code=401, code="INVALID_CREDENTIALS")
+        self.api_key = api_key.strip()
+        g_model = (model or os.environ.get("GROQ_MODEL") or "").strip()
+        self.model = g_model if g_model else None
+
+    def fetch_available_models(self, timeout: float = 8.0) -> List[Dict[str, Any]]:
+        """
+        Queries official Groq GET https://api.groq.com/openai/v1/models endpoint using self.api_key.
+        Discovers models active for text/chat completions, excluding audio or prompt-guard models.
+        """
+        endpoint = "https://api.groq.com/openai/v1/models"
+        req = urllib.request.Request(
+            endpoint,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "User-Agent": "SEO-Intelligence-Platform/1.0"
+            },
+            method="GET"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                models_data = data.get("data", [])
+                valid_models = []
+                for m in models_data:
+                    m_id = m.get("id", "")
+                    active = m.get("active", True)
+                    # Filter out whisper audio models, prompt guards, and inactive models
+                    if active and m_id and not any(sub in m_id.lower() for sub in ["whisper", "prompt-guard", "safeguard"]):
+                        valid_models.append({
+                            "id": m_id,
+                            "name": m_id,
+                            "owned_by": m.get("owned_by", "Groq")
+                        })
+                return valid_models
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                raise AIProviderException("Groq API key is invalid or unauthorized.", status_code=401, code="AUTH_FAILED")
+            elif e.code == 429:
+                raise AIProviderException("Groq API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
+            logger.warning(f"Failed to query Groq models endpoint (HTTP {e.code})")
+            return []
+        except Exception as e:
+            logger.warning(f"Error querying Groq models endpoint: {e}")
+            return []
+
+    def _get_model_candidates(self) -> List[str]:
+        candidates = []
+        if self.model:
+            candidates.append(self.model)
+
+        discovered = self.fetch_available_models()
+        if discovered:
+            for m in discovered:
+                m_id = m["id"]
+                if m_id not in candidates:
+                    candidates.append(m_id)
+        
+        fallback_defaults = [
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "qwen/qwen3.6-27b",
+            "allam-2-7b",
+            "groq/compound",
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant"
+        ]
+        for d in fallback_defaults:
+            if d not in candidates:
+                candidates.append(d)
+
+        return candidates
+
+    def analyze(
+        self, 
+        system_instructions: str, 
+        user_prompt: str, 
+        context_data: Dict[str, Any], 
+        timeout: float = 30.0
+    ) -> Dict[str, Any]:
+        candidates = self._get_model_candidates()
+        last_exception = None
+
+        for target_model in candidates:
+            endpoint = "https://api.groq.com/openai/v1/chat/completions"
+            payload = {
+                "model": target_model,
+                "messages": [
+                    {"role": "system", "content": system_instructions},
+                    {"role": "user", "content": f"{user_prompt}\n\nEVIDENCE CONTEXT:\n{json.dumps(context_data, indent=2)}"}
+                ],
+                "temperature": 0.2,
+                "response_format": {"type": "json_object"}
+            }
+
+            req = urllib.request.Request(
+                endpoint,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}",
+                    "User-Agent": "SEO-Intelligence-Platform/1.0"
+                },
+                method="POST"
+            )
+
+            start_time = time.time()
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    duration = time.time() - start_time
+                    logger.info(f"Groq API request completed successfully in {duration:.2f}s using model '{target_model}'.")
+                    self.model = target_model
+                    
+                    content_text = resp_data["choices"][0]["message"]["content"]
+                    return json.loads(content_text.strip())
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode("utf-8", errors="replace")
+                logger.error(f"Groq API HTTP {e.code} error for '{target_model}': {err_body[:200]}")
+                if e.code in (400, 404):
+                    last_exception = AIProviderException(f"Groq model '{target_model}' not supported.", status_code=404, code="MODEL_NOT_FOUND")
+                    continue
+                elif e.code in (401, 403):
+                    raise AIProviderException("Groq API authentication failed.", status_code=401, code="AUTH_FAILED")
+                elif e.code == 429:
+                    raise AIProviderException("Groq API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
+                raise AIProviderException(f"Groq API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
+            except Exception as e:
+                logger.error(f"Groq request failed for model '{target_model}': {e}")
+                last_exception = AIProviderException(f"Groq connection error: {e}", status_code=502, code="CONNECTION_FAILED")
+
+        if last_exception:
+            raise last_exception
+        raise AIProviderException("No supported Groq model available.", status_code=502, code="NO_MODEL_AVAILABLE")
+
+    def test_connection(self, timeout: float = 15.0) -> Dict[str, Any]:
+        available_models = self.fetch_available_models(timeout=min(timeout, 8.0))
+        candidates = []
+        if self.model:
+            candidates.append(self.model)
+        if available_models:
+            for m in available_models:
+                if m["id"] not in candidates:
+                    candidates.append(m["id"])
+        else:
+            candidates.extend(self._get_model_candidates())
+
+        last_exception = None
+
+        for target_model in candidates:
+            endpoint = "https://api.groq.com/openai/v1/chat/completions"
+            payload = {
+                "model": target_model,
+                "messages": [
+                    {"role": "user", "content": "Respond with: Groq connection working."}
+                ],
+                "max_tokens": 30
+            }
+
+            req = urllib.request.Request(
+                endpoint,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}",
+                    "User-Agent": "SEO-Intelligence-Platform/1.0"
+                },
+                method="POST"
+            )
+
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    text = resp_data["choices"][0]["message"].get("content", "").strip()
+                    if not text:
+                        text = "Groq connection successful."
+                    self.model = target_model
+                    return {
+                        "status": "connected",
+                        "provider": "groq",
+                        "model": target_model,
+                        "available_models": available_models,
+                        "message": f"Groq AI connection successful ({target_model})."
+                    }
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode("utf-8", errors="replace")
+                logger.error(f"Groq test HTTP {e.code} error for '{target_model}': {err_body[:200]}")
+                if e.code in (400, 404):
+                    last_exception = AIProviderException(f"Groq model '{target_model}' not found or unavailable.", status_code=404, code="MODEL_NOT_FOUND")
+                    continue
+                elif e.code in (401, 403):
+                    raise AIProviderException("Groq API key is invalid or unauthorized.", status_code=401, code="AUTH_FAILED")
+                elif e.code == 429:
+                    raise AIProviderException("Groq API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
+                raise AIProviderException(f"Groq API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
+            except Exception as e:
+                logger.error(f"Groq test connection failed for '{target_model}': {e}")
+                last_exception = AIProviderException(f"Groq connection error: {str(e)[:120]}", status_code=502, code="CONNECTION_FAILED")
+
+        if last_exception:
+            raise last_exception
+        raise AIProviderException("No compatible Groq text model available for your API key.", status_code=404, code="NO_MODEL_AVAILABLE")
+
+    def chat(
+        self, 
+        system_instructions: str, 
+        query: str, 
+        context_data: Dict[str, Any], 
+        timeout: float = 30.0
+    ) -> str:
+        candidates = self._get_model_candidates()
+        last_exception = None
+
+        for target_model in candidates:
+            endpoint = "https://api.groq.com/openai/v1/chat/completions"
+            payload = {
+                "model": target_model,
+                "messages": [
+                    {"role": "system", "content": system_instructions},
+                    {"role": "user", "content": f"EVIDENCE CONTEXT:\n{json.dumps(context_data, indent=2)}\n\nUSER QUESTION: {query}"}
+                ]
+            }
+
+            req = urllib.request.Request(
+                endpoint,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self.api_key}",
+                    "User-Agent": "SEO-Intelligence-Platform/1.0"
+                },
+                method="POST"
+            )
+
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    self.model = target_model
+                    return resp_data["choices"][0]["message"]["content"]
+            except urllib.error.HTTPError as e:
+                if e.code in (400, 404):
+                    last_exception = AIProviderException(f"Groq model '{target_model}' not supported.", status_code=404, code="MODEL_NOT_FOUND")
+                    continue
+                elif e.code in (401, 403):
+                    raise AIProviderException("Groq API authentication failed.", status_code=401, code="AUTH_FAILED")
+                elif e.code == 429:
+                    raise AIProviderException("Groq API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
+                raise AIProviderException(f"Groq API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
+            except Exception as e:
+                last_exception = AIProviderException(f"Groq connection error: {e}", status_code=502, code="CONNECTION_FAILED")
+
+        if last_exception:
+            raise last_exception
+        raise AIProviderException("No supported Groq model available.", status_code=502, code="NO_MODEL_AVAILABLE")
 
 
 class GeminiProviderAdapter(LLMProvider):
@@ -259,6 +573,26 @@ class GeminiProviderAdapter(LLMProvider):
         self.api_key = api_key.strip()
         self.model = model
 
+    def _get_model_candidates(self) -> List[str]:
+        candidates = []
+        if self.model:
+            m = self.model.strip()
+            if not m.startswith("models/"):
+                candidates.append(f"models/{m}")
+            candidates.append(m)
+
+        defaults = [
+            "models/gemini-2.5-flash",
+            "models/gemini-flash-latest",
+            "models/gemini-2.5-pro",
+            "models/gemini-pro-latest",
+            "models/gemini-1.5-flash"
+        ]
+        for d in defaults:
+            if d not in candidates:
+                candidates.append(d)
+        return candidates
+
     def analyze(
         self, 
         system_instructions: str, 
@@ -266,49 +600,110 @@ class GeminiProviderAdapter(LLMProvider):
         context_data: Dict[str, Any], 
         timeout: float = 30.0
     ) -> Dict[str, Any]:
-        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
-        
-        payload = {
-            "system_instruction": {"parts": [{"text": system_instructions}]},
-            "contents": [{
-                "parts": [{"text": f"{user_prompt}\n\nEVIDENCE CONTEXT:\n{json.dumps(context_data, indent=2)}"}]
-            }],
-            "generationConfig": {
-                "response_mime_type": "application/json",
-                "temperature": 0.2
+        candidates = self._get_model_candidates()
+        last_exception = None
+
+        for target_model in candidates:
+            endpoint = f"https://generativelanguage.googleapis.com/v1beta/{target_model}:generateContent?key={self.api_key}"
+            payload = {
+                "system_instruction": {"parts": [{"text": system_instructions}]},
+                "contents": [{
+                    "parts": [{"text": f"{user_prompt}\n\nEVIDENCE CONTEXT:\n{json.dumps(context_data, indent=2)}"}]
+                }],
+                "generationConfig": {
+                    "response_mime_type": "application/json",
+                    "temperature": 0.2
+                }
             }
-        }
 
-        req = urllib.request.Request(
-            endpoint,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "SEO-Intelligence-Platform/1.0"
-            },
-            method="POST"
-        )
+            req = urllib.request.Request(
+                endpoint,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "SEO-Intelligence-Platform/1.0"
+                },
+                method="POST"
+            )
 
-        start_time = time.time()
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                resp_data = json.loads(resp.read().decode("utf-8"))
-                duration = time.time() - start_time
-                logger.info(f"Gemini API request completed successfully in {duration:.2f}s using model '{self.model}'.")
-                
-                content_text = resp_data["candidates"][0]["content"]["parts"][0]["text"]
-                return json.loads(content_text.strip())
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", errors="replace")
-            logger.error(f"Gemini API HTTP {e.code} error: {err_body[:200]}")
-            if e.code in (400, 401, 403):
-                raise AIProviderException("Google Gemini API authentication failed.", status_code=401, code="AUTH_FAILED")
-            elif e.code == 429:
-                raise AIProviderException("Google Gemini API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
-            raise AIProviderException(f"Google Gemini API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
-        except Exception as e:
-            logger.error(f"Gemini request failed: {e}")
-            raise AIProviderException(f"Gemini connection error: {e}", status_code=502, code="CONNECTION_FAILED")
+            start_time = time.time()
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    duration = time.time() - start_time
+                    logger.info(f"Gemini API request completed successfully in {duration:.2f}s using model '{target_model}'.")
+                    self.model = target_model
+                    
+                    content_text = resp_data["candidates"][0]["content"]["parts"][0]["text"]
+                    return json.loads(content_text.strip())
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode("utf-8", errors="replace")
+                logger.error(f"Gemini API HTTP {e.code} error for '{target_model}': {err_body[:200]}")
+                if e.code == 404:
+                    last_exception = AIProviderException(f"Gemini model '{target_model}' is not available.", status_code=404, code="MODEL_NOT_FOUND")
+                    continue
+                elif e.code in (400, 401, 403):
+                    raise AIProviderException("Google Gemini API authentication failed.", status_code=401, code="AUTH_FAILED")
+                elif e.code == 429:
+                    raise AIProviderException("Google Gemini API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
+                raise AIProviderException(f"Google Gemini API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
+            except Exception as e:
+                logger.error(f"Gemini request failed for '{target_model}': {e}")
+                last_exception = AIProviderException(f"Gemini connection error: {e}", status_code=502, code="CONNECTION_FAILED")
+
+        if last_exception:
+            raise last_exception
+        raise AIProviderException("No supported Gemini model available.", status_code=502, code="NO_MODEL_AVAILABLE")
+
+    def test_connection(self, timeout: float = 15.0) -> Dict[str, Any]:
+        candidates = self._get_model_candidates()
+        last_exception = None
+
+        for target_model in candidates:
+            endpoint = f"https://generativelanguage.googleapis.com/v1beta/{target_model}:generateContent?key={self.api_key}"
+            payload = {
+                "contents": [{
+                    "parts": [{"text": "Respond with exactly: Gemini connection successful."}]
+                }]
+            }
+            req = urllib.request.Request(
+                endpoint,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "SEO-Intelligence-Platform/1.0"
+                },
+                method="POST"
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    text = resp_data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                    self.model = target_model
+                    return {
+                        "status": "connected",
+                        "provider": "gemini",
+                        "model": target_model,
+                        "message": text
+                    }
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode("utf-8", errors="replace")
+                logger.error(f"Gemini test HTTP {e.code} error for '{target_model}': {err_body[:200]}")
+                if e.code == 404:
+                    last_exception = AIProviderException(f"Gemini model '{target_model}' is not available.", status_code=404, code="MODEL_NOT_FOUND")
+                    continue
+                elif e.code in (400, 401, 403):
+                    raise AIProviderException("Gemini API key is invalid or unauthorized.", status_code=401, code="AUTH_FAILED")
+                elif e.code == 429:
+                    raise AIProviderException("Gemini API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
+                raise AIProviderException(f"Gemini API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
+            except Exception as e:
+                logger.error(f"Gemini test connection failed for '{target_model}': {e}")
+                last_exception = AIProviderException(f"Gemini connection error: {str(e)[:120]}", status_code=502, code="CONNECTION_FAILED")
+
+        if last_exception:
+            raise last_exception
+        raise AIProviderException("No supported Gemini model available.", status_code=502, code="NO_MODEL_AVAILABLE")
 
     def chat(
         self, 
@@ -317,69 +712,54 @@ class GeminiProviderAdapter(LLMProvider):
         context_data: Dict[str, Any], 
         timeout: float = 30.0
     ) -> str:
-        endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
-        
-        payload = {
-            "system_instruction": {"parts": [{"text": system_instructions}]},
-            "contents": [{
-                "parts": [{"text": f"EVIDENCE CONTEXT:\n{json.dumps(context_data, indent=2)}\n\nUSER QUESTION: {query}"}]
-            }]
-        }
+        candidates = self._get_model_candidates()
+        last_exception = None
 
-        req = urllib.request.Request(
-            endpoint,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "User-Agent": "SEO-Intelligence-Platform/1.0"
-            },
-            method="POST"
-        )
+        for target_model in candidates:
+            endpoint = f"https://generativelanguage.googleapis.com/v1beta/{target_model}:generateContent?key={self.api_key}"
+            payload = {
+                "system_instruction": {"parts": [{"text": system_instructions}]},
+                "contents": [{
+                    "parts": [{"text": f"EVIDENCE CONTEXT:\n{json.dumps(context_data, indent=2)}\n\nUSER QUESTION: {query}"}]
+                }]
+            }
 
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                resp_data = json.loads(resp.read().decode("utf-8"))
-                return resp_data["candidates"][0]["content"]["parts"][0]["text"]
-        except urllib.error.HTTPError as e:
-            if e.code in (400, 401, 403):
-                raise AIProviderException("Gemini API authentication failed.", status_code=401, code="AUTH_FAILED")
-            elif e.code == 429:
-                raise AIProviderException("Gemini API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
-            raise AIProviderException(f"Gemini API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
-        except Exception as e:
-            raise AIProviderException(f"Gemini connection error: {e}", status_code=502, code="CONNECTION_FAILED")
+            req = urllib.request.Request(
+                endpoint,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "SEO-Intelligence-Platform/1.0"
+                },
+                method="POST"
+            )
+
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    self.model = target_model
+                    return resp_data["candidates"][0]["content"]["parts"][0]["text"]
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    last_exception = AIProviderException(f"Gemini model '{target_model}' is not available.", status_code=404, code="MODEL_NOT_FOUND")
+                    continue
+                elif e.code in (400, 401, 403):
+                    raise AIProviderException("Gemini API authentication failed.", status_code=401, code="AUTH_FAILED")
+                elif e.code == 429:
+                    raise AIProviderException("Gemini API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
+                raise AIProviderException(f"Gemini API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
+            except Exception as e:
+                last_exception = AIProviderException(f"Gemini connection error: {e}", status_code=502, code="CONNECTION_FAILED")
+
+        if last_exception:
+            raise last_exception
+        raise AIProviderException("No supported Gemini model available.", status_code=502, code="NO_MODEL_AVAILABLE")
 
 
-def get_llm_provider_for_user(user_id: str, db: Session) -> Optional[LLMProvider]:
+def get_llm_provider_for_user(user_id: Optional[str] = None, db: Optional[Session] = None, preferred_provider: Optional[str] = None) -> Optional[LLMProvider]:
     """
-    Retrieves and instantiates the active LLM Provider adapter for the authenticated user.
-    Checks external connections in priority order: openai -> claude / anthropic -> gemini.
-    Decrypts credential securely at call time. Returns None if no AI connection is active.
+    Retrieves and instantiates the active LLM Provider adapter via central AIService.
+    Routes to preferred provider if configured, or falls back across Customer AI -> Groq -> Ollama.
     """
-    ai_providers = ["openai", "claude", "anthropic", "gemini"]
-    conn = (
-        db.query(ExternalConnection)
-        .filter(
-            ExternalConnection.user_id == user_id,
-            ExternalConnection.provider.in_(ai_providers),
-            ExternalConnection.status == "CONNECTED"
-        )
-        .first()
-    )
-
-    if not conn:
-        return None
-
-    api_key = conn.get_api_key()
-    if not api_key:
-        return None
-
-    p = conn.provider.lower()
-    if p == "openai":
-        return OpenAIProviderAdapter(api_key=api_key)
-    elif p in ("claude", "anthropic"):
-        return AnthropicProviderAdapter(api_key=api_key)
-    elif p == "gemini":
-        return GeminiProviderAdapter(api_key=api_key)
-
-    return None
+    from app.llm.ai_service import AIService
+    return AIService.get_provider(user_id=user_id, db=db, preferred_provider=preferred_provider)

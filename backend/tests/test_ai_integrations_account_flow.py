@@ -28,15 +28,15 @@ class TestAIIntegrationsAccountFlow(unittest.TestCase):
 
         self.assertIn("/api/integrations/google/callback", details["redirect_uri"])
 
-    def test_2_api_key_submission_deprecated(self):
-        """Verify posting raw API keys returns 400 Bad Request error."""
+    def test_2_api_key_submission_invalid_key(self):
+        """Verify submitting unverified/invalid API key returns 400 Bad Request error."""
         response = client.post(
             "/api/integrations/openai/key",
             json={"api_key": "sk-proj-test123"},
             headers=self.auth_headers
         )
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Pasting raw API keys is deprecated", response.json()["detail"])
+        self.assertIn("Unable to verify", response.json()["detail"])
 
     def test_3_unauthenticated_disconnect_rejected(self):
         """Verify unauthenticated disconnect requests return HTTP 401 Unauthorized."""

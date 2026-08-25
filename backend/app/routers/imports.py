@@ -9,6 +9,9 @@ from app.importers.keyword_importer import KeywordImporter
 from app.importers.ranking_importer import RankingImporter
 from app.importers.backlink_importer import BacklinkImporter
 
+from app.config.auth import get_current_user_id
+from app.config.permissions import get_user_membership
+
 router = APIRouter()
 
 class ImportRequest(BaseModel):
@@ -29,7 +32,13 @@ def get_importer(data_type: str, db: Session, project_id: str, filename: str, so
         raise HTTPException(status_code=400, detail=f"Unsupported data_type '{data_type}'. Must be keywords, rankings, or backlinks.")
 
 @router.post("/")
-def import_data(project_id: str, request: ImportRequest, db: Session = Depends(get_db)):
+def import_data(
+    project_id: str,
+    request: ImportRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
     importer = get_importer(request.data_type, db, project_id, request.filename, request.source)
     importer.start_import(request.data_type)
     importer.process_records(request.records)
@@ -41,8 +50,10 @@ async def upload_csv_file(
     project_id: str,
     data_type: str = Form(...),
     file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
+    get_user_membership(db, user_id, project_id)
     if not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files (.csv) are accepted for data import.")
 
@@ -65,7 +76,12 @@ async def upload_csv_file(
     return importer.get_structured_import_report()
 
 @router.get("/")
-def get_imports(project_id: str, db: Session = Depends(get_db)):
+def get_imports(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
     from app.models.dataset import Dataset
     datasets = db.query(Dataset).filter(Dataset.project_id == project_id).order_by(Dataset.imported_at.desc()).all()
     return datasets

@@ -11,6 +11,9 @@ from app.models.action_opportunity import ActionOpportunity
 from app.services.audit_rules import evaluate_site_audit_rules
 from app.services.opportunity_engine import generate_central_opportunities
 
+from app.config.auth import get_current_user_id
+from app.config.permissions import get_user_membership
+
 router = APIRouter()
 
 @router.get("")
@@ -19,8 +22,10 @@ def get_project_opportunities(
     project_id: str,
     category: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")

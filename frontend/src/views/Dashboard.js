@@ -51,6 +51,7 @@ export class Dashboard {
         this.statusFilter = 'all';
         this.sortOption = 'health_desc';
         this.trendTimeframe = '30D';
+        this.geminiStatus = { configured: false, available: false };
     }
 
     render() {
@@ -75,7 +76,6 @@ export class Dashboard {
             const recentActivity = overviewData.recent_activity || [];
             const healthTrend = overviewData.health_trend || [];
 
-            // 1. ACCOUNT-LEVEL EMPTY WORKSPACE STATE
             if (!this.allProjects || this.allProjects.length === 0) {
                 this.element.innerHTML = `
                     <div class="header" style="margin-bottom: 24px;">
@@ -88,191 +88,68 @@ export class Dashboard {
                         </div>
                         <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 10px; color: var(--text-primary);">Start Your SEO Workspace</h2>
                         <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 24px; line-height: 1.6;">Add your first website domain to begin collecting real SEO health metrics, crawl snapshots, technical audit issues, and performance insights.</p>
-                        
-                        <div style="background: var(--bg-subtle); border-radius: 10px; padding: 16px 20px; margin-bottom: 28px; text-align: left; font-size: 13px; color: var(--text-secondary);">
-                            <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Once your first crawl is complete, your overview will display:</div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                                <div>• Portfolio SEO health score</div>
-                                <div>• Real crawl statistics</div>
-                                <div>• Technical issues & warnings</div>
-                                <div>• Historical health trends</div>
-                                <div>• Keyword performance summary</div>
-                                <div>• Workspace activity stream</div>
-                            </div>
-                        </div>
-
-                        <div style="display: flex; gap: 12px; justify-content: center;">
-                            <button class="btn btn-primary" onclick="window.showCreateProjectModal()">+ Add Website</button>
-                            <a href="/import" data-link class="btn btn-secondary">Import Data</a>
-                        </div>
+                        <button class="btn btn-primary btn-lg" onclick="window.showCreateProjectModal()" style="font-weight: 600;">+ Create First Project</button>
                     </div>
                 `;
                 return;
             }
 
-            const avgHealth = summary.average_health;
-            let avgHealthColor = 'var(--success)';
-            let avgHealthStatus = 'Healthy';
-            if (avgHealth !== null && avgHealth !== undefined) {
-                if (avgHealth < 70) {
-                    avgHealthColor = 'var(--critical)';
-                    avgHealthStatus = 'Critical';
-                } else if (avgHealth < 85) {
-                    avgHealthColor = 'var(--warning)';
-                    avgHealthStatus = 'Needs Attention';
-                }
-            }
+            const totalSites = summary.total_websites || this.allProjects.length;
+            const avgHealth = summary.average_health_score !== undefined ? summary.average_health_score : 100;
+            const totalCrawledPages = summary.total_crawled_pages || 0;
+            const totalIssuesCount = summary.total_critical_issues || 0;
 
-            // Filter websites needing attention
-            const needingAttention = this.allProjects.filter(p => p.has_crawled && (p.critical_issues > 0 || (p.health_score !== null && p.health_score < 80)));
-
-            // Construct Main View Shell
             this.element.innerHTML = `
-                <!-- SEO OVERVIEW HEADER -->
-                <div class="header" style="margin-bottom: 28px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+                <!-- HEADER SECTION -->
+                <div class="header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
                     <div>
-                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
-                            <span class="badge badge-info" style="font-size: 10px; font-weight: 700; letter-spacing: 0.05em;">ACCOUNT PORTFOLIO</span>
-                            <span style="font-size: 12px; color: var(--text-tertiary);">• ${summary.total_projects || 0} Managed Websites</span>
-                        </div>
-                        <h1 style="font-size: 26px; font-weight: 800; margin: 0; color: var(--text-primary); letter-spacing: -0.02em;">SEO Overview</h1>
-                        <p style="color: var(--text-secondary); font-size: 13.5px; margin-top: 4px; max-width: 720px; line-height: 1.5;">
-                            Monitor technical health, audit findings, crawl activity, and ranking trends across your entire website portfolio.
-                        </p>
+                        <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.06em;">SEO INTELLIGENCE DASHBOARD</div>
+                        <h1 style="font-size: 24px; font-weight: 700; margin-top: 2px; color: var(--text-primary);">Workspace Command Center</h1>
+                        <p style="color: var(--text-secondary); font-size: 13.5px; margin-top: 4px;">Real-time portfolio SEO health metrics, crawl progress, and AI recommendations.</p>
                     </div>
-                    <div style="display: flex; gap: 10px; align-items: center;">
-                        <button class="btn btn-secondary btn-sm" onclick="window.location.reload()" title="Refresh workspace data">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
-                            <span>Refresh</span>
-                        </button>
-                        <button class="btn btn-primary btn-sm" onclick="window.showCreateProjectModal()">
-                            <span>+ Add Website</span>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-primary btn-sm" onclick="window.showCreateProjectModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            Add Website
                         </button>
                     </div>
                 </div>
 
-                <!-- LEVEL 1, 2, 3: KPI CARDS (6 REFINED SAAS METRIC CARDS) -->
-                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; margin-bottom: 28px;">
-                    
-                    <!-- KPI 1: TOTAL WEBSITES -->
-                    <div class="card kpi-card">
-                        <div class="kpi-header">
-                            <span class="kpi-label">Total Websites</span>
-                            <div class="kpi-icon">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                            </div>
-                        </div>
-                        <div class="kpi-value">${summary.total_projects || 0}</div>
-                        <div class="kpi-status">${summary.active_projects || 0} active audited sites</div>
+                <!-- LEVEL 1: ACCOUNT PORTFOLIO SUMMARY CARDS -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 28px;">
+                    <div class="card" style="padding: 20px;">
+                        <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Portfolio Websites</div>
+                        <div style="font-size: 28px; font-weight: 800; color: var(--text-primary);">${totalSites}</div>
+                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Active projects in workspace</div>
                     </div>
 
-                    <!-- KPI 2: PORTFOLIO HEALTH -->
-                    <div class="card kpi-card" style="border-top: 3px solid ${avgHealthColor};">
-                        <div class="kpi-header">
-                            <span class="kpi-label">Portfolio Health</span>
-                            <span class="badge" style="background: ${avgHealthColor}; color: #fff; font-weight: 700; font-size: 10px;">${avgHealthStatus}</span>
-                        </div>
-                        <div class="kpi-value" style="color: ${avgHealthColor};">${avgHealth !== null && avgHealth !== undefined ? avgHealth : 'N/A'}</div>
-                        <div class="kpi-status">
-                            ${avgHealth !== null && avgHealth !== undefined ? `<span>↑ 8% vs last crawl</span>` : 'No crawl data yet'}
-                        </div>
+                    <div class="card" style="padding: 20px;">
+                        <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Average SEO Health</div>
+                        <div style="font-size: 28px; font-weight: 800; color: ${avgHealth >= 80 ? '#10b981' : (avgHealth >= 60 ? '#f59e0b' : '#ef4444')};">${avgHealth}<span style="font-size: 16px; font-weight: 600;">/100</span></div>
+                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Weighted portfolio audit score</div>
                     </div>
 
-                    <!-- KPI 3: PAGES CRAWLED -->
-                    <div class="card kpi-card">
-                        <div class="kpi-header">
-                            <span class="kpi-label">Pages Crawled</span>
-                            <div class="kpi-icon" style="color: var(--success);">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                            </div>
-                        </div>
-                        <div class="kpi-value">${summary.total_pages_crawled || 0}</div>
-                        <div class="kpi-status">Across website portfolio</div>
+                    <div class="card" style="padding: 20px;">
+                        <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Total Crawled Pages</div>
+                        <div style="font-size: 28px; font-weight: 800; color: #3b82f6;">${totalCrawledPages.toLocaleString()}</div>
+                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Discovered HTML pages</div>
                     </div>
 
-                    <!-- KPI 4: CRITICAL ISSUES -->
-                    <div class="card kpi-card" style="border-top: 3px solid var(--critical);">
-                        <div class="kpi-header">
-                            <span class="kpi-label" style="color: var(--critical);">Critical Issues</span>
-                            <div class="kpi-icon" style="color: var(--critical); background: var(--critical-bg);">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                            </div>
-                        </div>
-                        <div class="kpi-value" style="color: var(--critical);">${summary.critical_issues || 0}</div>
-                        <div class="kpi-status" style="color: var(--critical);">Requires immediate action</div>
+                    <div class="card" style="padding: 20px;">
+                        <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Critical Audit Issues</div>
+                        <div style="font-size: 28px; font-weight: 800; color: ${totalIssuesCount > 0 ? '#ef4444' : '#10b981'};">${totalIssuesCount}</div>
+                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Aggregated technical findings</div>
                     </div>
-
-                    <!-- KPI 5: WARNINGS -->
-                    <div class="card kpi-card" style="border-top: 3px solid var(--warning);">
-                        <div class="kpi-header">
-                            <span class="kpi-label">Warnings</span>
-                            <div class="kpi-icon" style="color: var(--warning); background: var(--warning-bg);">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path></svg>
-                            </div>
-                        </div>
-                        <div class="kpi-value" style="color: var(--warning);">${summary.warnings || 0}</div>
-                        <div class="kpi-status">Optimization opportunities</div>
-                    </div>
-
-                    <!-- KPI 6: RECENT CRAWLS -->
-                    <div class="card kpi-card">
-                        <div class="kpi-header">
-                            <span class="kpi-label">Recent Crawls</span>
-                            <div class="kpi-icon" style="color: var(--accent-purple);">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                            </div>
-                        </div>
-                        <div class="kpi-value">${summary.total_crawls || 0}</div>
-                        <div class="kpi-status">Total audit snapshots</div>
-                    </div>
-
                 </div>
 
-                <!-- LEVEL 2: WEBSITES NEEDING ATTENTION SECTION -->
+                <!-- LEVEL 2: WEBSITE PORTFOLIO TABLE -->
                 <div class="card" style="padding: 24px; margin-bottom: 28px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px;">
-                        <div>
-                            <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
-                                <span>Websites Needing Attention</span>
-                                <span class="badge ${needingAttention.length > 0 ? 'badge-critical' : 'badge-success'}">${needingAttention.length} ${needingAttention.length === 1 ? 'site' : 'sites'} require action</span>
-                            </h3>
-                            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">High priority websites with open critical technical errors or low health scores.</div>
-                        </div>
-                    </div>
-                    ${needingAttention.length === 0 ? `
-                        <div style="padding: 18px 20px; background: var(--success-bg); border: 1px solid var(--success-border); border-radius: 10px; color: var(--success); font-size: 13.5px; display: flex; align-items: center; gap: 12px;">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                            <span><strong>All Audited Websites Healthy:</strong> Every domain in your portfolio meets or exceeds optimal health threshold criteria.</span>
-                        </div>
-                    ` : `
-                        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 16px;">
-                            ${needingAttention.map(p => `
-                                <div style="padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-subtle); display: flex; justify-content: space-between; align-items: center; transition: all 0.2s ease;">
-                                    <div>
-                                        <strong style="font-size: 14.5px; color: var(--text-primary); display: block;">${p.name}</strong>
-                                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">${p.domain || p.url}</div>
-                                        <div style="margin-top: 8px; font-size: 12px; color: var(--critical); font-weight: 600; display: flex; align-items: center; gap: 8px;">
-                                            <span>● ${p.critical_issues} critical issue${p.critical_issues === 1 ? '' : 's'}</span>
-                                            <span style="color: var(--text-tertiary);">•</span>
-                                            <span style="color: var(--warning);">${p.warnings} warning${p.warnings === 1 ? '' : 's'}</span>
-                                        </div>
-                                    </div>
-                                    <button class="btn btn-primary btn-sm" onclick="window.navigateToAudit('${p.id}')" style="font-size: 11.5px;">Open Audit &rarr;</button>
-                                </div>
-                            `).join('')}
-                        </div>
-                    `}
-                </div>
-
-                <!-- LEVEL 4: WEBSITE PORTFOLIO MANAGER DATA TABLE -->
-                <div class="card" style="padding: 24px; margin-bottom: 28px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 12px;">
                         <div>
                             <h2 style="font-size: 18px; font-weight: 700; margin: 0; color: var(--text-primary);">Website Portfolio</h2>
                             <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 2px;">Manage and monitor technical health across all websites in your workspace.</div>
                         </div>
 
-                        <!-- SEARCH, FILTER, SORT CONTROLS -->
                         <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                             <input type="text" id="website-search-input" placeholder="Search websites..." style="padding: 7px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; width: 190px; background: var(--bg-subtle); color: var(--text-primary);"/>
                             
@@ -293,11 +170,41 @@ export class Dashboard {
                         </div>
                     </div>
 
-                    <!-- PORTFOLIO TABLE CONTAINER -->
                     <div id="portfolio-table-container"></div>
                 </div>
 
-                <!-- LEVEL 3: WORKSPACE HEALTH TREND & ANALYTICS VISUALIZATION -->
+                <!-- GOOGLE GEMINI AI INTEGRATION SECTION -->
+                <div class="card" style="padding: 24px; margin-bottom: 28px; border-left: 4px solid #3b82f6; background: var(--bg-card);">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <h3 style="font-size: 17px; font-weight: 700; margin: 0; color: var(--text-primary);">Google Gemini AI Intelligence</h3>
+                                <span id="gemini-status-badge" class="badge badge-secondary" style="font-size: 11px;">Checking status...</span>
+                            </div>
+                            <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 4px;">
+                                Multimodal AI reasoning engine for automated SEO analysis using real workspace crawl evidence.
+                            </div>
+                        </div>
+
+                        <div style="display: flex; gap: 10px;" id="gemini-actions">
+                            <button type="button" id="btn-test-gemini" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                                ⚡ Test Gemini Connection
+                            </button>
+                            <button type="button" id="btn-analyze-gemini" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 6px; background: #2563eb;">
+                                ✨ Analyze SEO with Gemini
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- GEMINI OUTPUT / RESULT BOX -->
+                    <div id="gemini-output-box" style="padding: 16px; background: var(--bg-subtle); border-radius: 10px; border: 1px solid var(--border); font-size: 13px; color: var(--text-secondary);">
+                        <div id="gemini-default-msg">
+                            Click <strong>Test Gemini Connection</strong> to verify backend API configuration or <strong>Analyze SEO with Gemini</strong> to run real AI audit reasoning on your active project.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- WORKSPACE HEALTH TREND & ANALYTICS VISUALIZATION -->
                 <div class="card" style="padding: 24px; margin-bottom: 28px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 12px;">
                         <div>
@@ -329,7 +236,7 @@ export class Dashboard {
                     `}
                 </div>
 
-                <!-- LEVEL 5: TECHNICAL SEO ISSUES ACROSS WEBSITES -->
+                <!-- TOP TECHNICAL SEO ISSUES -->
                 <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 28px;">
                     <div style="padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
                         <div>
@@ -373,74 +280,12 @@ export class Dashboard {
                         </div>
                     `}
                 </div>
-
-                <!-- RECENT CRAWLS & WORKSPACE ACTIVITY STREAM (2-COLUMN GRID) -->
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px; margin-bottom: 28px;">
-                    
-                    <!-- RECENT CRAWL SNAPSHOTS -->
-                    <div class="card" style="padding: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                            <div>
-                                <h3 style="font-size: 15.5px; font-weight: 700; margin: 0; color: var(--text-primary);">Recent Crawl Snapshots</h3>
-                                <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">Audit snapshot history timeline</div>
-                            </div>
-                            <a href="/crawl-history" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">Crawl History</a>
-                        </div>
-                        ${recentCrawls.length === 0 ? `
-                            <div style="padding: 24px; text-align: center; color: var(--text-secondary); font-size: 13px;">No recent crawl records.</div>
-                        ` : `
-                            <div style="display: flex; flex-direction: column; gap: 8px;">
-                                ${recentCrawls.slice(0, 5).map(c => `
-                                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--bg-subtle); border-radius: 8px; font-size: 12.5px; border: 1px solid var(--border);">
-                                        <div>
-                                            <strong style="color: var(--text-primary); display: block;">${c.project_name || 'Website'}</strong>
-                                            <span style="font-size: 11px; color: var(--text-tertiary);">${c.timestamp ? c.timestamp.split('T')[0] : 'Recent'}</span>
-                                        </div>
-                                        <div style="display: flex; gap: 10px; align-items: center;">
-                                            <span style="font-size: 12px; font-weight: 600; color: var(--primary);">${c.pages_crawled || 0} pages</span>
-                                            <button class="btn btn-secondary btn-sm" onclick="window.navigateToAudit('${c.project_id}')" style="font-size: 11px; padding: 3px 9px;">View Audit</button>
-                                        </div>
-                                    </div>
-                                `).join('')}
-                            </div>
-                            <div style="margin-top: 14px; text-align: right;">
-                                <a href="/crawl-history" data-link style="font-size: 12px; font-weight: 600; color: var(--primary);">View Full Crawl History &rarr;</a>
-                            </div>
-                        `}
-                    </div>
-
-                    <!-- WORKSPACE EVENT STREAM -->
-                    <div class="card" style="padding: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                            <div>
-                                <h3 style="font-size: 15.5px; font-weight: 700; margin: 0; color: var(--text-primary);">Workspace Event Stream</h3>
-                                <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">Real-time application activity log feed</div>
-                            </div>
-                        </div>
-                        ${recentActivity.length === 0 ? `
-                            <div style="padding: 24px; text-align: center; color: var(--text-secondary); font-size: 13px;">No recent workspace events recorded.</div>
-                        ` : `
-                            <div style="display: flex; flex-direction: column; gap: 10px;">
-                                ${recentActivity.slice(0, 6).map(act => `
-                                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; border-bottom: 1px solid var(--border); padding-bottom: 8px;">
-                                        <div style="display: flex; align-items: center; gap: 10px;">
-                                            <span style="width: 8px; height: 8px; border-radius: 50%; background: ${act.type === 'crawl_completed' ? 'var(--success)' : 'var(--primary)'}; flex-shrink: 0;"></span>
-                                            <span style="font-weight: 600; color: var(--text-primary);">${act.title}</span>
-                                        </div>
-                                        <span style="font-size: 11px; color: var(--text-tertiary);">${act.timestamp ? act.timestamp.split('T')[0] : 'Recent'}</span>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        `}
-                    </div>
-
-                </div>
             `;
 
-            // Bind Portfolio Table Controls & Render Initial Table
             this.bindPortfolioControls();
             this.renderPortfolioTable();
             this.bindTrendPills();
+            await this.bindGeminiSection();
 
         } catch (e) {
             if (e.name === 'TypeError' || e.message.includes('fetch') || apiClient.status === 'OFFLINE') {
@@ -451,23 +296,171 @@ export class Dashboard {
         }
     }
 
-    bindTrendPills() {
-        const pillsContainer = document.getElementById('trend-timeframe-pills');
-        if (!pillsContainer) return;
-        const btns = pillsContainer.querySelectorAll('.pill-btn');
-        btns.forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                btns.forEach(b => b.classList.remove('active'));
-                e.currentTarget.classList.add('active');
-                this.trendTimeframe = e.currentTarget.getAttribute('data-tf');
+    async bindGeminiSection() {
+        const badge = this.element.querySelector('#gemini-status-badge');
+        const btnTest = this.element.querySelector('#btn-test-gemini');
+        const btnAnalyze = this.element.querySelector('#btn-analyze-gemini');
+        const outputBox = this.element.querySelector('#gemini-output-box');
+
+        try {
+            const statusData = await apiClient.get('/api/ai/gemini/status');
+            this.geminiStatus = statusData;
+
+            if (badge) {
+                if (statusData && statusData.configured) {
+                    badge.className = 'badge badge-success';
+                    badge.innerHTML = `✓ Available (${statusData.model || 'gemini-1.5-flash'})`;
+                } else {
+                    badge.className = 'badge badge-secondary';
+                    badge.innerHTML = `Not Configured`;
+                }
+            }
+        } catch (err) {
+            console.warn('[GEMINI UI] Failed to check status:', err);
+            if (badge) {
+                badge.className = 'badge badge-secondary';
+                badge.innerHTML = `Not Configured`;
+            }
+        }
+
+        if (btnTest) {
+            btnTest.addEventListener('click', async (e) => {
+                e.preventDefault();
+                btnTest.disabled = true;
+                const origText = btnTest.innerHTML;
+                btnTest.innerText = 'Testing...';
+
+                try {
+                    const testRes = await apiClient.post('/api/ai/gemini/test', {});
+                    if (testRes.status === 'connected') {
+                        if (outputBox) {
+                            outputBox.innerHTML = `
+                                <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981; padding: 14px; border-radius: 8px;">
+                                    <strong style="display: block; margin-bottom: 4px; font-size: 14px;">✓ Gemini Connection Successful</strong>
+                                    <span>Model: <code>${testRes.model}</code> • ${this.escapeHtml(testRes.message)}</span>
+                                </div>
+                            `;
+                        }
+                    } else {
+                        if (outputBox) {
+                            outputBox.innerHTML = `
+                                <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 14px; border-radius: 8px;">
+                                    <strong style="display: block; margin-bottom: 4px; font-size: 14px;">✕ Gemini Connection Failed</strong>
+                                    <span>${this.escapeHtml(testRes.message || 'Gemini API key is not configured in backend environment.')}</span>
+                                </div>
+                            `;
+                        }
+                    }
+                } catch (err) {
+                    if (outputBox) {
+                        outputBox.innerHTML = `
+                            <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 14px; border-radius: 8px;">
+                                <strong>✕ Connection Error:</strong> ${this.escapeHtml(err.message || 'Unable to test Gemini connection.')}
+                            </div>
+                        `;
+                    }
+                } finally {
+                    btnTest.disabled = false;
+                    btnTest.innerHTML = origText;
+                }
             });
-        });
+        }
+
+        if (btnAnalyze) {
+            btnAnalyze.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const selectedProjId = projectStore.getSelectedProjectId();
+
+                if (!selectedProjId) {
+                    alert('Please select a project to run AI analysis.');
+                    return;
+                }
+
+                btnAnalyze.disabled = true;
+                const origText = btnAnalyze.innerHTML;
+                btnAnalyze.innerText = 'Analyzing Real Evidence...';
+
+                if (outputBox) {
+                    outputBox.innerHTML = `
+                        <div style="padding: 24px; text-align: center; color: var(--primary);">
+                            <span class="crawl-spinner" style="width: 20px; height: 20px; border-width: 3px; display: inline-block; vertical-align: middle; margin-right: 8px;"></span>
+                            Evaluating crawl metrics, technical findings, and content signals with Gemini AI...
+                        </div>
+                    `;
+                }
+
+                try {
+                    const res = await apiClient.post(`/api/projects/${selectedProjId}/ai/analyze`, {});
+                    
+                    if (res.status === 'AI_ANALYSIS_COMPLETE' && outputBox) {
+                        const insights = res.insights || [];
+                        const actions = res.actions || [];
+
+                        let insightsHTML = insights.map(i => `
+                            <div style="margin-bottom: 12px; padding: 12px; background: var(--bg-card); border-radius: 8px; border-left: 3px solid ${i.severity === 'Critical' ? '#ef4444' : '#f59e0b'}; border-top: 1px solid var(--border); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                                    <strong style="color: var(--text-primary); font-size: 13.5px;">${this.escapeHtml(i.finding || i.title || 'Finding')}</strong>
+                                    <span class="badge ${i.severity === 'Critical' ? 'badge-critical' : 'badge-warning'}" style="font-size: 10px;">${i.severity}</span>
+                                </div>
+                                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">${this.escapeHtml(i.impact || i.details || '')}</div>
+                                <div style="font-size: 12px; color: #10b981; font-weight: 600;">Recommendation: ${this.escapeHtml(i.recommendation || '')}</div>
+                            </div>
+                        `).join('');
+
+                        let actionsHTML = actions.map(a => `
+                            <div style="padding: 8px 12px; background: var(--bg-card); border-radius: 6px; border: 1px solid var(--border); font-size: 12px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <strong style="color: var(--text-primary);">${this.escapeHtml(a.title || 'Action')}</strong>
+                                    <div style="color: var(--text-secondary); font-size: 11.5px;">${this.escapeHtml(a.description || '')}</div>
+                                </div>
+                                <span class="badge badge-primary" style="font-size: 10px;">${a.priority || 'High'}</span>
+                            </div>
+                        `).join('');
+
+                        outputBox.innerHTML = `
+                            <div style="color: var(--text-primary);">
+                                <div style="font-size: 14px; font-weight: 700; margin-bottom: 8px; color: #3b82f6;">Executive Summary</div>
+                                <p style="font-size: 13px; line-height: 1.5; color: var(--text-primary); margin-bottom: 16px;">${this.escapeHtml(res.summary || 'Analysis completed successfully.')}</p>
+
+                                ${insights.length > 0 ? `
+                                    <div style="font-size: 13px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">Key Audit Insights (${insights.length})</div>
+                                    <div style="margin-bottom: 16px;">${insightsHTML}</div>
+                                ` : ''}
+
+                                ${actions.length > 0 ? `
+                                    <div style="font-size: 13px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">Recommended Actions (${actions.length})</div>
+                                    <div>${actionsHTML}</div>
+                                ` : ''}
+                            </div>
+                        `;
+
+                    } else if (outputBox) {
+                        outputBox.innerHTML = `
+                            <div style="padding: 14px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); color: #f59e0b; border-radius: 8px;">
+                                <strong>Notice:</strong> ${this.escapeHtml(res.message || res.summary || 'Gemini AI analysis is currently unavailable.')}
+                            </div>
+                        `;
+                    }
+                } catch (err) {
+                    if (outputBox) {
+                        outputBox.innerHTML = `
+                            <div style="padding: 14px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; border-radius: 8px;">
+                                <strong>✕ Analysis Failed:</strong> ${this.escapeHtml(err.message || 'Unable to complete AI analysis.')}
+                            </div>
+                        `;
+                    }
+                } finally {
+                    btnAnalyze.disabled = false;
+                    btnAnalyze.innerHTML = origText;
+                }
+            });
+        }
     }
 
     bindPortfolioControls() {
-        const searchInput = document.getElementById('website-search-input');
-        const filterSelect = document.getElementById('website-status-filter');
-        const sortSelect = document.getElementById('website-sort-option');
+        const searchInput = this.element.querySelector('#website-search-input');
+        const statusFilter = this.element.querySelector('#website-status-filter');
+        const sortOption = this.element.querySelector('#website-sort-option');
 
         if (searchInput) {
             searchInput.addEventListener('input', (e) => {
@@ -475,100 +468,96 @@ export class Dashboard {
                 this.renderPortfolioTable();
             });
         }
-        if (filterSelect) {
-            filterSelect.addEventListener('change', (e) => {
+
+        if (statusFilter) {
+            statusFilter.addEventListener('change', (e) => {
                 this.statusFilter = e.target.value;
                 this.renderPortfolioTable();
             });
         }
-        if (sortSelect) {
-            sortSelect.addEventListener('change', (e) => {
+
+        if (sortOption) {
+            sortOption.addEventListener('change', (e) => {
                 this.sortOption = e.target.value;
                 this.renderPortfolioTable();
             });
         }
     }
 
-    renderPortfolioTable() {
-        const container = document.getElementById('portfolio-table-container');
+    bindTrendPills() {
+        const container = this.element.querySelector('#trend-timeframe-pills');
         if (!container) return;
 
-        // 1. Filter Projects
-        let list = this.allProjects.filter(p => {
-            const matchesSearch = !this.searchQuery || (p.name && p.name.toLowerCase().includes(this.searchQuery)) || (p.domain && p.domain.toLowerCase().includes(this.searchQuery)) || (p.url && p.url.toLowerCase().includes(this.searchQuery));
-            const matchesStatus = this.statusFilter === 'all' || p.crawl_status === this.statusFilter;
-            return matchesSearch && matchesStatus;
+        const pills = container.querySelectorAll('.pill-btn');
+        pills.forEach(pill => {
+            pill.addEventListener('click', (e) => {
+                pills.forEach(p => p.classList.remove('active'));
+                e.currentTarget.classList.add('active');
+                this.trendTimeframe = e.currentTarget.getAttribute('data-tf');
+            });
         });
+    }
 
-        // 2. Sort Projects
-        list.sort((a, b) => {
-            if (this.sortOption === 'health_desc') return (b.health_score || 0) - (a.health_score || 0);
-            if (this.sortOption === 'health_asc') return (a.health_score || 0) - (b.health_score || 0);
-            if (this.sortOption === 'name_asc') return (a.name || '').localeCompare(b.name || '');
-            if (this.sortOption === 'issues_desc') return (b.critical_issues || 0) - (a.critical_issues || 0);
-            return 0;
-        });
+    renderPortfolioTable() {
+        const container = this.element.querySelector('#portfolio-table-container');
+        if (!container) return;
+
+        let list = [...this.allProjects];
+
+        if (this.searchQuery) {
+            list = list.filter(p => (p.name || '').toLowerCase().includes(this.searchQuery) || (p.domain || '').toLowerCase().includes(this.searchQuery));
+        }
+
+        if (this.statusFilter !== 'all') {
+            list = list.filter(p => (p.status || 'Never Crawled') === this.statusFilter);
+        }
+
+        if (this.sortOption === 'health_desc') {
+            list.sort((a, b) => (b.health_score || 0) - (a.health_score || 0));
+        } else if (this.sortOption === 'health_asc') {
+            list.sort((a, b) => (a.health_score || 0) - (b.health_score || 0));
+        } else if (this.sortOption === 'name_asc') {
+            list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        } else if (this.sortOption === 'issues_desc') {
+            list.sort((a, b) => (b.critical_issues_count || 0) - (a.critical_issues_count || 0));
+        }
 
         if (list.length === 0) {
             container.innerHTML = `
-                <div style="padding: 36px; text-align: center; color: var(--text-secondary); font-size: 13.5px; background: var(--bg-subtle); border-radius: 10px;">
-                    No websites match the selected search query or status filter.
+                <div style="padding: 32px; text-align: center; color: var(--text-secondary); font-size: 13.5px;">
+                    No websites match your filter query '${this.escapeHtml(this.searchQuery)}'.
                 </div>
             `;
             return;
         }
 
-        const tableRows = list.map(p => {
-            const hasCrawled = p.has_crawled || (p.pages_crawled && p.pages_crawled > 0);
-            const health = p.health_score;
-
-            let hBadgeClass = 'badge-info';
-            let hText = '—';
-
-            if (hasCrawled && health !== null && health !== undefined) {
-                if (health >= 85) { hBadgeClass = 'badge-success'; hText = `${health} / 100`; }
-                else if (health >= 70) { hBadgeClass = 'badge-warning'; hText = `${health} / 100`; }
-                else { hBadgeClass = 'badge-critical'; hText = `${health} / 100`; }
-            }
-
-            let displayStatus = p.crawl_status || (hasCrawled ? 'Healthy' : 'Not Crawled');
-            let statusBadgeClass = 'badge-info';
-            if (displayStatus === 'Healthy') statusBadgeClass = 'badge-success';
-            else if (displayStatus === 'Needs Attention') statusBadgeClass = 'badge-warning';
-            else if (displayStatus === 'Critical') statusBadgeClass = 'badge-critical';
-            else if (displayStatus === 'Not Crawled' || displayStatus === 'No Crawls') {
-                displayStatus = 'Not Crawled';
-                statusBadgeClass = 'badge-info';
-            }
-
-            const targetUrl = p.domain || p.url || 'unconfigured';
-            const actionText = hasCrawled ? 'Run Crawl' : 'Run First Crawl';
+        const rows = list.map(p => {
+            const hScore = p.health_score !== undefined ? p.health_score : 100;
+            const healthColor = hScore >= 80 ? '#10b981' : (hScore >= 60 ? '#f59e0b' : '#ef4444');
+            const st = p.status || 'Never Crawled';
+            const badgeClass = st === 'Healthy' ? 'badge-success' : (st === 'Needs Attention' ? 'badge-warning' : (st === 'Critical' ? 'badge-critical' : 'badge-secondary'));
 
             return `
-                <tr>
+                <tr style="border-bottom: 1px solid var(--border);">
                     <td style="padding: 14px 20px;">
-                        <strong style="font-size: 14px; color: var(--text-primary); display: block; font-weight: 700;">${p.name}</strong>
-                        <span style="font-size: 11.5px; color: var(--text-secondary);">${targetUrl}</span>
+                        <strong style="color: var(--text-primary); font-size: 14px; display: block;">${this.escapeHtml(p.name)}</strong>
+                        <a href="${p.url || '#'}" target="_blank" style="font-size: 12px; color: var(--primary); text-decoration: none; font-family: monospace;">${this.escapeHtml(p.domain || p.url || '-')}</a>
                     </td>
                     <td style="padding: 14px 20px;">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span class="badge ${hBadgeClass}">${hText}</span>
-                            ${hasCrawled && health !== null && health !== undefined ? `
-                                <div style="width: 48px; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden;">
-                                    <div style="width: ${health}%; height: 100%; background: ${health >= 85 ? 'var(--success)' : (health >= 70 ? 'var(--warning)' : 'var(--critical)')};"></div>
-                                </div>
-                            ` : ''}
-                        </div>
+                        <span class="badge ${badgeClass}" style="font-size: 11px;">${st}</span>
                     </td>
-                    <td style="padding: 14px 20px; font-weight: 700; color: ${p.critical_issues > 0 ? 'var(--critical)' : 'var(--text-secondary)'};">${hasCrawled ? (p.critical_issues || 0) : '—'}</td>
-                    <td style="padding: 14px 20px; font-weight: 600; color: ${p.warnings > 0 ? 'var(--warning)' : 'var(--text-secondary)'};">${hasCrawled ? (p.warnings || 0) : '—'}</td>
-                    <td style="padding: 14px 20px; font-size: 13px;">${hasCrawled ? (p.pages_crawled || 0) : '—'}</td>
-                    <td style="padding: 14px 20px; font-size: 12px; color: var(--text-secondary);">${p.last_crawl ? p.last_crawl.split('T')[0] : 'Never'}</td>
-                    <td style="padding: 14px 20px;"><span class="badge ${statusBadgeClass}">${displayStatus}</span></td>
+                    <td style="padding: 14px 20px;">
+                        <div style="font-size: 15px; font-weight: 800; color: ${healthColor};">${hScore}<span style="font-size: 11px; font-weight: 600; color: var(--text-tertiary);">/100</span></div>
+                    </td>
+                    <td style="padding: 14px 20px; font-weight: 600;">${p.pages_crawled || 0}</td>
+                    <td style="padding: 14px 20px;">
+                        <span style="font-weight: 700; color: ${(p.critical_issues_count || 0) > 0 ? '#ef4444' : '#10b981'};">${p.critical_issues_count || 0}</span>
+                    </td>
+                    <td style="padding: 14px 20px; font-size: 12px; color: var(--text-secondary);">${p.last_crawled_at ? p.last_crawled_at.split('T')[0] : 'Never'}</td>
                     <td style="padding: 14px 20px; text-align: right;">
-                        <div style="display: flex; gap: 8px; justify-content: flex-end;">
-                            <button class="btn btn-primary btn-sm" style="font-size: 11px; padding: 4px 10px;" onclick="window.startCrawlFromOverview('${p.id}', '${targetUrl}')">${actionText}</button>
-                            ${hasCrawled ? `<button class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 4px 10px;" onclick="window.navigateToAudit('${p.id}')">View Audit &rarr;</button>` : ''}
+                        <div style="display: flex; gap: 6px; justify-content: flex-end;">
+                            <button class="btn btn-secondary btn-sm" onclick="window.startCrawlFromOverview('${p.id}', '${p.domain || p.url}')" style="font-size: 11px; padding: 4px 10px;">Crawl</button>
+                            <button class="btn btn-primary btn-sm" onclick="window.navigateToAudit('${p.id}')" style="font-size: 11px; padding: 4px 10px;">Audit &rarr;</button>
                         </div>
                     </td>
                 </tr>
@@ -580,19 +569,30 @@ export class Dashboard {
                 <table class="data-table">
                     <thead>
                         <tr>
-                            <th style="padding: 12px 20px;">Website</th>
-                            <th style="padding: 12px 20px;">SEO Health</th>
-                            <th style="padding: 12px 20px;">Critical</th>
-                            <th style="padding: 12px 20px;">Warnings</th>
-                            <th style="padding: 12px 20px;">Pages</th>
-                            <th style="padding: 12px 20px;">Last Crawl</th>
+                            <th style="padding: 12px 20px;">Website Domain</th>
                             <th style="padding: 12px 20px;">Status</th>
+                            <th style="padding: 12px 20px;">SEO Health</th>
+                            <th style="padding: 12px 20px;">Pages</th>
+                            <th style="padding: 12px 20px;">Critical Issues</th>
+                            <th style="padding: 12px 20px;">Last Crawled</th>
                             <th style="padding: 12px 20px; text-align: right;">Actions</th>
                         </tr>
                     </thead>
-                    <tbody>${tableRows}</tbody>
+                    <tbody>
+                        ${rows}
+                    </tbody>
                 </table>
             </div>
         `;
+    }
+
+    escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
     }
 }

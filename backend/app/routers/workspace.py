@@ -9,15 +9,27 @@ from app.config.utils import get_sanitized_domain, normalize_stored_path
 from app.config.settings import settings
 from app.routers.projects import get_project_metrics
 
+from app.config.auth import get_current_user_id
+from app.models.project_membership import ProjectMembership
+
 router = APIRouter()
 
 @router.get("/overview")
-def get_workspace_overview(db: Session = Depends(get_db)):
+def get_workspace_overview(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Account / Workspace-Level Overview Endpoint.
-    Aggregates metrics, crawl history, and technical issues across ALL websites.
+    Aggregates metrics, crawl history, and technical issues across authorized websites.
     """
-    projects = db.query(Project).all()
+    email = user_id.strip().lower()
+    memberships = db.query(ProjectMembership).filter(
+        ProjectMembership.user_id == email,
+        ProjectMembership.status == "ACTIVE"
+    ).all()
+    project_ids = [m.project_id for m in memberships]
+    projects = db.query(Project).filter(Project.id.in_(project_ids)).all() if project_ids else []
 
     total_projects = len(projects)
     active_projects = 0

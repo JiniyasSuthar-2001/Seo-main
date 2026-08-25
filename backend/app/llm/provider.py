@@ -167,8 +167,6 @@ class EvidenceReasoningProvider(BaseLLMProvider):
 
 def get_llm_provider(user_id: Optional[str] = None, db: Optional[Session] = None) -> Optional[LLMProvider]:
     """
-    Returns the real configured LLMProvider adapter for the authenticated user, or None if unconfigured.
+    Returns the active LLMProvider adapter (user override or platform-configured), or None if unconfigured.
     """
-    if user_id and db:
-        return get_llm_provider_for_user(user_id, db)
-    return None
+    return get_llm_provider_for_user(user_id, db)

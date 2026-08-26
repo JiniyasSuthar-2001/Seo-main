@@ -379,19 +379,41 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
     else:
         health_score = 100
 
+    category_table = []
+    for cat_name, stats in categories.items():
+        is_eval = stats.get("evaluated", False)
+        issues_count = stats.get("critical", 0) + stats.get("error", 0) + stats.get("warning", 0) + stats.get("notice", 0)
+        checks_count = evaluated_pages_for_score if is_eval else 0
+        passed_count = max(0, checks_count - issues_count) if is_eval else 0
+        category_table.append({
+            "category": cat_name,
+            "evaluated": is_eval,
+            "checks_performed": checks_count,
+            "passed": passed_count,
+            "issues_count": issues_count,
+            "status": stats.get("status", "Not Evaluated"),
+            "reason": stats.get("reason", "")
+        })
+
     return {
         "health_score": health_score,
         "total_audited_pages": total_pages,
         "successful_html_pages_count": html_count,
         "blocked_pages_count": len(blocked_pages),
+        "error_pages_count": len(error_pages),
+        "evaluated_rules_count": EVALUATED_RULE_COUNT,
+        "total_evaluated_checks": total_evaluated_checks,
+        "checks_explanation": f"{evaluated_pages_for_score} analyzed pages × {EVALUATED_RULE_COUNT} evaluated rules",
         "summary": {
             "critical_errors": crit_cnt,
             "errors": err_cnt,
             "warnings": warn_cnt,
             "notices": not_cnt,
-            "passed_checks": max(0, total_evaluated_checks - (crit_cnt + err_cnt + warn_cnt + not_cnt))
+            "passed_checks": max(0, total_evaluated_checks - (crit_cnt + err_cnt + warn_cnt + not_cnt)),
+            "total_checks": total_evaluated_checks
         },
         "category_breakdown": categories,
+        "category_checks_table": category_table,
         "issues": issues,
         "provenance": {
             "source": "Deterministic 15-Category Site Audit Engine",

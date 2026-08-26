@@ -21,6 +21,8 @@ from fastapi.responses import JSONResponse
 import traceback
 
 app = FastAPI(title="SEO Intelligence API")
+# Reload router registry
+
 
 # Configure CORS dynamically from settings with regex fallback for private LAN development origins
 app.add_middleware(

@@ -2,61 +2,36 @@ import { API_BASE_URL } from '../config/api.js';
 
 class ApiClient {
     constructor() {
-        this.status = 'ONLINE'; // 'ONLINE', 'OFFLINE', 'DEGRADED'
-        this.lastChecked = null;
-        this.listeners = new Set();
+        this.status = 'ONLINE';
+        this.statusListeners = new Set();
     }
 
-    onStatusChange(callback) {
-        this.listeners.add(callback);
-        return () => this.listeners.delete(callback);
+    onStatusChange(listener) {
+        this.statusListeners.add(listener);
+        return () => this.statusListeners.delete(listener);
     }
 
-    setStatus(newStatus, detail = {}) {
+    setStatus(newStatus, detail = null) {
         if (this.status !== newStatus) {
             this.status = newStatus;
-            this.listeners.forEach(fn => {
-                try { fn(newStatus, detail); } catch (e) {}
-            });
-        }
-    }
-
-    async checkHealth() {
-        const url = `${API_BASE_URL}/api/health`;
-        try {
-            const response = await fetch(url, { method: 'GET', cache: 'no-store' });
-            this.lastChecked = new Date();
-            
-            if (response.ok) {
-                this.setStatus('ONLINE', { status: response.status });
-                return { online: true, status: response.status };
-            } else {
-                this.setStatus('DEGRADED', { status: response.status });
-                return { online: true, status: response.status, degraded: true };
-            }
-        } catch (error) {
-            this.lastChecked = new Date();
-            this.setStatus('OFFLINE', { error: error.message });
-            return { online: false, error: error.message };
+            this.statusListeners.forEach(listener => listener(newStatus, detail));
         }
     }
 
     async request(endpoint, options = {}) {
-        if (endpoint.includes('/projects/undefined') || endpoint.includes('/projects/null') || endpoint.includes('/projects/{project_id}')) {
-            const err = new Error("Invalid API Request: Project ID is unresolvable.");
-            err.status = 400;
-            err.isNetworkError = false;
-            throw err;
-        }
         const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
-
+        
         const defaultHeaders = {
             'Content-Type': 'application/json',
+            'Accept': 'application/json',
         };
 
-        // Use canonical application session token key
-        const token = localStorage.getItem('seo_auth_token') || localStorage.getItem('jwt_token');
-
+        const token = localStorage.getItem('seo_auth_token') || 
+                      localStorage.getItem('auth_token') || 
+                      localStorage.getItem('jwt_token') || 
+                      sessionStorage.getItem('seo_auth_token') || 
+                      sessionStorage.getItem('auth_token');
+                      
         if (token && token.trim()) {
             defaultHeaders['Authorization'] = `Bearer ${token.trim()}`;
         }
@@ -110,11 +85,6 @@ class ApiClient {
         }
     }
 
-    // AJAX helper alias
-    ajax(endpoint, options = {}) {
-        return this.request(endpoint, options);
-    }
-
     get(endpoint, options = {}) {
         return this.request(endpoint, { ...options, method: 'GET' });
     }
@@ -147,7 +117,7 @@ class ApiClient {
         return this.request(endpoint, { ...options, method: 'DELETE' });
     }
 
-    async downloadFile(endpoint, fallbackFilename = 'export.file', triggerButton = null) {
+    async downloadFile(endpoint, fallbackFilename = 'export.file', triggerButton = null, options = {}) {
         if (!endpoint || endpoint.includes('/projects/undefined') || endpoint.includes('/projects/null') || endpoint.includes('/projects/{project_id}')) {
             const err = new Error("Invalid Download Request: Project ID is unresolvable.");
             err.status = 400;
@@ -156,11 +126,21 @@ class ApiClient {
         }
 
         const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
-        const token = localStorage.getItem('seo_auth_token') || localStorage.getItem('jwt_token');
+        const token = localStorage.getItem('seo_auth_token') || 
+                      localStorage.getItem('auth_token') || 
+                      localStorage.getItem('jwt_token') || 
+                      sessionStorage.getItem('seo_auth_token') || 
+                      sessionStorage.getItem('auth_token');
 
-        const headers = {};
+        const headers = { ...options.headers };
         if (token && token.trim()) {
             headers['Authorization'] = `Bearer ${token.trim()}`;
+        }
+
+        const method = options.method || 'GET';
+        const body = options.body;
+        if (body && !headers['Content-Type']) {
+            headers['Content-Type'] = 'application/json';
         }
 
         let originalText = '';
@@ -171,7 +151,7 @@ class ApiClient {
         }
 
         try {
-            const response = await fetch(url, { method: 'GET', headers });
+            const response = await fetch(url, { method, headers, body });
 
             if (response.status === 401) {
                 const err = new Error("Your session has expired or is invalid. Please sign in again to download this file.");
@@ -226,7 +206,7 @@ class ApiClient {
 
             return { success: true, filename };
         } catch (error) {
-            console.error(`[Download Error] GET ${url}`, error);
+            console.error(`[Download Error] ${method} ${url}`, error);
             throw error;
         } finally {
             if (triggerButton) {

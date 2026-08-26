@@ -81,7 +81,7 @@ export class Reports {
                     </div>
 
                     <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
-                        <button class="btn btn-primary" id="btn-generate-pdf">Download Report (PDF)</button>
+                        <button class="btn btn-primary" id="btn-generate-pdf">Download Custom Executive PDF</button>
                         <button class="btn btn-secondary" id="btn-generate-zip">Download All My Data (ZIP)</button>
                     </div>
                 </div>
@@ -114,7 +114,24 @@ export class Reports {
             const btnQuickTech = container.querySelector('#btn-quick-tech-pdf');
             const btnQuickPages = container.querySelector('#btn-quick-pages-csv');
 
-            if (btnPdf) btnPdf.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/report.pdf`, `${safeProjName}-SEO-Audit-${todayStr}.pdf`, e.currentTarget);
+            if (btnPdf) {
+                btnPdf.onclick = (e) => {
+                    const title = container.querySelector('#report-title-input')?.value || 'Website Health & Search Report';
+                    const brand_name = container.querySelector('#report-brand-input')?.value || 'SEO Intelligence Platform';
+                    const sections = Array.from(container.querySelectorAll('.sec-chk:checked')).map(c => c.value);
+
+                    apiClient.downloadFile(
+                        `/api/projects/${projectId}/reports/builder`,
+                        `${safeProjName}-SEO-Custom-Report-${todayStr}.pdf`,
+                        e.currentTarget,
+                        {
+                            method: 'POST',
+                            body: JSON.stringify({ title, brand_name, sections })
+                        }
+                    );
+                };
+            }
+
             if (btnZip) btnZip.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/reports/complete-export.zip`, `${safeProjName}-SEO-Data-${todayStr}.zip`, e.currentTarget);
             if (btnQuickAudit) btnQuickAudit.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/report.pdf`, `${safeProjName}-SEO-Audit-${todayStr}.pdf`, e.currentTarget);
             if (btnQuickTech) btnQuickTech.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/technical/report.pdf`, `${safeProjName}-Health-Check-${todayStr}.pdf`, e.currentTarget);

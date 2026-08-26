@@ -38,7 +38,11 @@ def _get_project_or_404(project_id: str, db: Session, user_id: str) -> Project:
         raise HTTPException(status_code=400, detail="This project has no website URL configured.")
     return project
 
+from fastapi import Query
+
 @router.get("/providers")
+@router.get("/providers-matrix")
+@router.get("/providers-matrix/")
 def get_ai_providers_matrix(
     user_id: Optional[str] = Depends(get_current_user_id), 
     db: Session = Depends(get_db)
@@ -49,6 +53,20 @@ def get_ai_providers_matrix(
     Guarantees NO API keys or raw credentials are exposed.
     """
     return AIService.get_provider_status_matrix(user_id=user_id, db=db)
+
+@router.post("/set-active-provider")
+@router.post("/set-active-provider/")
+def set_active_provider(
+    provider: str = Query("groq"),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    from app.models.user import User
+    user = db.query(User).filter(User.id == user_id).first()
+    if user and hasattr(user, "preferred_ai_provider"):
+        user.preferred_ai_provider = provider
+        db.commit()
+    return {"status": "success", "message": f"Active AI provider preference set to {provider}.", "provider": provider}
 
 @router.get("/status")
 def get_ai_status(user_id: Optional[str] = Depends(get_current_user_id), db: Session = Depends(get_db)):

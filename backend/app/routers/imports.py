@@ -75,7 +75,10 @@ async def upload_csv_file(
     importer.finish_import()
     return importer.get_structured_import_report()
 
+@router.get("")
 @router.get("/")
+@router.get("/history")
+@router.get("/history/")
 def get_imports(
     project_id: str,
     user_id: str = Depends(get_current_user_id),
@@ -84,7 +87,15 @@ def get_imports(
     get_user_membership(db, user_id, project_id)
     from app.models.dataset import Dataset
     datasets = db.query(Dataset).filter(Dataset.project_id == project_id).order_by(Dataset.imported_at.desc()).all()
-    return datasets
+    return [{
+        "id": d.id,
+        "filename": d.name or "imported_data.csv",
+        "data_type": d.type or "dataset",
+        "rows_imported": d.record_count or 0,
+        "timestamp": d.imported_at.isoformat() if d.imported_at else None,
+        "status": d.status or "Completed",
+        "provenance": d.provenance or "User Import"
+    } for d in datasets]
 
 from fastapi import Response
 from app.services.reports.guideline_service import GuidelineReportService

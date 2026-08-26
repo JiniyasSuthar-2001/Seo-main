@@ -1,9 +1,11 @@
 import { authStore } from './authStore.js';
+import { initTooltipListeners } from '../components/Tooltip.js';
 
 export class Router {
   constructor(viewContainer) {
     this.routes = {};
     this.viewContainer = viewContainer;
+    this.sessionAlreadyInitialized = false;
     
     window.addEventListener('popstate', () => this.handleRoute());
     window.addEventListener('project:selected', () => this.handleRoute());
@@ -21,12 +23,11 @@ export class Router {
   async handleRoute() {
     let path = window.location.pathname;
 
-    // 1. Check for token callback parameter in URL
+    // 1. Check for token in URL query parameters (Google Auth callback)
     const urlParams = new URLSearchParams(window.location.search);
     const tokenParam = urlParams.get('token');
 
     if (tokenParam && tokenParam.trim()) {
-      console.log('[AUTH] OAuth callback token detected in URL.');
       console.log('[AUTH] Application session token stored.');
       
       const cleanToken = tokenParam.trim();
@@ -42,12 +43,17 @@ export class Router {
     }
 
     // 2. Validate persistent application authentication session
-    console.log('[AUTH] Establishing application session...');
+    const isFirstTime = !this.sessionAlreadyInitialized;
+    if (isFirstTime) {
+      console.log('[AUTH] Establishing application session...');
+    }
+    
     const hasSession = await authStore.checkSession();
 
-    if (hasSession && authStore.user) {
+    if (hasSession && authStore.user && isFirstTime) {
       console.log(`[AUTH] Current user loaded: ${authStore.user.email || authStore.user.id}`);
       console.log('[AUTH] Authentication initialization complete.');
+      this.sessionAlreadyInitialized = true;
     }
 
     if (path === '/login' && hasSession) {
@@ -89,6 +95,7 @@ export class Router {
       if (view.mounted) {
         view.mounted();
       }
+      initTooltipListeners(this.viewContainer);
     }
   }
 

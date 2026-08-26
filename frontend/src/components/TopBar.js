@@ -268,11 +268,21 @@ export class TopBar {
 
       pillEl.addEventListener('click', async () => {
         if (textEl) textEl.innerText = 'Checking...';
-        await apiClient.checkHealth();
+        try {
+          if (typeof apiClient.checkHealth === 'function') {
+            await apiClient.checkHealth();
+          }
+        } catch (e) {}
         updatePill(apiClient.status);
       });
 
-      setInterval(() => apiClient.checkHealth(), 30000);
+      setInterval(async () => {
+        try {
+          if (typeof apiClient.checkHealth === 'function') {
+            await apiClient.checkHealth();
+          }
+        } catch (e) {}
+      }, 30000);
     }, 100);
   }
 

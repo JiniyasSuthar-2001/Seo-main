@@ -11,6 +11,22 @@ class ApiClient {
         return () => this.statusListeners.delete(listener);
     }
 
+    async checkHealth() {
+        try {
+            const data = await this.get('/api/health');
+            if (data && (data.status === 'ok' || data.status === 'healthy' || data.online === true)) {
+                this.setStatus('ONLINE', data);
+                return { status: 'online', ...data };
+            } else {
+                this.setStatus('DEGRADED', data);
+                return { status: 'degraded', ...data };
+            }
+        } catch (err) {
+            this.setStatus('OFFLINE', { error: err.message });
+            return { status: 'offline', error: err.message };
+        }
+    }
+
     setStatus(newStatus, detail = null) {
         if (this.status !== newStatus) {
             this.status = newStatus;

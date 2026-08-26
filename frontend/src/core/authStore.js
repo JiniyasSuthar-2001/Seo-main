@@ -37,7 +37,11 @@ class AuthStore {
     }
   }
 
-  async checkSession() {
+  async checkSession(force = false) {
+    if (!force && this.isAuthenticated && this.user && this.token) {
+      return true;
+    }
+
     this.isCheckingSession = true;
     const token = localStorage.getItem(this.TOKEN_KEY);
     

@@ -88,6 +88,39 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
         crawl_session.issues_found = len(results.get("issues", []))
         db.commit()
         print(f"[CRAWL COMPLETED] Session {session_id} status: '{crawl_status}'. Saved {len(results.get('pages', []))} pages to {crawl_dir}", flush=True)
+
+        # Trigger automatic re-evaluation of opportunities for project
+        try:
+            if project:
+                from app.services.audit_rules import evaluate_site_audit_rules
+                from app.services.opportunity_engine import generate_central_opportunities
+                from app.models.action_opportunity import ActionOpportunity
+                import uuid
+
+                pages = results.get("pages", [])
+                if pages:
+                    audit_eval = evaluate_site_audit_rules(pages)
+                    generated = generate_central_opportunities(audit_eval, [], pages)
+                    db.query(ActionOpportunity).filter(ActionOpportunity.project_id == project.id).delete()
+                    for item in generated:
+                        new_opp = ActionOpportunity(
+                            id=str(uuid.uuid4()),
+                            project_id=project.id,
+                            title=item["title"],
+                            category=item["category"],
+                            priority_score=item["priority_score"],
+                            priority_level=item["priority_level"],
+                            impact=item["impact"],
+                            evidence=item["evidence"],
+                            affected_urls_json=json.dumps(item.get("affected_urls", [])),
+                            affected_count=item.get("affected_count", 1),
+                            recommendation=item["recommendation"],
+                            status="Open"
+                        )
+                        db.add(new_opp)
+                    db.commit()
+        except Exception as opp_err:
+            print(f"[CRAWL OPPORTUNITIES SYNC ERROR] {opp_err}", flush=True)
         
     except Exception as e:
         print(f"[CRAWL ERROR] Session {session_id} FAILED: {e}", flush=True)

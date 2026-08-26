@@ -55,8 +55,13 @@ def record_report_generation(db: Session, project: Project, report_type: str, fi
         print(f"[REPORT HISTORY ERROR] Failed to record report: {e}", flush=True)
 
 def get_project_crawl_snapshot(project: Project) -> dict:
-    safe_domain = get_sanitized_domain(project.domain)
+    domain = project.domain or project.url
+    if not domain:
+        return {"metadata": {}, "pages": [], "issues": [], "internal_links": [], "external_links": []}
+    safe_domain = get_sanitized_domain(domain)
     latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+    if not os.path.exists(latest_path):
+        latest_path = os.path.join(settings.CRAWL_DATA_DIR, project.id, "latest.json")
     if not os.path.exists(latest_path):
         return {"metadata": {}, "pages": [], "issues": [], "internal_links": [], "external_links": []}
 

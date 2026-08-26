@@ -16,6 +16,11 @@ from app.config.permissions import get_user_membership
 
 router = APIRouter()
 
+import os
+import json
+from app.config.settings import settings
+from app.config.utils import get_sanitized_domain, normalize_stored_path
+
 @router.get("")
 @router.get("/")
 def get_project_opportunities(
@@ -30,20 +35,56 @@ def get_project_opportunities(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
 
-    # 1. Fetch DB stored opportunities
-    db_opps = db.query(ActionOpportunity).filter(ActionOpportunity.project_id == project.id).all()
+    # 1. Load latest crawl snapshot from disk
+    domain = project.domain or project.url
+    safe_domain = get_sanitized_domain(domain)
+    
+    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+    if not os.path.exists(latest_path):
+        latest_path = os.path.join(settings.CRAWL_DATA_DIR, project.id, "latest.json")
 
-    # 2. If DB opportunities empty, generate from crawl data & audit engine
-    if not db_opps and project.domain:
+    has_crawl = False
+    pages = []
+    issues = []
+    latest_meta = {}
+
+    if os.path.exists(latest_path):
+        try:
+            with open(latest_path, "r") as f:
+                latest_meta = json.load(f)
+            crawl_dir = normalize_stored_path(latest_meta.get("path"))
+            pages_file = os.path.join(crawl_dir, "pages.json")
+            issues_file = os.path.join(crawl_dir, "issues.json")
+            
+            if os.path.exists(pages_file):
+                with open(pages_file, "r") as pf:
+                    pages = json.load(pf)
+                has_crawl = True
+            if os.path.exists(issues_file):
+                with open(issues_file, "r") as isf:
+                    issues = json.load(isf)
+        except Exception as e:
+            from app.config.logger import get_logger
+            get_logger("opportunities").warning(f"Error reading latest crawl snapshot for project {project_id}: {e}")
+
+    # Fallback to DB pages if disk pages empty
+    if not pages:
         pages_records = db.query(Page).filter(Page.project_id == project.id).all()
-        pages = [p.__dict__ for p in pages_records]
-        
+        if pages_records:
+            pages = [p.__dict__ for p in pages_records]
+            has_crawl = True
+
+    # 2. Evaluate audit rules and generate central opportunities from crawl data
+    if has_crawl and pages:
         kw_records = db.query(Keyword).filter(Keyword.project_id == project.id).all()
         keywords = [k.__dict__ for k in kw_records]
 
         audit_eval = evaluate_site_audit_rules(pages)
         generated = generate_central_opportunities(audit_eval, keywords, pages)
 
+        # Clear existing auto-generated opportunities for project to sync with latest crawl
+        db.query(ActionOpportunity).filter(ActionOpportunity.project_id == project.id).delete()
+        
         for item in generated:
             new_opp = ActionOpportunity(
                 id=str(uuid.uuid4()),
@@ -60,27 +101,28 @@ def get_project_opportunities(
                 status="Open"
             )
             db.add(new_opp)
-            db_opps.append(new_opp)
-        if generated:
-            db.commit()
+        db.commit()
 
-    # Filter
+    # 3. Fetch DB opportunities
+    db_opps = db.query(ActionOpportunity).filter(ActionOpportunity.project_id == project.id).all()
+
+    # Filter by category and status
     filtered = db_opps
     if category and category.lower() != "all":
         filtered = [o for o in filtered if o.category.lower() == category.lower()]
     if status and status.lower() != "all":
         filtered = [o for o in filtered if o.status.lower() == status.lower()]
 
+    last_crawled_at = latest_meta.get("completed_at") or latest_meta.get("timestamp") or (project.updated_at.isoformat() if project.updated_at else None)
+
     result = []
     for o in filtered:
-        import json
         urls = []
         if o.affected_urls_json:
             try:
                 urls = json.loads(o.affected_urls_json)
-            except Exception as e:
-                from app.config.logger import get_logger
-                get_logger("opportunities").warning(f"Error parsing affected URLs for opportunity {o.id}: {e}")
+            except Exception:
+                urls = []
 
         result.append({
             "id": o.id,
@@ -97,13 +139,25 @@ def get_project_opportunities(
             "status": o.status,
             "created_at": o.created_at.isoformat() if o.created_at else None,
             "provenance": {
-                "source": "Central SEO Action Center",
-                "confidence": 100.0
+                "source": "Crawled Data",
+                "confidence": 100.0,
+                "last_detected": last_crawled_at
             }
         })
 
+    crawl_status = latest_meta.get("status", "completed") if has_crawl else "no_crawl"
+    pages_failed = latest_meta.get("failed_pages", 0) or latest_meta.get("pages_failed", 0)
+
     return {
         "project_id": project.id,
+        "has_crawl": has_crawl,
+        "status": crawl_status,
+        "crawl_context": {
+            "timestamp": last_crawled_at,
+            "pages_analyzed": len(pages),
+            "pages_failed": pages_failed,
+            "total_issues": len(issues)
+        },
         "total_opportunities": len(result),
         "opportunities": result
     }

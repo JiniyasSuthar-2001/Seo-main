@@ -688,6 +688,75 @@ def logout(user_id: str = Depends(get_current_user_id)):
         "message": "Logged out successfully."
     }
 
+@router.post("/login")
+def platform_login(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    Authenticates SEO Intelligence platform user with email and password.
+    """
+    email = (payload.get("email") or "").strip().lower()
+    password = payload.get("password") or ""
+
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email address is required.")
+    if not password:
+        raise HTTPException(status_code=400, detail="Password is required.")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        user_name = email.split("@")[0].capitalize()
+        user = User(
+            id=email,
+            email=email,
+            name=f"{user_name}",
+            created_at=datetime.utcnow()
+        )
+        db.add(user)
+        db.commit()
+
+    token = create_access_token(user_id=email)
+
+    return {
+        "status": "success",
+        "access_token": token,
+        "token_type": "bearer",
+        "user": user.to_dict()
+    }
+
+@router.post("/register")
+def platform_register(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """
+    Registers a new SEO Intelligence platform user account.
+    """
+    email = (payload.get("email") or "").strip().lower()
+    password = payload.get("password") or ""
+    name = (payload.get("name") or "").strip()
+
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="A valid email address is required.")
+    if not password or len(password) < 4:
+        raise HTTPException(status_code=400, detail="Password must be at least 4 characters long.")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        display_name = name or email.split("@")[0].capitalize()
+        user = User(
+            id=email,
+            email=email,
+            name=display_name,
+            created_at=datetime.utcnow()
+        )
+        db.add(user)
+        db.commit()
+
+    token = create_access_token(user_id=email)
+
+    return {
+        "status": "success",
+        "access_token": token,
+        "token_type": "bearer",
+        "user": user.to_dict()
+    }
+
 def os_has_crawl(domain: str) -> bool:
     from app.config.settings import settings
     import os

@@ -105,19 +105,7 @@ export class TopBar {
     const userInitial = isGuest ? 'G' : (authStore.user && authStore.user.name ? authStore.user.name.charAt(0).toUpperCase() : (userEmail.charAt(0).toUpperCase() || 'J'));
 
     this.element.innerHTML = `
-      ${isGuest ? `
-        <div class="guest-mode-banner" style="background: linear-gradient(90deg, #2563eb, #7c3aed); color: #ffffff; padding: 5px 24px; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <span style="background: rgba(255,255,255,0.25); padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 800; letter-spacing: 0.04em;">GUEST MODE</span>
-            <span>Your data is temporary. Sign in with Google to keep your workspace.</span>
-          </div>
-          <button id="guest-signin-google-btn" style="background: #ffffff; color: #0f172a; border: none; padding: 4px 12px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all 0.15s ease;" onclick="authStore.logout()">
-            Sign in with Google
-          </button>
-        </div>
-      ` : ''}
-
-      <div style="height: ${isGuest ? 'calc(100% - 29px)' : '100%'}; padding: 0 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px;">
+      <div style="height: 100%; padding: 0 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px;">
         
         <!-- LEFT: WORKSPACE / CATEGORIZED PROJECT SELECTOR DROPDOWN & (+) ADD BUTTON & GLOBAL SEARCH -->
         <div style="display: flex; align-items: center; gap: 12px; flex: 1; max-width: 680px;">

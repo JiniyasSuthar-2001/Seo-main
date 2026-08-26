@@ -5,6 +5,7 @@ export class Login {
   constructor() {
     this.element = document.createElement('div');
     this.element.className = 'login-view-container';
+    this.isRegisterMode = false;
   }
 
   render() {
@@ -13,7 +14,7 @@ export class Login {
         
         <!-- TOP CONTROLS: THEME SWITCHER -->
         <div class="login-topbar">
-          <button id="login-theme-btn" class="theme-toggle-btn">
+          <button id="login-theme-btn" class="theme-toggle-btn" style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 13px; color: var(--text-primary); cursor: pointer; display: flex; align-items: center; gap: 6px;">
             <span>${themeStore.isDark() ? '🌙' : '☀'}</span>
             <span>${themeStore.isDark() ? 'Dark' : 'Light'}</span>
           </button>
@@ -22,7 +23,7 @@ export class Login {
         <!-- TWO-COLUMN CONTAINER -->
         <div class="login-grid">
           
-          <!-- LEFT COLUMN: PRODUCT BRANDING & ANALYTICS VISUALS -->
+          <!-- LEFT COLUMN: PRODUCT BRANDING -->
           <div class="login-branding-col">
             <div class="brand-badge">
               <div class="brand-icon">
@@ -36,99 +37,82 @@ export class Login {
             <h1 class="headline">Understand.<br/><span class="headline-gradient">Audit. Improve.</span></h1>
             
             <p class="subtitle">
-              Monitor your websites, technical SEO health, search performance, and Google properties from one intelligent workspace.
+              Monitor your websites, technical SEO health, search performance, and competitive intelligence from one unified platform.
             </p>
 
-            <!-- PLATFORM CAPABILITIES FEATURE HIGHLIGHTS -->
+            <!-- PLATFORM CAPABILITIES -->
             <div class="analytics-preview-card">
               <div class="preview-header">
-                <div class="preview-title">Platform Capabilities Overview</div>
+                <div class="preview-title">Enterprise SEO Platform</div>
                 <span class="preview-tag">SECURE WORKSPACE</span>
               </div>
               
               <div class="preview-metrics-grid">
                 <div class="preview-metric">
-                  <span class="pm-label">Search Console</span>
-                  <div class="pm-value" style="font-size: 14px; font-weight: 700; color: var(--text-primary);">Search Performance</div>
-                  <span class="pm-subtext">Official Google REST API</span>
+                  <span class="pm-label">Technical Audit</span>
+                  <div class="pm-value" style="font-size: 14px; font-weight: 700; color: var(--text-primary);">Deep Web Crawler</div>
+                  <span class="pm-subtext">Automated SEO Audits</span>
                 </div>
                 <div class="preview-metric">
-                  <span class="pm-label">Business Profile</span>
-                  <div class="pm-value" style="font-size: 14px; font-weight: 700; color: var(--text-primary);">Locations & Accounts</div>
-                  <span class="pm-subtext">Google Workspace Integration</span>
-                </div>
-              </div>
-
-              <div class="preview-status-bars">
-                <div class="ps-bar-item">
-                  <div class="ps-label"><span>Technical SEO Audits</span><span>On-Demand Crawling</span></div>
-                  <div class="ps-track"><div class="ps-fill" style="width: 100%; background: var(--primary);"></div></div>
-                </div>
-                <div class="ps-bar-item">
-                  <div class="ps-label"><span>Multi-Project Security</span><span>Lead & Team Access</span></div>
-                  <div class="ps-track"><div class="ps-fill" style="width: 100%; background: var(--accent-purple);"></div></div>
+                  <span class="pm-label">Keyword & Rank Tracking</span>
+                  <div class="pm-value" style="font-size: 14px; font-weight: 700; color: var(--text-primary);">SERP Intelligence</div>
+                  <span class="pm-subtext">Competitive Benchmarks</span>
                 </div>
               </div>
             </div>
 
             <div class="branding-footer">
-              Enterprise SEO Analytics Suite • Google Workspace Connected
+              Enterprise SEO Analytics Suite • Secure Role-Based Access
             </div>
           </div>
 
-          <!-- RIGHT COLUMN: LOGIN CARD -->
+          <!-- RIGHT COLUMN: CLEAN SAAS LOGIN CARD -->
           <div class="login-card-col">
             <div class="login-card">
               
               <div class="card-title-group">
-                <h2 class="card-headline">Welcome to SEO Intelligence</h2>
-                <p class="card-subheadline">Sign in with your Google account to continue.</p>
+                <h2 class="card-headline" id="login-title">Sign in to your SEO Platform</h2>
+                <p class="card-subheadline" id="login-subtitle">Enter your email and password to access your SEO workspace.</p>
               </div>
 
               <div id="login-error-box" style="display: none;" class="login-error-banner"></div>
+              <div id="login-success-box" style="display: none;" class="login-success-banner"></div>
 
-              <!-- CONTINUE WITH GOOGLE PRIMARY CTA BUTTON -->
-              <button id="btn-google-login" class="btn-google-oauth">
-                <svg class="google-logo" width="20" height="20" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                  <path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.62z"/>
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-                </svg>
-                <span id="google-btn-text">Continue with Google</span>
-              </button>
-
-              <div class="login-divider">
-                <span>OR</span>
-              </div>
-
-              <!-- CONTINUE AS GUEST SECONDARY CTA BUTTON -->
-              <button id="btn-guest-login" class="btn-guest-oauth">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="12" cy="7" r="4"></circle>
-                </svg>
-                <span id="guest-btn-text">Continue as Guest</span>
-              </button>
-              <div class="guest-caption">
-                Guest access is temporary and intended for testing.
-              </div>
-
-              <div class="privacy-notice">
-                By continuing, you agree to the Terms of Service and Privacy Policy.
-              </div>
-
-              <!-- GOOGLE DISCOVERY SCOPES SUMMARY -->
-              <div class="scopes-info">
-                <div class="scopes-title">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
-                  <span>Official Google OAuth 2.0 Identity & API Scopes</span>
+              <!-- FORM FIELDS -->
+              <form id="platform-auth-form" onsubmit="return false;" style="display: flex; flex-direction: column; gap: 16px;">
+                
+                <div id="name-field-group" style="display: none;">
+                  <label class="form-label" style="display: block; font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">Full Name</label>
+                  <input type="text" id="login-name" class="form-input" placeholder="e.g. Alex Morgan" style="width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; background: var(--bg-input, var(--bg-card)); color: var(--text-primary); outline: none;" />
                 </div>
-                <div class="scopes-list">
-                  <div>• Google Search Console (Search Properties & Performance)</div>
-                  <div>• Google Analytics (GA4 Streams & Reports)</div>
-                  <div>• Google Business Profile (Accounts & Locations)</div>
+
+                <div>
+                  <label class="form-label" style="display: block; font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">Email Address</label>
+                  <input type="email" id="login-email" class="form-input" placeholder="name@company.com" required style="width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; background: var(--bg-input, var(--bg-card)); color: var(--text-primary); outline: none;" />
                 </div>
+
+                <div>
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <label class="form-label" style="font-size: 13px; font-weight: 600; color: var(--text-primary);">Password</label>
+                    <a href="#" id="forgot-password-link" style="font-size: 12px; color: var(--primary); text-decoration: none; font-weight: 600;">Forgot password?</a>
+                  </div>
+                  <input type="password" id="login-password" class="form-input" placeholder="••••••••" required style="width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; background: var(--bg-input, var(--bg-card)); color: var(--text-primary); outline: none;" />
+                </div>
+
+                <!-- PRIMARY SIGN IN BUTTON -->
+                <button type="submit" id="btn-submit-auth" class="btn-primary-auth" style="width: 100%; padding: 12px; border: none; border-radius: 8px; background: var(--primary); color: #ffffff; font-size: 14px; font-weight: 700; cursor: pointer; transition: all 0.15s ease; margin-top: 6px;">
+                  <span id="btn-auth-text">Sign In</span>
+                </button>
+              </form>
+
+              <!-- TOGGLE BETWEEN SIGN IN AND REGISTER -->
+              <div style="margin-top: 20px; text-align: center; font-size: 13.5px; color: var(--text-secondary);">
+                <span id="toggle-auth-prompt">Don't have an account?</span>
+                <a href="#" id="toggle-auth-mode-btn" style="color: var(--primary); font-weight: 700; text-decoration: none; margin-left: 4px;">Create Account</a>
+              </div>
+
+              <div class="privacy-notice" style="margin-top: 24px; font-size: 12px; color: var(--text-tertiary); text-align: center; border-top: 1px solid var(--border); padding-top: 16px;">
+                Protected by Enterprise Role-Based Access Control • Privacy & Security Guaranteed
               </div>
 
             </div>
@@ -145,7 +129,7 @@ export class Login {
           display: flex;
           align-items: center;
           justify-content: center;
-          background: var(--bg-workspace);
+          background: var(--bg-workspace, #f8fafc);
           position: fixed;
           top: 0; left: 0;
           z-index: 999;
@@ -154,7 +138,7 @@ export class Login {
         }
         .login-wrapper {
           width: 100%;
-          max-width: 1060px;
+          max-width: 1020px;
           margin: 0 auto;
           display: flex;
           flex-direction: column;
@@ -185,12 +169,11 @@ export class Login {
           width: 36px;
           height: 36px;
           border-radius: 10px;
-          background: linear-gradient(135deg, var(--primary), var(--accent-purple));
+          background: linear-gradient(135deg, var(--primary, #2563eb), #7c3aed);
           display: flex;
           align-items: center;
           justify-content: center;
           color: #ffffff;
-          box-shadow: 0 4px 12px var(--primary-glow);
         }
         .brand-name {
           font-size: 18px;
@@ -202,96 +185,70 @@ export class Login {
           font-size: 38px;
           font-weight: 800;
           line-height: 1.15;
-          color: var(--text-primary);
           letter-spacing: -0.03em;
+          color: var(--text-primary);
+          margin: 0;
         }
         .headline-gradient {
-          background: linear-gradient(135deg, var(--primary), var(--accent-purple));
+          background: linear-gradient(135deg, var(--primary, #2563eb), #7c3aed);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
         }
         .subtitle {
-          font-size: 14.5px;
+          font-size: 15px;
           color: var(--text-secondary);
           line-height: 1.6;
-          max-width: 480px;
+          margin: 0;
         }
         .analytics-preview-card {
-          background: var(--bg-card);
-          border: 1px solid var(--border);
+          background: var(--bg-card, #ffffff);
+          border: 1px solid var(--border, #e2e8f0);
           border-radius: 14px;
           padding: 20px;
-          box-shadow: var(--shadow-sm);
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
         }
         .preview-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 16px;
+          margin-bottom: 14px;
         }
         .preview-title {
-          font-size: 12.5px;
+          font-size: 13px;
           font-weight: 700;
           color: var(--text-primary);
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
         }
         .preview-tag {
           font-size: 10px;
-          font-weight: 700;
-          background: var(--primary-light);
-          color: var(--primary);
-          padding: 2px 8px;
-          border-radius: 10px;
+          font-weight: 800;
+          padding: 3px 8px;
+          border-radius: 12px;
+          background: rgba(37, 99, 235, 0.1);
+          color: var(--primary, #2563eb);
+          letter-spacing: 0.04em;
         }
         .preview-metrics-grid {
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 12px;
-          margin-bottom: 16px;
         }
         .preview-metric {
-          background: var(--bg-subtle);
+          background: var(--bg-subtle, #f1f5f9);
           padding: 12px;
           border-radius: 8px;
-          border: 1px solid var(--border-subtle);
         }
         .pm-label {
           font-size: 11px;
+          font-weight: 600;
           color: var(--text-secondary);
           display: block;
-        }
-        .pm-value {
-          font-size: 18px;
-          font-weight: 800;
-          color: var(--text-primary);
-          margin: 4px 0 2px;
+          margin-bottom: 2px;
         }
         .pm-subtext {
-          font-size: 10.5px;
+          font-size: 11px;
           color: var(--text-tertiary);
-        }
-        .preview-status-bars {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-        }
-        .ps-label {
-          display: flex;
-          justify-content: space-between;
-          font-size: 11.5px;
-          color: var(--text-secondary);
-          margin-bottom: 4px;
-        }
-        .ps-track {
-          height: 6px;
-          background: var(--bg-subtle);
-          border-radius: 3px;
-          overflow: hidden;
-        }
-        .ps-fill {
-          height: 100%;
-          border-radius: 3px;
+          display: block;
+          margin-top: 2px;
         }
         .branding-footer {
           font-size: 12px;
@@ -305,131 +262,52 @@ export class Login {
         .login-card {
           width: 100%;
           max-width: 420px;
-          background: var(--bg-card);
-          border: 1px solid var(--border);
+          background: var(--bg-card, #ffffff);
+          border: 1px solid var(--border, #e2e8f0);
           border-radius: 16px;
-          padding: 36px 32px;
-          box-shadow: var(--shadow-md);
-          display: flex;
-          flex-direction: column;
-          gap: 20px;
+          padding: 32px;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
         }
         .card-title-group {
-          text-align: center;
+          margin-bottom: 24px;
         }
         .card-headline {
           font-size: 22px;
-          font-weight: 800;
+          font-weight: 700;
           color: var(--text-primary);
+          margin: 0 0 6px 0;
           letter-spacing: -0.02em;
-          margin-bottom: 6px;
         }
         .card-subheadline {
           font-size: 13.5px;
           color: var(--text-secondary);
-        }
-        .btn-google-oauth {
-          width: 100%;
-          padding: 13px 20px;
-          border-radius: 10px;
-          border: 1px solid var(--border-hover);
-          background: var(--bg-card);
-          color: var(--text-primary);
-          font-size: 14.5px;
-          font-weight: 700;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 12px;
-          cursor: pointer;
-          transition: all 0.2s ease;
-          box-shadow: var(--shadow-sm);
-        }
-        .btn-google-oauth:hover {
-          background: var(--bg-subtle);
-          border-color: var(--primary);
-          box-shadow: 0 4px 14px var(--primary-glow);
-          transform: translateY(-1px);
-        }
-        .login-divider {
-          display: flex;
-          align-items: center;
-          text-align: center;
-          color: var(--text-tertiary);
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 0.05em;
-          margin: 2px 0;
-        }
-        .login-divider::before, .login-divider::after {
-          content: '';
-          flex: 1;
-          border-bottom: 1px solid var(--border-subtle);
-        }
-        .login-divider span {
-          padding: 0 10px;
-        }
-        .btn-guest-oauth {
-          width: 100%;
-          padding: 12px 20px;
-          border-radius: 10px;
-          border: 1px solid var(--border);
-          background: var(--bg-subtle);
-          color: var(--text-primary);
-          font-size: 14px;
-          font-weight: 700;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-          cursor: pointer;
-          transition: all 0.2s ease;
-        }
-        .btn-guest-oauth:hover {
-          background: var(--bg-card);
-          border-color: var(--primary);
-          transform: translateY(-1px);
-        }
-        .guest-caption {
-          font-size: 11.5px;
-          color: var(--text-tertiary);
-          text-align: center;
-          margin-top: -6px;
-        }
-        .privacy-notice {
-          font-size: 11.5px;
-          color: var(--text-tertiary);
-          text-align: center;
+          margin: 0;
           line-height: 1.5;
         }
-        .scopes-info {
-          background: var(--bg-subtle);
-          border-radius: 10px;
-          padding: 14px 16px;
-          border: 1px solid var(--border-subtle);
-          font-size: 12px;
-        }
-        .scopes-title {
-          font-weight: 700;
-          color: var(--text-primary);
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          margin-bottom: 8px;
-        }
-        .scopes-list {
-          color: var(--text-secondary);
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
         .login-error-banner {
-          background: var(--critical-bg);
-          border: 1px solid var(--critical-border);
-          color: var(--critical);
+          background: rgba(239, 68, 68, 0.1);
+          border: 1px solid rgba(239, 68, 68, 0.3);
+          color: #ef4444;
           padding: 10px 14px;
           border-radius: 8px;
-          font-size: 12.5px;
+          font-size: 13px;
+          margin-bottom: 16px;
+        }
+        .login-success-banner {
+          background: rgba(16, 185, 129, 0.1);
+          border: 1px solid rgba(16, 185, 129, 0.3);
+          color: #10b981;
+          padding: 10px 14px;
+          border-radius: 8px;
+          font-size: 13px;
+          margin-bottom: 16px;
+        }
+        .form-input:focus {
+          border-color: var(--primary, #2563eb) !important;
+          box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+        }
+        .btn-primary-auth:hover {
+          opacity: 0.92;
         }
 
         @media (max-width: 860px) {
@@ -438,13 +316,6 @@ export class Login {
             gap: 24px;
           }
           .login-branding-col {
-            padding-right: 0;
-            text-align: center;
-          }
-          .subtitle {
-            margin: 0 auto;
-          }
-          .analytics-preview-card {
             display: none;
           }
         }
@@ -453,52 +324,6 @@ export class Login {
 
     this.initHandlers();
     return this.element;
-  }
-
-  async mounted() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    const state = urlParams.get('state');
-    const token = urlParams.get('token');
-
-    if (token) {
-      console.log('[GOOGLE UI] OAuth session token received in Login view.');
-      localStorage.setItem('seo_auth_token', token);
-      window.location.href = '/';
-      return;
-    }
-
-    // Handle OAuth Callback redirect from Google
-    if (code) {
-      console.log('[GOOGLE UI] Returned from OAuth callback. Verifying code...');
-      const googleBtn = document.getElementById('btn-google-login');
-      const btnText = document.getElementById('google-btn-text');
-      const errorBox = document.getElementById('login-error-box');
-
-      if (googleBtn) googleBtn.disabled = true;
-      if (btnText) btnText.innerText = 'Verifying Google Identity...';
-
-      try {
-        await authStore.handleOAuthCallbackCode(code, state);
-        console.log('[GOOGLE UI] Google identity verified. Navigating to property discovery.');
-        window.location.href = '/discovery';
-        return;
-      } catch (err) {
-        if (googleBtn) googleBtn.disabled = false;
-        if (btnText) btnText.innerText = 'Continue with Google';
-        if (errorBox) {
-          errorBox.style.display = 'block';
-          errorBox.innerText = err.message || 'Google OAuth verification failed.';
-        }
-      }
-    }
-
-    // Check existing valid session — if valid, skip login screen instantly
-    const isValid = await authStore.checkSession();
-    if (isValid) {
-      console.log('[GOOGLE UI] Valid session exists. Navigating to dashboard. NOT starting OAuth again.');
-      window.location.href = '/';
-    }
   }
 
   initHandlers() {
@@ -512,54 +337,75 @@ export class Login {
         });
       }
 
-      const googleBtn = document.getElementById('btn-google-login');
+      const form = document.getElementById('platform-auth-form');
+      const submitBtn = document.getElementById('btn-submit-auth');
+      const authText = document.getElementById('btn-auth-text');
       const errorBox = document.getElementById('login-error-box');
-      const btnText = document.getElementById('google-btn-text');
+      const toggleModeBtn = document.getElementById('toggle-auth-mode-btn');
+      const togglePrompt = document.getElementById('toggle-auth-prompt');
+      const nameGroup = document.getElementById('name-field-group');
+      const titleEl = document.getElementById('login-title');
+      const subtitleEl = document.getElementById('login-subtitle');
 
-      if (googleBtn) {
-        googleBtn.addEventListener('click', async () => {
-          googleBtn.disabled = true;
-          if (btnText) btnText.innerText = 'Redirecting to Google OAuth...';
+      if (toggleModeBtn) {
+        toggleModeBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.isRegisterMode = !this.isRegisterMode;
+
           if (errorBox) errorBox.style.display = 'none';
+          if (this.isRegisterMode) {
+            titleEl.innerText = "Create your SEO Account";
+            subtitleEl.innerText = "Register a new account to start auditing and managing SEO projects.";
+            authText.innerText = "Create Account";
+            togglePrompt.innerText = "Already have an account?";
+            toggleModeBtn.innerText = "Sign In";
+            if (nameGroup) nameGroup.style.display = "block";
+          } else {
+            titleEl.innerText = "Sign in to your SEO Platform";
+            subtitleEl.innerText = "Enter your email and password to access your SEO workspace.";
+            authText.innerText = "Sign In";
+            togglePrompt.innerText = "Don't have an account?";
+            toggleModeBtn.innerText = "Create Account";
+            if (nameGroup) nameGroup.style.display = "none";
+          }
+        });
+      }
+
+      if (form) {
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const email = document.getElementById('login-email')?.value || '';
+          const password = document.getElementById('login-password')?.value || '';
+          const name = document.getElementById('login-name')?.value || '';
+
+          if (errorBox) errorBox.style.display = 'none';
+          if (submitBtn) submitBtn.disabled = true;
+          if (authText) authText.innerText = this.isRegisterMode ? 'Creating Account...' : 'Signing In...';
 
           try {
-            const authUrl = await authStore.getGoogleOAuthLoginUrl();
-            // Redirect browser directly to Google's official OAuth consent screen
-            window.location.href = authUrl;
+            if (this.isRegisterMode) {
+              await authStore.register(name, email, password);
+            } else {
+              await authStore.login(email, password);
+            }
+            console.log('[AUTH UI] Authentication successful. Navigating to dashboard.');
+            window.location.href = '/';
           } catch (err) {
-            googleBtn.disabled = false;
-            if (btnText) btnText.innerText = 'Continue with Google';
+            if (submitBtn) submitBtn.disabled = false;
+            if (authText) authText.innerText = this.isRegisterMode ? 'Create Account' : 'Sign In';
             if (errorBox) {
               errorBox.style.display = 'block';
-              errorBox.innerText = err.message || 'Unable to generate Google OAuth URL. Please check backend GOOGLE_CLIENT_ID configuration.';
+              errorBox.innerText = err.message || 'Authentication failed. Please check your credentials.';
             }
           }
         });
       }
 
-      const guestBtn = document.getElementById('btn-guest-login');
-      const guestBtnText = document.getElementById('guest-btn-text');
-
-      if (guestBtn) {
-        guestBtn.addEventListener('click', async () => {
-          guestBtn.disabled = true;
-          if (googleBtn) googleBtn.disabled = true;
-          if (guestBtnText) guestBtnText.innerText = 'Creating Guest Session...';
-          if (errorBox) errorBox.style.display = 'none';
-
-          try {
-            await authStore.createGuestSession();
-            console.log('[GUEST UI] Guest session established cleanly. Navigating to dashboard.');
-            window.location.href = '/';
-          } catch (err) {
-            guestBtn.disabled = false;
-            if (googleBtn) googleBtn.disabled = false;
-            if (guestBtnText) guestBtnText.innerText = 'Continue as Guest';
-            if (errorBox) {
-              errorBox.style.display = 'block';
-              errorBox.innerText = err.message || 'Unable to create guest session.';
-            }
-          }
+      const forgotLink = document.getElementById('forgot-password-link');
+      if (forgotLink) {
+        forgotLink.addEventListener('click', (e) => {
+          e.preventDefault();
+          alert("To reset your password, please contact your workspace administrator or check your email provider.");
         });
       }
     }, 50);

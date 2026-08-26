@@ -86,6 +86,54 @@ class AuthStore {
     }
   }
 
+  async login(email, password) {
+    const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Sign in failed. Please check your credentials.');
+    }
+
+    const data = await res.json();
+    this.token = data.access_token;
+    this.user = data.user;
+    this.isAuthenticated = true;
+
+    localStorage.setItem(this.TOKEN_KEY, this.token);
+    localStorage.setItem(this.USER_KEY, JSON.stringify(this.user));
+
+    this.notify();
+    return data;
+  }
+
+  async register(name, email, password) {
+    const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Registration failed. Please check your inputs.');
+    }
+
+    const data = await res.json();
+    this.token = data.access_token;
+    this.user = data.user;
+    this.isAuthenticated = true;
+
+    localStorage.setItem(this.TOKEN_KEY, this.token);
+    localStorage.setItem(this.USER_KEY, JSON.stringify(this.user));
+
+    this.notify();
+    return data;
+  }
+
   async createGuestSession() {
     const res = await fetch(`${API_BASE_URL}/api/auth/guest-session`, {
       method: 'POST',

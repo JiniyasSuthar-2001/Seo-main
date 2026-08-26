@@ -156,8 +156,6 @@ seo-intelligence/
 
 ### Running Locally
 
-### Running Locally
-
 **Development Launcher (Recommended):**
 To start the entire application for development, run the unified startup script from the root directory:
 
@@ -166,8 +164,8 @@ python start_dev.py
 ```
 
 This command will:
-- Start the backend FastAPI server on port 8000
-- Start the frontend SPA server on port 8020
+- Start the backend FastAPI server on port 8020
+- Start the frontend SPA server on port 8030
 - Stream logs from both services concurrently into your terminal
 - Wait until both services are ready before automatically opening your browser
 - Gracefully shut down all services and child processes when you press `CTRL+C`

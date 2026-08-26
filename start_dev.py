@@ -28,42 +28,89 @@ def check_port(host, port):
             return True
 
 def free_port_if_in_use(port):
+    """
+    Cross-platform port reclamation.
+    Identifies and terminates ONLY the specific process occupying the target port.
+    Never kills unrelated processes.
+    Supports Windows, macOS, and Linux.
+    """
     if not check_port("0.0.0.0", port):
         return True
+
+    print(f"[PORT] Port {port} is currently occupied. Attempting cross-platform reclamation...", flush=True)
+
     try:
         if sys.platform == "win32":
-            subprocess.run(
-                f'for /f "tokens=5" %a in (\'netstat -aon ^| findstr :{port}\') do taskkill /F /PID %a',
-                shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-            )
-            time.sleep(1.0)
-    except Exception:
-        pass
-    return not check_port("0.0.0.0", port)
+            # Windows: Extract specific PID for port from netstat and kill ONLY that PID
+            cmd = f'for /f "tokens=5" %a in (\'netstat -aon ^| findstr /r /c:":{port} "\') do taskkill /F /PID %a'
+            subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            # macOS / Linux: Use lsof or fuser to target ONLY the specific PID
+            freed = False
+            try:
+                res = subprocess.run(
+                    ["lsof", "-t", f"-i:{port}"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    pids = res.stdout.strip().split()
+                    for p in pids:
+                        try:
+                            os.kill(int(p), signal.SIGKILL)
+                        except Exception:
+                            pass
+                    freed = True
+            except FileNotFoundError:
+                pass
+
+            if not freed:
+                try:
+                    subprocess.run(
+                        ["fuser", "-k", "-n", "tcp", str(port)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    freed = True
+                except FileNotFoundError:
+                    print(f"[WARNING] Neither 'lsof' nor 'fuser' is installed on this system to auto-free port {port}.", flush=True)
+
+        time.sleep(1.0)
+    except Exception as e:
+        print(f"[WARNING] Exception during port {port} reclamation: {e}", flush=True)
+
+    is_free = not check_port("0.0.0.0", port)
+    if is_free:
+        print(f"[PORT] Port {port} successfully freed.", flush=True)
+    else:
+        print(f"[WARNING] Port {port} could not be automatically freed.", flush=True)
+
+    return is_free
 
 def wait_for_server(url, name, port=None, timeout=30):
-    print(f"[{name}] Waiting for server to become ready at {url}...", flush=True)
+    print(f"[{name}] Waiting for server to respond at {url}...", flush=True)
     start_time = time.time()
     while time.time() - start_time < timeout:
-        if port:
-            try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(1.0)
-                    if s.connect_ex(("127.0.0.1", port)) == 0:
-                        print(f"[{name}] READY", flush=True)
-                        return True
-            except Exception:
-                pass
         try:
-            req = urllib.request.Request(url, method="GET", headers={"User-Agent": "HealthChecker/1.0"})
+            req = urllib.request.Request(url, method="GET", headers={"User-Agent": "SEO-Platform-Checker/1.0"})
             with urllib.request.urlopen(req, timeout=2.0) as response:
                 if response.getcode() in (200, 301, 302, 404):
-                    print(f"[{name}] READY", flush=True)
+                    print(f"[{name}] READY (HTTP {response.getcode()})", flush=True)
                     return True
         except Exception:
-            pass
+            if port:
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                        s.settimeout(1.0)
+                        if s.connect_ex(("127.0.0.1", port)) == 0:
+                            print(f"[{name}] READY (Socket connected)", flush=True)
+                            return True
+                except Exception:
+                    pass
         time.sleep(0.5)
-    print(f"[{name}] FAILED to start or respond within {timeout} seconds.", flush=True)
+
+    print(f"[{name}] FAILED to respond within {timeout} seconds.", flush=True)
     return False
 
 def stream_logs(process, prefix):
@@ -151,7 +198,7 @@ def main():
         t1.start()
         t2.start()
 
-        # Perform health checks using loopback IP and socket connectivity
+        # Perform health checks using loopback IP
         backend_ready = wait_for_server(f"http://127.0.0.1:{port}/api/health", "HEALTH (Backend)", port=port)
         frontend_ready = wait_for_server(f"http://127.0.0.1:{frontend_port}", "HEALTH (Frontend)", port=frontend_port)
 
@@ -192,22 +239,24 @@ def main():
         print("--------------------------------------------------", flush=True)
     finally:
         if frontend_process:
+            print("Stopping frontend...", flush=True)
             try:
                 if frontend_process.poll() is None:
                     kill_process_tree(frontend_process.pid)
             except Exception:
                 pass
-            print("[FRONTEND] Stopped cleanly.", flush=True)
+            print("Frontend stopped.", flush=True)
 
         if backend_process:
+            print("Stopping backend...", flush=True)
             try:
                 if backend_process.poll() is None:
                     kill_process_tree(backend_process.pid)
             except Exception:
                 pass
-            print("[BACKEND] Stopped cleanly.", flush=True)
+            print("Backend stopped.", flush=True)
 
-        print("SEO Intelligence Platform stopped cleanly. Goodbye.", flush=True)
+        print("\nSEO Intelligence Platform stopped cleanly.", flush=True)
 
 if __name__ == "__main__":
     try:

@@ -21,7 +21,8 @@ from fastapi.responses import JSONResponse
 import traceback
 
 app = FastAPI(title="SEO Intelligence API")
-# Reload router registry
+# Reload router registry & oauth routes
+
 
 
 # Configure CORS dynamically from settings with regex fallback for private LAN development origins
@@ -54,6 +55,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"])
 
 app.include_router(integrations.router, prefix="/api/integrations", tags=["integrations"])
+app.include_router(integrations.router, prefix="/api/oauth", tags=["oauth"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 
 app.include_router(reports.router, prefix="/api/projects/{project_id}", tags=["reports"])

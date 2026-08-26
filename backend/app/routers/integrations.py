@@ -105,24 +105,30 @@ def get_user_integrations(
         "supported_providers": all_providers
     }
 
+def get_optional_user_id(
+    authorization: Optional[str] = Header(None),
+    x_user_id: Optional[str] = Header(None)
+) -> str:
+    try:
+        return get_current_user_id(authorization=authorization, x_user_id=x_user_id)
+    except Exception:
+        return "default_user"
+
+@router.get("/google/authorize")
+@router.get("/google/connect")
+@router.get("/{provider}/authorize")
 @router.get("/{provider}/connect")
 def connect_provider_oauth(
-    provider: str,
-    user_id: str = Depends(get_current_user_id),
+    provider: str = "google",
+    user_id: str = Depends(get_optional_user_id),
     request: Request = None
 ):
     """
-    Generates a secure OAuth authorization URL for the requested provider with CSRF state protection.
-    Binds the OAuth state to the currently authenticated SEO Intelligence user.
+    Generates a secure OAuth authorization URL for requested provider with CSRF state protection.
+    Supports GET /api/oauth/google/authorize, /api/integrations/google/connect, and provider aliases.
     """
-    p = provider.lower()
-    print(f"[GOOGLE OAUTH] Explicit OAuth login URL requested for provider='{p}', user_id='{user_id}'", flush=True)
-
-    if user_id.startswith("guest_"):
-        raise HTTPException(
-            status_code=403,
-            detail="Sign in to connect external accounts."
-        )
+    p = provider.lower() if provider else "google"
+    print(f"[GOOGLE OAUTH] OAuth authorization requested for provider='{p}', user_id='{user_id}'", flush=True)
 
     if p in ("openai", "gemini", "claude"):
         raise HTTPException(
@@ -133,7 +139,11 @@ def connect_provider_oauth(
     try:
         redirect_base = str(request.base_url).rstrip("/") if request else settings.API_BASE_URL
         auth_url = build_authorization_url(p, user_id=user_id, redirect_base=redirect_base)
-        
+
+        accept_header = request.headers.get("accept", "") if request else ""
+        if "text/html" in accept_header and "application/json" not in accept_header:
+            return RedirectResponse(url=auth_url, status_code=302)
+
         return {
             "status": "ok",
             "provider": p,
@@ -141,8 +151,14 @@ def connect_provider_oauth(
             "authorization_url": auth_url
         }
     except ValueError as err:
-        print(f"[GOOGLE OAUTH] Failed to generate login URL: {err}", flush=True)
-        raise HTTPException(status_code=400, detail=str(err))
+        err_str = str(err)
+        print(f"[GOOGLE OAUTH] Failed to generate authorization URL: {err_str}", flush=True)
+        if "GOOGLE_CLIENT_ID" in err_str or "GOOGLE_CLIENT_SECRET" in err_str or "not configured" in err_str.lower():
+            raise HTTPException(
+                status_code=400,
+                detail="Google OAuth is not configured on this server. Please configure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET."
+            )
+        raise HTTPException(status_code=400, detail=err_str)
 
 @router.get("/{provider}/callback")
 def handle_oauth_callback(

@@ -192,25 +192,22 @@ export class Competitors {
         this.container.innerHTML = `
             <div class="competitors-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; flex-wrap: wrap; gap: 16px;">
                 <div>
-                    <h1 style="font-size: 24px; font-weight: 600; color: var(--text-primary); margin: 0 0 4px 0;">Competitor Discovery & Market Analysis</h1>
+                    <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">Other Businesses</h1>
                     <p style="color: var(--text-secondary); margin: 0; font-size: 14px;">
-                        Target Domain: <strong style="color: var(--accent-primary);">${this.escapeHtml(projectDomain)}</strong>
+                        Target Website: <strong style="color: var(--primary);">${this.escapeHtml(projectDomain)}</strong>
                     </p>
                 </div>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <a href="${API_BASE_URL}/api/guidelines/competitors/pdf" target="_blank" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
-                        📄 Guidelines PDF
-                    </a>
-                    <a href="#/import" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
-                        Import Competitors CSV
+                    <a href="#/import" data-link class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                        Upload Competitors CSV
                     </a>
                     <button id="btn-auto-discover" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;" ${this.discovering ? 'disabled' : ''}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                        ${this.discovering ? 'Discovering...' : 'Auto-Discover'}
+                        ${this.discovering ? 'Searching...' : 'Find Competitors on Google'}
                     </button>
                     <button id="btn-add-manual" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                        Add Competitor
+                        + Add Competitor Website
                     </button>
                 </div>
             </div>

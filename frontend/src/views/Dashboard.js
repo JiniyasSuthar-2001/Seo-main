@@ -6,6 +6,7 @@ import { apiClient } from '../services/apiClient.js';
 import { API_BASE_URL } from '../config/api.js';
 import { crawlConfigModal } from '../components/CrawlConfigModal.js';
 import { renderAIBadge, renderSourceBadge, renderViewEvidenceButton } from '../components/AIBadge.js';
+import { renderTooltip } from '../components/Tooltip.js';
 
 window.startCrawlFromOverview = (explicitProjectId, explicitUrl) => {
     let targetId = explicitProjectId || projectStore.getSelectedProjectId();
@@ -52,7 +53,6 @@ export class Dashboard {
         this.statusFilter = 'all';
         this.sortOption = 'health_desc';
         this.trendTimeframe = '30D';
-        this.geminiStatus = { configured: false, available: false };
     }
 
     render() {
@@ -74,22 +74,21 @@ export class Dashboard {
             this.allProjects = overviewData.projects || [];
             const recentCrawls = overviewData.recent_crawls || [];
             const accountIssues = overviewData.account_issues_summary || [];
-            const recentActivity = overviewData.recent_activity || [];
             const healthTrend = overviewData.health_trend || [];
 
             if (!this.allProjects || this.allProjects.length === 0) {
                 this.element.innerHTML = `
                     <div class="header" style="margin-bottom: 24px;">
-                        <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.06em;">ACCOUNT WORKSPACE</div>
-                        <h1 style="font-size: 24px; font-weight: 700; margin-top: 2px;">SEO Intelligence Command Center</h1>
+                        <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.06em;">ACCOUNT OVERVIEW</div>
+                        <h1 style="font-size: 24px; font-weight: 700; margin-top: 2px;">Your Account Overview</h1>
                     </div>
                     <div class="card" style="padding: 48px 32px; text-align: center; max-width: 600px; margin: 32px auto;">
                         <div style="width: 64px; height: 64px; border-radius: 16px; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center; margin: 0 auto 24px;">
                             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                         </div>
-                        <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 10px; color: var(--text-primary);">Start Your SEO Workspace</h2>
-                        <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 24px; line-height: 1.6;">Add your first website domain to begin collecting real SEO health metrics, crawl snapshots, technical audit issues, and performance insights.</p>
-                        <button class="btn btn-primary btn-lg" onclick="window.showCreateProjectModal()" style="font-weight: 600;">+ Create First Project</button>
+                        <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 10px; color: var(--text-primary);">Add Your First Website</h2>
+                        <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 24px; line-height: 1.6;">Add your website domain to begin running scans, discovering pages, identifying technical health issues, and tracking Google search rankings.</p>
+                        <button class="btn btn-primary btn-lg" onclick="window.showCreateProjectModal()" style="font-weight: 600;">+ Add Your First Website</button>
                     </div>
                 `;
                 return;
@@ -104,9 +103,9 @@ export class Dashboard {
                 <!-- HEADER SECTION -->
                 <div class="header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
                     <div>
-                        <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.06em;">SEO INTELLIGENCE DASHBOARD</div>
-                        <h1 style="font-size: 24px; font-weight: 700; margin-top: 2px; color: var(--text-primary);">Workspace Command Center</h1>
-                        <p style="color: var(--text-secondary); font-size: 13.5px; margin-top: 4px;">Real-time portfolio SEO health metrics, crawl progress, and AI recommendations.</p>
+                        <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.06em;">ACCOUNT OVERVIEW</div>
+                        <h1 style="font-size: 24px; font-weight: 700; margin-top: 2px; color: var(--text-primary);">Your Account Overview</h1>
+                        <p style="color: var(--text-secondary); font-size: 13.5px; margin-top: 4px;">Overview of your connected websites, recent scans, problems found, and action recommendations.</p>
                     </div>
                     <div style="display: flex; gap: 10px;">
                         <button class="btn btn-primary btn-sm" onclick="window.showCreateProjectModal()" style="display: inline-flex; align-items: center; gap: 6px;">
@@ -120,47 +119,55 @@ export class Dashboard {
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 28px;">
                     <div class="card" style="padding: 20px;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                            <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Portfolio Websites</div>
-                            <span style="font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: var(--bg-subtle); color: var(--text-tertiary); border: 1px solid var(--border);">Active Projects</span>
+                            <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">
+                                Total Websites ${renderTooltip('Number of websites registered in your account.')}
+                            </div>
+                            <span class="badge badge-secondary" style="font-size: 10px;">Account</span>
                         </div>
                         <div style="font-size: 28px; font-weight: 800; color: var(--text-primary);">${totalSites}</div>
-                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Active projects in workspace</div>
+                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Connected websites</div>
                     </div>
 
                     <div class="card" style="padding: 20px;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                            <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Average SEO Health</div>
-                            <span style="font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: var(--bg-subtle); color: var(--primary); border: 1px solid var(--border);">Crawled Data</span>
+                            <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">
+                                Average Health Score ${renderTooltip('Overall health score across all your websites (0-100). Higher is better.')}
+                            </div>
+                            ${renderSourceBadge('crawl')}
                         </div>
                         <div style="font-size: 28px; font-weight: 800; color: ${avgHealth >= 80 ? '#10b981' : (avgHealth >= 60 ? '#f59e0b' : '#ef4444')};">${avgHealth}<span style="font-size: 16px; font-weight: 600;">/100</span></div>
-                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Weighted portfolio audit score</div>
+                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Overall health across websites</div>
                     </div>
 
                     <div class="card" style="padding: 20px;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                            <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Total Crawled Pages</div>
-                            <span style="font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: var(--bg-subtle); color: var(--primary); border: 1px solid var(--border);">Crawled Data</span>
+                            <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">
+                                Pages Found ${renderTooltip('Total number of pages discovered during your latest website scans.')}
+                            </div>
+                            ${renderSourceBadge('crawl')}
                         </div>
                         <div style="font-size: 28px; font-weight: 800; color: #3b82f6;">${totalCrawledPages.toLocaleString()}</div>
-                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Discovered HTML pages</div>
+                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Discovered pages on your sites</div>
                     </div>
 
                     <div class="card" style="padding: 20px;">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                            <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Critical Audit Issues</div>
-                            <span style="font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: var(--bg-subtle); color: var(--primary); border: 1px solid var(--border);">Crawled Data</span>
+                            <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">
+                                Critical Problems ${renderTooltip('Problems that may seriously affect your website search visibility or usability.')}
+                            </div>
+                            ${renderSourceBadge('crawl')}
                         </div>
                         <div style="font-size: 28px; font-weight: 800; color: ${totalIssuesCount > 0 ? '#ef4444' : '#10b981'};">${totalIssuesCount}</div>
-                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Aggregated technical findings</div>
+                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Problems requiring attention</div>
                     </div>
                 </div>
 
-                <!-- LEVEL 2: WEBSITE PORTFOLIO TABLE -->
+                <!-- LEVEL 2: WEBSITE LIST TABLE -->
                 <div class="card" style="padding: 24px; margin-bottom: 28px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 12px;">
                         <div>
-                            <h2 style="font-size: 18px; font-weight: 700; margin: 0; color: var(--text-primary);">Website Portfolio</h2>
-                            <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 2px;">Manage and monitor technical health across all websites in your workspace.</div>
+                            <h2 style="font-size: 18px; font-weight: 700; margin: 0; color: var(--text-primary);">Your Websites</h2>
+                            <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 2px;">Manage and monitor health checks across all your websites.</div>
                         </div>
 
                         <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
@@ -171,14 +178,14 @@ export class Dashboard {
                                 <option value="Healthy">Healthy</option>
                                 <option value="Needs Attention">Needs Attention</option>
                                 <option value="Critical">Critical</option>
-                                <option value="Never Crawled">Never Crawled</option>
+                                <option value="Never Crawled">Never Scanned</option>
                             </select>
 
                             <select id="website-sort-option" style="padding: 7px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-subtle); color: var(--text-primary); cursor: pointer;">
                                 <option value="health_desc">Sort: Health (High to Low)</option>
                                 <option value="health_asc">Sort: Health (Low to High)</option>
                                 <option value="name_asc">Sort: Name (A - Z)</option>
-                                <option value="issues_desc">Sort: Critical Issues</option>
+                                <option value="issues_desc">Sort: Critical Problems</option>
                             </select>
                         </div>
                     </div>
@@ -186,16 +193,16 @@ export class Dashboard {
                     <div id="portfolio-table-container"></div>
                 </div>
 
-                <!-- DYNAMIC AI INTEGRATION SECTION -->
+                <!-- DYNAMIC AI ASSISTANT SECTION -->
                 <div class="card" style="padding: 24px; margin-bottom: 28px; border-left: 4px solid #3b82f6; background: var(--bg-card);">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
                         <div>
                             <div style="display: flex; align-items: center; gap: 10px;">
-                                <h3 style="font-size: 17px; font-weight: 700; margin: 0; color: var(--text-primary);" id="ai-card-title">AI Intelligence Engine</h3>
+                                <h3 style="font-size: 17px; font-weight: 700; margin: 0; color: var(--text-primary);" id="ai-card-title">AI Assistant</h3>
                                 <span id="gemini-status-badge" class="badge badge-secondary" style="font-size: 11px;">Checking status...</span>
                             </div>
                             <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 4px;" id="ai-card-subtext">
-                                High-performance LLM reasoning engine for automated SEO analysis using real workspace crawl evidence.
+                                Automated assistant providing plain-English explanations and step-by-step guidance based on real scan data.
                             </div>
                         </div>
 
@@ -204,7 +211,7 @@ export class Dashboard {
                                 ⚡ Test Connection
                             </button>
                             <button type="button" id="btn-analyze-gemini" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 6px; background: #2563eb;">
-                                ✨ Analyze SEO with AI
+                                ✨ Ask AI Assistant
                             </button>
                         </div>
                     </div>
@@ -212,55 +219,55 @@ export class Dashboard {
                     <!-- AI OUTPUT / RESULT BOX -->
                     <div id="gemini-output-box" style="padding: 16px; background: var(--bg-subtle); border-radius: 10px; border: 1px solid var(--border); font-size: 13px; color: var(--text-secondary);">
                         <div id="gemini-default-msg">
-                            Click <strong id="ai-test-btn-label">Test Connection</strong> to verify backend API configuration or <strong id="ai-analyze-btn-label">Analyze SEO with AI</strong> to run real AI audit reasoning on your active project.
+                            Click <strong id="ai-test-btn-label">Test Connection</strong> to check your AI connection or <strong id="ai-analyze-btn-label">Ask AI Assistant</strong> to review your selected website.
                         </div>
                     </div>
                 </div>
 
-                <!-- WORKSPACE HEALTH TREND & ANALYTICS VISUALIZATION -->
+                <!-- WEBSITE HEALTH TREND -->
                 <div class="card" style="padding: 24px; margin-bottom: 28px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 12px;">
                         <div>
-                            <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--text-primary);">Workspace SEO Health Trajectory</h3>
-                            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Historical audit health score trajectory across recent crawl snapshots.</div>
+                            <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--text-primary);">Website Health Progress Over Time</h3>
+                            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Track how your website's health score improves across recent scans.</div>
                         </div>
                         <div id="trend-timeframe-pills" style="display: flex; gap: 4px; background: var(--bg-subtle); padding: 4px; border-radius: 8px; border: 1px solid var(--border);">
-                            <button class="pill-btn ${this.trendTimeframe === '7D' ? 'active' : ''}" data-tf="7D" style="padding: 4px 10px; font-size: 11px;">7D</button>
-                            <button class="pill-btn ${this.trendTimeframe === '30D' ? 'active' : ''}" data-tf="30D" style="padding: 4px 10px; font-size: 11px;">30D</button>
-                            <button class="pill-btn ${this.trendTimeframe === '90D' ? 'active' : ''}" data-tf="90D" style="padding: 4px 10px; font-size: 11px;">90D</button>
+                            <button class="pill-btn ${this.trendTimeframe === '7D' ? 'active' : ''}" data-tf="7D" style="padding: 4px 10px; font-size: 11px;">7 Days</button>
+                            <button class="pill-btn ${this.trendTimeframe === '30D' ? 'active' : ''}" data-tf="30D" style="padding: 4px 10px; font-size: 11px;">30 Days</button>
+                            <button class="pill-btn ${this.trendTimeframe === '90D' ? 'active' : ''}" data-tf="90D" style="padding: 4px 10px; font-size: 11px;">90 Days</button>
                         </div>
                     </div>
 
                     ${healthTrend.length < 2 ? `
                         <div style="padding: 32px 20px; text-align: center; background: var(--bg-subtle); border-radius: 10px; color: var(--text-secondary); font-size: 13.5px; border: 1px dashed var(--border);">
-                            <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-primary);">Collecting historical crawl data</div>
-                            <div>Run additional crawls over time to display portfolio health trajectory trends.</div>
+                            <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-primary);">Building scan history</div>
+                            <div>Run additional website scans over time to see health progress trends.</div>
                         </div>
                     ` : `
                         <div style="display: flex; gap: 14px; overflow-x: auto; padding-bottom: 8px;">
                             ${healthTrend.map(t => `
                                 <div style="padding: 14px 18px; background: var(--bg-subtle); border-radius: 10px; min-width: 160px; text-align: center; border: 1px solid var(--border);">
-                                    <div style="font-size: 11px; color: var(--text-tertiary); text-transform: uppercase;">${t.timestamp ? t.timestamp.split('T')[0] : 'Snapshot'}</div>
+                                    <div style="font-size: 11px; color: var(--text-tertiary); text-transform: uppercase;">${t.timestamp ? t.timestamp.split('T')[0] : 'Saved Scan'}</div>
                                     <div style="font-size: 14px; font-weight: 700; color: var(--text-primary); margin: 6px 0;">${t.domain || 'Domain'}</div>
-                                    <div style="font-size: 12px; color: var(--primary); font-weight: 600;">${t.pages_crawled} pages • ${t.issues} issues</div>
+                                    <div style="font-size: 12px; color: var(--primary); font-weight: 600;">${t.pages_crawled} pages • ${t.issues} problems</div>
                                 </div>
                             `).join('')}
                         </div>
                     `}
                 </div>
 
-                <!-- TOP TECHNICAL SEO ISSUES -->
+                <!-- TOP PROBLEMS REQUIRING ATTENTION -->
                 <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 28px;">
                     <div style="padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
                         <div>
-                            <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--text-primary);">Top Technical SEO Issues</h3>
-                            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Real aggregated audit findings across portfolio websites</div>
+                            <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--text-primary);">Top Problems Requiring Attention</h3>
+                            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Critical problems detected during website health checks</div>
                         </div>
-                        <a href="/technical" data-link class="btn btn-secondary btn-sm" style="font-size: 11.5px;">View All Audits &rarr;</a>
+                        <a href="/technical" data-link class="btn btn-secondary btn-sm" style="font-size: 11.5px;">View Health Checks &rarr;</a>
                     </div>
                     ${accountIssues.length === 0 ? `
                         <div style="padding: 28px; text-align: center; color: var(--text-secondary); font-size: 13.5px;">
-                            ✓ Zero aggregated critical technical issues across workspace websites.
+                            ✓ Zero critical problems detected across your websites.
                         </div>
                     ` : `
                         <div style="overflow-x: auto;">
@@ -268,9 +275,9 @@ export class Dashboard {
                                 <thead>
                                     <tr>
                                         <th style="padding: 12px 20px;">Severity</th>
-                                        <th style="padding: 12px 20px;">Issue Title</th>
-                                        <th style="padding: 12px 20px;">Affected Sites</th>
-                                        <th style="padding: 12px 20px;">Total Affected URLs</th>
+                                        <th style="padding: 12px 20px;">Problem Title</th>
+                                        <th style="padding: 12px 20px;">Affected Websites</th>
+                                        <th style="padding: 12px 20px;">Affected Pages</th>
                                         <th style="padding: 12px 20px; text-align: right;">Action</th>
                                     </tr>
                                 </thead>
@@ -280,11 +287,11 @@ export class Dashboard {
                                         const badgeClass = isCrit ? 'badge-critical' : (iss.severity === 'warning' ? 'badge-warning' : 'badge-info');
                                         return `
                                             <tr>
-                                                <td style="padding: 13px 20px;"><span class="badge ${badgeClass}">${iss.severity.toUpperCase()}</span></td>
-                                                <td style="padding: 13px 20px; font-weight: 600; color: var(--text-primary);">${iss.title}</td>
-                                                <td style="padding: 13px 20px; font-size: 13px;">${iss.affected_websites_count} ${iss.affected_websites_count === 1 ? 'site' : 'sites'}</td>
-                                                <td style="padding: 13px 20px; font-family: monospace; font-size: 12px; color: var(--text-secondary);">${iss.total_urls_count} URLs</td>
-                                                <td style="padding: 13px 20px; text-align: right;"><a href="/technical" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">View Issues &rarr;</a></td>
+                                                <td style="padding: 13px 20px;"><span class="badge ${badgeClass}">${(iss.severity || 'HIGH').toUpperCase()}</span></td>
+                                                <td style="padding: 13px 20px; font-weight: 600; color: var(--text-primary);">${this.escapeHtml(iss.title)}</td>
+                                                <td style="padding: 13px 20px; font-size: 13px;">${iss.affected_websites_count} ${iss.affected_websites_count === 1 ? 'website' : 'websites'}</td>
+                                                <td style="padding: 13px 20px; font-family: monospace; font-size: 12px; color: var(--text-secondary);">${iss.total_urls_count} pages</td>
+                                                <td style="padding: 13px 20px; text-align: right;"><a href="/technical" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">View Proof &rarr;</a></td>
                                             </tr>
                                         `;
                                     }).join('')}
@@ -302,16 +309,15 @@ export class Dashboard {
 
         } catch (e) {
             if (e.name === 'TypeError' || e.message.includes('fetch') || apiClient.status === 'OFFLINE') {
-                renderBackendOfflineState(this.element, `Unable to connect to backend API server at ${API_BASE_URL}.`, () => this.mounted());
+                renderBackendOfflineState(this.element, `Unable to connect right now. Please try again.`, () => this.mounted());
             } else {
-                renderFeatureErrorState(this.element, "Workspace Overview Error", e.message || "Failed to load workspace overview metrics.", () => this.mounted());
+                renderFeatureErrorState(this.element, "Account Overview Error", e.message || "Failed to load account overview.", () => this.mounted());
             }
         }
     }
 
     async bindGeminiSection() {
         const titleEl = this.element.querySelector('#ai-card-title');
-        const subtextEl = this.element.querySelector('#ai-card-subtext');
         const badge = this.element.querySelector('#gemini-status-badge');
         const btnTest = this.element.querySelector('#btn-test-gemini');
         const btnAnalyze = this.element.querySelector('#btn-analyze-gemini');
@@ -322,39 +328,23 @@ export class Dashboard {
 
         try {
             const statusData = await apiClient.get('/api/ai/status');
-            this.aiStatus = statusData;
             activeProvider = (statusData.provider || "groq").toLowerCase();
-
-            let providerTitle = "Groq AI Intelligence";
-            if (activeProvider === 'gemini') {
-                providerTitle = "Google Gemini AI Intelligence";
-                testEndpoint = "/api/ai/gemini/test";
-            } else if (activeProvider === 'ollama') {
-                providerTitle = "Ollama Local AI Intelligence";
-                testEndpoint = "/api/ai/ollama/test";
-            } else if (activeProvider === 'openai') {
-                providerTitle = "OpenAI Intelligence";
-                testEndpoint = "/api/ai/status";
-            } else if (activeProvider === 'groq') {
-                providerTitle = "Groq AI Intelligence";
-                testEndpoint = "/api/ai/groq/test";
-            }
+            let providerTitle = "AI Assistant";
 
             if (titleEl) titleEl.innerText = providerTitle;
-            if (btnTest) btnTest.innerText = `⚡ Test ${providerTitle.split(' ')[0]} Connection`;
-            if (btnAnalyze) btnAnalyze.innerText = `✨ Analyze SEO with ${providerTitle.split(' ')[0]}`;
+            if (btnTest) btnTest.innerText = `⚡ Test Connection`;
+            if (btnAnalyze) btnAnalyze.innerText = `✨ Ask AI Assistant`;
 
             if (badge) {
                 if (statusData && statusData.configured) {
                     badge.className = 'badge badge-success';
-                    badge.innerHTML = `✓ Available (${statusData.model || 'active'})`;
+                    badge.innerHTML = `✓ Connected`;
                 } else {
                     badge.className = 'badge badge-secondary';
                     badge.innerHTML = `Not Configured`;
                 }
             }
         } catch (err) {
-            console.warn('[AI UI] Failed to check status:', err);
             if (badge) {
                 badge.className = 'badge badge-secondary';
                 badge.innerHTML = `Not Configured`;
@@ -375,7 +365,7 @@ export class Dashboard {
                             outputBox.innerHTML = `
                                 <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981; padding: 14px; border-radius: 8px;">
                                     <strong style="display: block; margin-bottom: 4px; font-size: 14px;">✓ Connection Successful</strong>
-                                    <span>Provider: <code>${testRes.provider || activeProvider}</code> • Model: <code>${testRes.model || 'active'}</code> • ${this.escapeHtml(testRes.message || 'AI engine is connected.')}</span>
+                                    <span>AI Assistant is connected and ready to analyze your website scans.</span>
                                 </div>
                             `;
                         }
@@ -383,8 +373,8 @@ export class Dashboard {
                         if (outputBox) {
                             outputBox.innerHTML = `
                                 <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 14px; border-radius: 8px;">
-                                    <strong style="display: block; margin-bottom: 4px; font-size: 14px;">✕ Connection Failed</strong>
-                                    <span>${this.escapeHtml(testRes.message || 'AI API provider is not configured in environment.')}</span>
+                                    <strong style="display: block; margin-bottom: 4px; font-size: 14px;">✕ Connection Needed</strong>
+                                    <span>AI Assistant is not configured yet. You can configure AI settings in Account Settings -> Connected Accounts.</span>
                                 </div>
                             `;
                         }
@@ -393,7 +383,7 @@ export class Dashboard {
                     if (outputBox) {
                         outputBox.innerHTML = `
                             <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 14px; border-radius: 8px;">
-                                <strong>✕ Connection Error:</strong> ${this.escapeHtml(err.message || 'Unable to test AI provider connection.')}
+                                <strong>✕ Connection Error:</strong> Unable to test AI connection right now.
                             </div>
                         `;
                     }
@@ -410,26 +400,25 @@ export class Dashboard {
                 const selectedProjId = projectStore.getSelectedProjectId();
 
                 if (!selectedProjId) {
-                    alert('Please select a project to run AI analysis.');
+                    alert('Please select a website first.');
                     return;
                 }
 
                 btnAnalyze.disabled = true;
                 const origText = btnAnalyze.innerHTML;
-                btnAnalyze.innerText = 'Analyzing Real Evidence...';
+                btnAnalyze.innerText = 'Analyzing Scan Data...';
 
                 if (outputBox) {
                     outputBox.innerHTML = `
                         <div style="padding: 24px; text-align: center; color: var(--primary);">
                             <span class="crawl-spinner" style="width: 20px; height: 20px; border-width: 3px; display: inline-block; vertical-align: middle; margin-right: 8px;"></span>
-                            Evaluating crawl metrics, technical findings, and content signals with Gemini AI...
+                            Reviewing scan metrics, health findings, and page signals with AI Assistant...
                         </div>
                     `;
                 }
 
                 try {
                     const res = await apiClient.post(`/api/projects/${selectedProjId}/ai/analyze`, {});
-                    
                     if (res.status === 'AI_ANALYSIS_COMPLETE' && outputBox) {
                         const insights = res.insights || [];
                         const actions = res.actions || [];
@@ -441,58 +430,15 @@ export class Dashboard {
                                     <span class="badge ${i.severity === 'Critical' ? 'badge-critical' : 'badge-warning'}" style="font-size: 10px;">${i.severity}</span>
                                 </div>
                                 <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">${this.escapeHtml(i.impact || i.details || '')}</div>
-                                <div style="font-size: 12px; color: #10b981; font-weight: 600;">Recommendation: ${this.escapeHtml(i.recommendation || '')}</div>
+                                <div style="font-size: 12px; color: #10b981; font-weight: 600;">Recommended Action: ${this.escapeHtml(i.recommendation || '')}</div>
                             </div>
                         `).join('');
-
-                        let actionsHTML = actions.map(a => `
-                            <div style="padding: 8px 12px; background: var(--bg-card); border-radius: 6px; border: 1px solid var(--border); font-size: 12px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
-                                <div>
-                                    <strong style="color: var(--text-primary);">${this.escapeHtml(a.title || 'Action')}</strong>
-                                    <div style="color: var(--text-secondary); font-size: 11.5px;">${this.escapeHtml(a.description || '')}</div>
-                                </div>
-                                <span class="badge badge-primary" style="font-size: 10px;">${a.priority || 'High'}</span>
-                            </div>
-                        `).join('');
-
-                        const domainEv = selectedProj ? (selectedProj.domain || selectedProj.url) : 'Target Domain';
-                        const summaryEvidence = [
-                            { label: 'Target Domain', value: domainEv, source: 'Crawled Data' },
-                            { label: 'Pages Analyzed', value: `${res.total_pages_analyzed || 'Crawl snapshot'} pages`, source: 'Crawled Data' },
-                            { label: 'Audit Timestamp', value: res.timestamp || new Date().toISOString().split('T')[0], source: 'Crawled Data' }
-                        ];
 
                         outputBox.innerHTML = `
                             <div style="color: var(--text-primary);">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                    <div style="font-size: 14px; font-weight: 700; color: #3b82f6;">Executive Summary</div>
-                                    ${renderAIBadge('analysis')}
-                                </div>
-                                <p style="font-size: 13px; line-height: 1.5; color: var(--text-primary); margin-bottom: 10px;">${this.escapeHtml(res.summary || 'Analysis completed successfully.')}</p>
-                                ${renderViewEvidenceButton(summaryEvidence, 'dash-summary-ev')}
-
-                                ${insights.length > 0 ? `
-                                    <div style="font-size: 13px; font-weight: 700; margin: 20px 0 10px; color: var(--text-primary); display: flex; justify-content: space-between; align-items: center;">
-                                        <span>Key Audit Insights (${insights.length})</span>
-                                        ${renderAIBadge('assisted')}
-                                    </div>
-                                    <div style="margin-bottom: 16px;">${insightsHTML}</div>
-                                ` : ''}
-
-                                ${actions.length > 0 ? `
-                                    <div style="font-size: 13px; font-weight: 700; margin: 20px 0 10px; color: var(--text-primary); display: flex; justify-content: space-between; align-items: center;">
-                                        <span>Recommended Actions (${actions.length})</span>
-                                        ${renderAIBadge('assisted')}
-                                    </div>
-                                    <div>${actionsHTML}</div>
-                                ` : ''}
-                            </div>
-                        `;
-
-                    } else if (outputBox) {
-                        outputBox.innerHTML = `
-                            <div style="padding: 14px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); color: #f59e0b; border-radius: 8px;">
-                                <strong>Notice:</strong> ${this.escapeHtml(res.message || res.summary || 'Gemini AI analysis is currently unavailable.')}
+                                <div style="font-size: 14px; font-weight: 700; color: #3b82f6; margin-bottom: 8px;">Summary & Recommendations</div>
+                                <p style="font-size: 13px; line-height: 1.5; color: var(--text-primary); margin-bottom: 12px;">${this.escapeHtml(res.summary || 'Analysis completed.')}</p>
+                                ${insights.length > 0 ? `<div style="margin-top: 12px;">${insightsHTML}</div>` : ''}
                             </div>
                         `;
                     }
@@ -500,7 +446,7 @@ export class Dashboard {
                     if (outputBox) {
                         outputBox.innerHTML = `
                             <div style="padding: 14px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; border-radius: 8px;">
-                                <strong>✕ Analysis Failed:</strong> ${this.escapeHtml(err.message || 'Unable to complete AI analysis.')}
+                                <strong>✕ Analysis Error:</strong> ${this.escapeHtml(err.message || 'Unable to complete AI analysis.')}
                             </div>
                         `;
                     }
@@ -574,13 +520,13 @@ export class Dashboard {
         } else if (this.sortOption === 'name_asc') {
             list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
         } else if (this.sortOption === 'issues_desc') {
-            list.sort((a, b) => (b.critical_issues_count || 0) - (a.critical_issues_count || 0));
+            list.sort((a, b) => (a.critical_issues_count || 0) - (b.critical_issues_count || 0));
         }
 
         if (list.length === 0) {
             container.innerHTML = `
                 <div style="padding: 32px; text-align: center; color: var(--text-secondary); font-size: 13.5px;">
-                    No websites match your filter query '${this.escapeHtml(this.searchQuery)}'.
+                    No websites match your filter '${this.escapeHtml(this.searchQuery)}'.
                 </div>
             `;
             return;
@@ -589,7 +535,7 @@ export class Dashboard {
         const rows = list.map(p => {
             const hScore = p.health_score !== undefined ? p.health_score : 100;
             const healthColor = hScore >= 80 ? '#10b981' : (hScore >= 60 ? '#f59e0b' : '#ef4444');
-            const st = p.status || 'Never Crawled';
+            const st = p.status || 'Never Scanned';
             const badgeClass = st === 'Healthy' ? 'badge-success' : (st === 'Needs Attention' ? 'badge-warning' : (st === 'Critical' ? 'badge-critical' : 'badge-secondary'));
 
             return `
@@ -611,8 +557,8 @@ export class Dashboard {
                     <td style="padding: 14px 20px; font-size: 12px; color: var(--text-secondary);">${p.last_crawled_at ? p.last_crawled_at.split('T')[0] : 'Never'}</td>
                     <td style="padding: 14px 20px; text-align: right;">
                         <div style="display: flex; gap: 6px; justify-content: flex-end;">
-                            <button class="btn btn-secondary btn-sm" onclick="window.startCrawlFromOverview('${p.id}', '${p.domain || p.url}')" style="font-size: 11px; padding: 4px 10px;">Crawl</button>
-                            <button class="btn btn-primary btn-sm" onclick="window.navigateToAudit('${p.id}')" style="font-size: 11px; padding: 4px 10px;">Audit &rarr;</button>
+                            <button class="btn btn-secondary btn-sm" onclick="window.startCrawlFromOverview('${p.id}', '${p.domain || p.url}')" style="font-size: 11px; padding: 4px 10px;">Scan My Website</button>
+                            <button class="btn btn-primary btn-sm" onclick="window.navigateToAudit('${p.id}')" style="font-size: 11px; padding: 4px 10px;">Health Check &rarr;</button>
                         </div>
                     </td>
                 </tr>
@@ -626,10 +572,10 @@ export class Dashboard {
                         <tr>
                             <th style="padding: 12px 20px;">Website Domain</th>
                             <th style="padding: 12px 20px;">Status</th>
-                            <th style="padding: 12px 20px;">SEO Health</th>
-                            <th style="padding: 12px 20px;">Pages</th>
-                            <th style="padding: 12px 20px;">Critical Issues</th>
-                            <th style="padding: 12px 20px;">Last Crawled</th>
+                            <th style="padding: 12px 20px;">Website Health</th>
+                            <th style="padding: 12px 20px;">Pages Found</th>
+                            <th style="padding: 12px 20px;">Critical Problems</th>
+                            <th style="padding: 12px 20px;">Last Scanned</th>
                             <th style="padding: 12px 20px; text-align: right;">Actions</th>
                         </tr>
                     </thead>

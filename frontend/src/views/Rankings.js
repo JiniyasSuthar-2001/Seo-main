@@ -2,6 +2,7 @@ import { projectStore } from '../core/projectStore.js';
 import { apiClient } from '../services/apiClient.js';
 import { resolveProjectId } from '../utils/projectResolver.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
+import { renderTooltip } from '../components/Tooltip.js';
 
 export class Rankings {
     constructor() {
@@ -14,22 +15,22 @@ export class Rankings {
         this.element.innerHTML = `
             <div class="header" style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
                 <div>
-                    <h1 style="font-size: 24px; font-weight: 700;">Position Tracking & SERP Rankings</h1>
-                    <p style="color: var(--text-secondary); margin-top: 4px;">Monitor website search engine position movements, visibility scores, and winners/losers across crawl snapshots.</p>
+                    <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">Your Google Ranking Positions</h1>
+                    <p style="color: var(--text-secondary); margin: 0; font-size: 13.5px;">Track your website's search positions on Google when real ranking data is connected.</p>
                 </div>
-                <button class="btn btn-primary btn-sm" onclick="window.startCrawl ? window.startCrawl() : window.location.href='/'">Run Crawl</button>
+                <button class="btn btn-primary btn-sm" onclick="window.startCrawl ? window.startCrawl() : window.location.href='/'">Scan My Website</button>
             </div>
 
             <!-- POSITION TRACKING SUB-TABS -->
             <div style="display: flex; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 24px; flex-wrap: wrap;" id="rank-tabs-nav">
-                <button class="rank-tab active" data-tab="tracking">Position Tracking</button>
-                <button class="rank-tab" data-tab="winners">Winners & Losers</button>
-                <button class="rank-tab" data-tab="config">Campaign Settings</button>
+                <button class="rank-tab active" data-tab="tracking">Ranking Positions</button>
+                <button class="rank-tab" data-tab="winners">Position Changes</button>
+                <button class="rank-tab" data-tab="config">Tracking Settings</button>
             </div>
 
             <div id="rankings-tab-content">
                 <div class="card" style="padding: 32px; text-align: center; color: var(--text-secondary);">
-                    Loading position tracking workspace...
+                    Loading ranking positions...
                 </div>
             </div>
 
@@ -51,18 +52,6 @@ export class Rankings {
                 .rank-tab.active {
                     color: var(--primary);
                     border-bottom-color: var(--primary);
-                }
-                .source-tag {
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 4px;
-                    padding: 2px 6px;
-                    border-radius: 4px;
-                    font-size: 10px;
-                    font-weight: 700;
-                    background: var(--bg-subtle);
-                    color: var(--text-secondary);
-                    border: 1px solid var(--border);
                 }
             </style>
         `;
@@ -93,9 +82,8 @@ export class Rankings {
         const projectId = resolveProjectId();
         const selectedProj = projectStore.getSelectedProject();
 
-
         if (!projectId || !selectedProj) {
-            container.innerHTML = `<div class="card" style="padding: 32px; text-align: center;">Please select an SEO project workspace.</div>`;
+            container.innerHTML = `<div class="card" style="padding: 32px; text-align: center;">Please select a website project workspace.</div>`;
             return;
         }
 
@@ -109,9 +97,9 @@ export class Rankings {
             }
         } catch (e) {
             if (e.isNetworkError || apiClient.status === 'OFFLINE') {
-                renderBackendOfflineState(container, "Unable to connect to backend server.", () => this.mounted());
+                renderBackendOfflineState(container, "Unable to connect right now. Please try again.", () => this.mounted());
             } else {
-                renderFeatureErrorState(container, "Rankings Load Error", e.message || "Failed to load rankings.", () => this.mounted());
+                renderFeatureErrorState(container, "Rankings Load Error", e.message || "Failed to load ranking positions.", () => this.mounted());
             }
         }
     }
@@ -129,262 +117,122 @@ export class Rankings {
             <!-- CAMPAIGN SUMMARY HEADER -->
             <div style="background: var(--bg-subtle); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
                 <div style="font-size: 13px;">
-                    <strong>Campaign Target:</strong> ${project.name} (${project.domain})
-                    &nbsp;•&nbsp; <strong>Scope:</strong> ${config.target_type}
-                    &nbsp;•&nbsp; <strong>Engine:</strong> ${config.search_engine} (${config.target_country})
-                    &nbsp;•&nbsp; <strong>Device:</strong> ${config.target_device}
+                    <strong>Website Target:</strong> ${project.name} (${project.domain})
+                    &nbsp;•&nbsp; <strong>Search Engine:</strong> ${config.search_engine || 'Google'} (${config.target_country || 'Default'})
                 </div>
-                <button class="btn btn-secondary btn-sm" onclick="document.querySelector('[data-tab=config]').click()">⚙ Edit Campaign Config</button>
+                <button class="btn btn-secondary btn-sm" onclick="document.querySelector('[data-tab=config]').click()">⚙ Edit Tracking Settings</button>
             </div>
 
             <!-- OVERVIEW KPI CARDS -->
             <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;">
-                <div class="kpi-card">
-                    <div class="kpi-label">Visibility Score</div>
-                    <div class="kpi-value" style="color: var(--primary);">${ov.visibility || '0.0%'}</div>
-                    <div class="kpi-status">Search presence</div>
+                <div class="kpi-card" style="padding: 16px; background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border);">
+                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">
+                        Visibility Score ${renderTooltip('How easy it is for people to find your website on Google. Higher is better.')}
+                    </div>
+                    <div style="font-size: 26px; font-weight: 800; color: var(--primary); margin-top: 4px;">${ov.visibility || '0.0%'}</div>
+                    <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 2px;">Search presence score</div>
                 </div>
-                <div class="kpi-card">
-                    <div class="kpi-label">Average Position</div>
-                    <div class="kpi-value">${ov.average_position || 'N/A'}</div>
-                    <div class="kpi-status">Mean rank</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-label">Top 3 Positions</div>
-                    <div class="kpi-value" style="color: var(--success, #10b981);">${ov.top_3 || 0}</div>
-                    <div class="kpi-status">Page 1 Top 3</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-label">Top 10 Positions</div>
-                    <div class="kpi-value" style="color: var(--primary);">${ov.top_10 || 0}</div>
-                    <div class="kpi-status">Page 1 results</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-label">Top 20 Positions</div>
-                    <div class="kpi-value">${ov.top_20 || 0}</div>
-                    <div class="kpi-status">Page 2 results</div>
-                </div>
-                <div class="kpi-card">
-                    <div class="kpi-label">Total Tracked</div>
-                    <div class="kpi-value">${ov.total_tracked || 0}</div>
-                    <div class="kpi-status">Tracked terms</div>
-                </div>
-            </div>
 
-            <!-- HISTORICAL TREND NOTICE -->
-            <div class="card" style="padding: 16px 20px; margin-bottom: 24px; background: var(--bg-subtle); border-left: 4px solid var(--primary);">
-                <div style="font-size: 13px; color: var(--text-secondary);">
-                    ℹ️ <strong>Position Trend Status:</strong> ${trackingRes.trend_message || "Trend data will appear after additional ranking snapshots."}
+                <div class="kpi-card" style="padding: 16px; background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border);">
+                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">
+                        Average Position ${renderTooltip('Your website average position in Google search results. Only shown when real ranking data is connected.')}
+                    </div>
+                    <div style="font-size: 26px; font-weight: 800; color: var(--text-primary); margin-top: 4px;">${ov.average_position || 'Not Available'}</div>
+                    <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 2px;">Mean Google rank</div>
+                </div>
+
+                <div class="kpi-card" style="padding: 16px; background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border);">
+                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">
+                        Top 3 Positions ${renderTooltip('Keywords ranking in position #1 to #3 on Google.')}
+                    </div>
+                    <div style="font-size: 26px; font-weight: 800; color: #10b981; margin-top: 4px;">${ov.top_3 || 0}</div>
+                    <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 2px;">Top 3 Google positions</div>
+                </div>
+
+                <div class="kpi-card" style="padding: 16px; background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border);">
+                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">
+                        Top 10 Positions ${renderTooltip('Keywords ranking on Page 1 of Google results.')}
+                    </div>
+                    <div style="font-size: 26px; font-weight: 800; color: var(--primary); margin-top: 4px;">${ov.top_10 || 0}</div>
+                    <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 2px;">Page 1 Google results</div>
                 </div>
             </div>
 
             <!-- RANKINGS DATA TABLE -->
-            <div class="card" style="padding: 24px;">
+            <div class="card" style="padding: 24px; border-radius: 14px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                    <h3 style="font-size: 16px; font-weight: 700;">SERP Keyword Positions</h3>
-                    <span class="source-tag">Verified Dataset</span>
+                    <h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0;">Your Google Ranking Positions</h3>
                 </div>
 
                 ${rankings.length === 0 ? `
                     <div class="card" style="padding: 40px 28px; text-align: center; max-width: 580px; margin: 16px auto; background: var(--bg-subtle); border-radius: 12px; border: 1px dashed var(--border);">
-                        <div style="width: 56px; height: 56px; border-radius: 14px; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
-                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
-                        </div>
-                        <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">No Ranking Data Available</h3>
+                        <div style="font-size: 36px; margin-bottom: 12px;">📊</div>
+                        <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">No Google Ranking Data Connected Yet</h3>
                         <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.6;">
-                            Your website has been crawled successfully. To see Google search positions, connect Google Search Console or configure a supported rank-tracking provider.
+                            Your website scan is complete. To track your actual Google search positions, connect your Google Search Console account or upload ranking data.
                         </p>
                         <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
-                            <a href="/integrations" data-link class="btn btn-primary btn-sm">Connect Search Console</a>
-                            <a href="/import" data-link class="btn btn-secondary btn-sm">Import Advanced Data</a>
+                            <a href="/integrations" data-link class="btn btn-primary btn-sm">Connect Your Google Account</a>
+                            <a href="/import" data-link class="btn btn-secondary btn-sm">Upload Ranking Data</a>
                         </div>
                     </div>
                 ` : `
-                    <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
-                        <thead>
-                            <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
-                                <th style="padding: 10px 14px;">Tracked Keyword</th>
-                                <th style="padding: 10px 14px;">Current Rank</th>
-                                <th style="padding: 10px 14px;">Ranking URL</th>
-                                <th style="padding: 10px 14px;">Search Volume</th>
-                                <th style="padding: 10px 14px;">Difficulty</th>
-                                <th style="padding: 10px 14px; text-align: right;">Data Source</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${rankings.map(item => `
-                                <tr style="border-bottom: 1px solid var(--border);">
-                                    <td style="padding: 10px 14px; font-weight: 600;">${item.keyword}</td>
-                                    <td style="padding: 10px 14px; font-weight: 700; color: var(--primary);">${item.position ? '#' + item.position : 'Unranked'}</td>
-                                    <td style="padding: 10px 14px; font-size: 12px; color: var(--text-secondary); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.url || 'Homepage'}</td>
-                                    <td style="padding: 10px 14px; color: var(--text-tertiary);">${item.search_volume !== undefined ? item.search_volume : 'Unavailable'}</td>
-                                    <td style="padding: 10px 14px; color: var(--text-tertiary);">${item.difficulty !== undefined ? item.difficulty : 'Unavailable'}</td>
-                                    <td style="padding: 10px 14px; text-align: right;"><span class="source-tag">${item.data_source || 'Crawler'}</span></td>
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                            <thead>
+                                <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
+                                    <th style="padding: 12px 18px;">Search Term / Keyword</th>
+                                    <th style="padding: 12px;">Target Page URL</th>
+                                    <th style="padding: 12px;">Google Position</th>
+                                    <th style="padding: 12px;">Previous Position</th>
+                                    <th style="padding: 12px;">Position Change</th>
+                                    <th style="padding: 12px 18px;">Data Source</th>
                                 </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                ${rankings.map(r => `
+                                    <tr style="border-bottom: 1px solid var(--border);">
+                                        <td style="padding: 12px 18px; font-weight: 700; color: var(--text-primary);">${this.escapeHtml(r.keyword)}</td>
+                                        <td style="padding: 12px; font-family: monospace; font-size: 12px;">${this.escapeHtml(r.url || '-')}</td>
+                                        <td style="padding: 12px; font-weight: 800; color: var(--primary);">${r.position || 'Not Available'}</td>
+                                        <td style="padding: 12px; color: var(--text-secondary);">${r.previous_position || '-'}</td>
+                                        <td style="padding: 12px;">${r.change ? (r.change > 0 ? `<span style="color: #10b981;">+${r.change}</span>` : `<span style="color: #ef4444;">${r.change}</span>`) : '0'}</td>
+                                        <td style="padding: 12px 18px; font-size: 11.5px; color: var(--text-secondary);">${this.escapeHtml(r.provenance || 'Google Search Console')}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
                 `}
             </div>
         `;
     }
 
-    // 2. WINNERS & LOSERS SUB-TAB
     async renderWinnersTab(container, projectId) {
-        const res = await apiClient.get(`/api/projects/${projectId}/rankings/winners-losers`);
-        
-        if (!res.has_comparison) {
-            container.innerHTML = `
-                <div class="card" style="padding: 36px; text-align: center;">
-                    <div style="font-size: 16px; font-weight: 700; margin-bottom: 8px;">Single Snapshot Available</div>
-                    <p style="color: var(--text-secondary); font-size: 14px; max-width: 500px; margin: 0 auto 16px;">
-                        ${res.message || "Trend data will appear after additional ranking snapshots."}
-                    </p>
-                    <button class="btn btn-primary btn-sm" onclick="window.startCrawl()">Run Additional Website Crawl</button>
-                </div>
-            `;
-            return;
-        }
-
-        const improved = res.improved || [];
-        const declined = res.declined || [];
-
         container.innerHTML = `
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 20px;">
-                
-                <!-- IMPROVED KEYWORDS -->
-                <div class="card" style="padding: 20px;">
-                    <h3 style="font-size: 16px; font-weight: 700; color: var(--success, #10b981); margin-bottom: 12px;">▲ Improved Keywords (${improved.length})</h3>
-                    ${improved.length === 0 ? `<div style="color: var(--text-secondary); font-size: 13px;">No improved keywords in recent snapshot.</div>` : `
-                        <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
-                            <thead>
-                                <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase;">
-                                    <th style="padding: 8px 12px;">Keyword</th>
-                                    <th style="padding: 8px 12px;">Prev</th>
-                                    <th style="padding: 8px 12px;">Curr</th>
-                                    <th style="padding: 8px 12px;">Change</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${improved.map(item => `
-                                    <tr style="border-bottom: 1px solid var(--border);">
-                                        <td style="padding: 8px 12px; font-weight: 600;">${item.keyword}</td>
-                                        <td style="padding: 8px 12px; color: var(--text-secondary);">#${item.previous_position}</td>
-                                        <td style="padding: 8px 12px; font-weight: 700; color: var(--success);">#${item.current_position}</td>
-                                        <td style="padding: 8px 12px; font-weight: 700; color: var(--success);">${item.change}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    `}
-                </div>
-
-                <!-- DECLINED KEYWORDS -->
-                <div class="card" style="padding: 20px;">
-                    <h3 style="font-size: 16px; font-weight: 700; color: var(--critical, #ef4444); margin-bottom: 12px;">▼ Declined Keywords (${declined.length})</h3>
-                    ${declined.length === 0 ? `<div style="color: var(--text-secondary); font-size: 13px;">No declined keywords in recent snapshot.</div>` : `
-                        <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
-                            <thead>
-                                <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase;">
-                                    <th style="padding: 8px 12px;">Keyword</th>
-                                    <th style="padding: 8px 12px;">Prev</th>
-                                    <th style="padding: 8px 12px;">Curr</th>
-                                    <th style="padding: 8px 12px;">Change</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${declined.map(item => `
-                                    <tr style="border-bottom: 1px solid var(--border);">
-                                        <td style="padding: 8px 12px; font-weight: 600;">${item.keyword}</td>
-                                        <td style="padding: 8px 12px; color: var(--text-secondary);">#${item.previous_position}</td>
-                                        <td style="padding: 8px 12px; font-weight: 700; color: var(--critical);">#${item.current_position}</td>
-                                        <td style="padding: 8px 12px; font-weight: 700; color: var(--critical);">${item.change}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    `}
-                </div>
-
+            <div class="card" style="padding: 32px; text-align: center; color: var(--text-secondary);">
+                Track position movements after connecting your Google account or uploading ranking data.
             </div>
         `;
     }
 
-    // 3. CAMPAIGN CONFIGURATION SUB-TAB
     async renderCampaignConfigTab(container, projectId, project) {
         container.innerHTML = `
-            <div class="card" style="padding: 24px; max-width: 680px;">
-                <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 4px;">Ranking Campaign Configuration</h3>
-                <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 20px;">Configure project target scope, search engine, country, language, and target device for position tracking.</p>
-
-                <form id="campaign-config-form" style="display: flex; flex-direction: column; gap: 16px;">
-                    <div>
-                        <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">Target Scope</label>
-                        <select id="cfg-scope" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--bg-workspace); color: var(--text-primary);">
-                            <option value="Domain" ${project.target_type === 'Domain' ? 'selected' : ''}>Domain (*.example.com)</option>
-                            <option value="Subdomain" ${project.target_type === 'Subdomain' ? 'selected' : ''}>Subdomain (blog.example.com)</option>
-                            <option value="Exact URL" ${project.target_type === 'Exact URL' ? 'selected' : ''}>Exact URL (example.com/page)</option>
-                            <option value="Subfolder" ${project.target_type === 'Subfolder' ? 'selected' : ''}>Subfolder (example.com/store/)</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">Search Engine</label>
-                        <select id="cfg-engine" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--bg-workspace); color: var(--text-primary);">
-                            <option value="Google">Google Search</option>
-                            <option value="Bing">Microsoft Bing</option>
-                        </select>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                        <div>
-                            <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">Target Country</label>
-                            <input type="text" id="cfg-country" value="${project.target_country || 'United States'}" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--bg-workspace); color: var(--text-primary);">
-                        </div>
-                        <div>
-                            <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">Language</label>
-                            <input type="text" id="cfg-lang" value="${project.target_language || 'English'}" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--bg-workspace); color: var(--text-primary);">
-                        </div>
-                    </div>
-
-                    <div>
-                        <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 4px;">Target Device</label>
-                        <select id="cfg-device" style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; background: var(--bg-workspace); color: var(--text-primary);">
-                            <option value="Desktop" ${project.target_device === 'Desktop' ? 'selected' : ''}>Desktop</option>
-                            <option value="Mobile" ${project.target_device === 'Mobile' ? 'selected' : ''}>Mobile</option>
-                            <option value="Tablet" ${project.target_device === 'Tablet' ? 'selected' : ''}>Tablet</option>
-                        </select>
-                    </div>
-
-                    <div style="margin-top: 8px;">
-                        <button type="submit" class="btn btn-primary">Save Campaign Settings</button>
-                    </div>
-                </form>
+            <div class="card" style="padding: 24px; max-width: 600px;">
+                <h3 style="font-size: 16px; font-weight: 700; margin: 0 0 16px 0;">Tracking Settings</h3>
+                <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">
+                    Target Website: <strong>${this.escapeHtml(project.name)}</strong> (${this.escapeHtml(project.domain)})
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <label style="font-size: 12.5px; font-weight: 600; display: block; margin-bottom: 6px;">Target Search Engine</label>
+                    <input type="text" value="Google" readonly style="width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-subtle);" />
+                </div>
             </div>
         `;
+    }
 
-        const form = container.querySelector('#campaign-config-form');
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const scope = container.querySelector('#cfg-scope').value;
-            const engine = container.querySelector('#cfg-engine').value;
-            const country = container.querySelector('#cfg-country').value;
-            const lang = container.querySelector('#cfg-lang').value;
-            const device = container.querySelector('#cfg-device').value;
-
-            try {
-                await apiClient.post(`/api/projects/${projectId}/campaign-config`, {
-                    target_type: scope,
-                    search_engine: engine,
-                    target_country: country,
-                    target_language: lang,
-                    target_device: device
-                });
-                alert("Campaign settings saved successfully.");
-                this.mounted();
-            } catch (err) {
-                alert(`Failed to save settings: ${err.message}`);
-            }
-        });
+    escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 }

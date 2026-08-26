@@ -3,6 +3,7 @@ import { getApiBaseUrl } from '../config/api.js';
 import { getUploadGuidance } from '../config/uploadGuidance.js';
 import { UploadGuidanceComponent } from '../components/UploadGuidanceComponent.js';
 import { FileInspectorModal } from '../components/FileInspectorModal.js';
+import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
 
 export class Import {
     constructor() {
@@ -20,31 +21,30 @@ export class Import {
 
         element.innerHTML = `
             <div class="header" style="margin-bottom: 20px;">
-                <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.05em;">OPTIONAL HISTORICAL FALLBACK</div>
-                <h1 style="font-size: 24px; font-weight: 700; margin-top: 2px;">Advanced Data Import & File Guidance</h1>
-                <p style="color: var(--text-secondary); margin-top: 4px; font-size: 13.5px;">Import historical datasets, agency CSV exports, or legacy rank tracking data with client-side inspection & privacy protections.</p>
+                <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">Upload Data & File Guide</h1>
+                <p style="color: var(--text-secondary); margin: 0; font-size: 13.5px;">Upload your spreadsheet files (Keywords, Rankings, Backlinks, Competitors) with step-by-step guidance.</p>
             </div>
             
             <div style="background: var(--bg-subtle); border-left: 4px solid var(--primary); padding: 16px 20px; border-radius: 8px; margin-bottom: 24px;">
                 <div style="display: flex; gap: 12px; align-items: flex-start;">
-                    <div style="font-size: 18px; line-height: 1;">ℹ️</div>
+                    <div style="font-size: 18px; line-height: 1;">💡</div>
                     <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.5;">
-                        <strong style="color: var(--text-primary);">Website crawling is the primary source of truth.</strong> Real website HTML, titles, headings, and internal link graphs are analyzed directly from crawls. CSV import is an optional fallback for historical data.
+                        <strong style="color: var(--text-primary);">Website scanning is the main source of truth.</strong> Real website HTML, titles, headings, and page links are analyzed directly from website scans. Spreadsheet upload is an optional feature to import external data.
                     </div>
                 </div>
             </div>
 
             <!-- DATASET SELECTOR TABS -->
-            <div style="display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 12px; flex-wrap: wrap;">
-                <button class="btn ${this.selectedDataType === 'keywords' ? 'btn-primary' : 'btn-secondary'} btn-sm btn-import-tab" data-type="keywords">Keywords CSV</button>
-                <button class="btn ${this.selectedDataType === 'rankings' ? 'btn-primary' : 'btn-secondary'} btn-sm btn-import-tab" data-type="rankings">Rankings CSV</button>
-                <button class="btn ${this.selectedDataType === 'backlinks' ? 'btn-primary' : 'btn-secondary'} btn-sm btn-import-tab" data-type="backlinks">Backlinks CSV</button>
-                <button class="btn ${this.selectedDataType === 'competitors' ? 'btn-primary' : 'btn-secondary'} btn-sm btn-import-tab" data-type="competitors">Competitors CSV</button>
+            <div style="display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 12px; flex-wrap: wrap;">
+                <button class="btn ${this.selectedDataType === 'keywords' ? 'btn-primary' : 'btn-secondary'} btn-sm btn-import-tab" data-type="keywords">Target Keywords</button>
+                <button class="btn ${this.selectedDataType === 'rankings' ? 'btn-primary' : 'btn-secondary'} btn-sm btn-import-tab" data-type="rankings">Google Positions</button>
+                <button class="btn ${this.selectedDataType === 'backlinks' ? 'btn-primary' : 'btn-secondary'} btn-sm btn-import-tab" data-type="backlinks">Links From Other Websites</button>
+                <button class="btn ${this.selectedDataType === 'competitors' ? 'btn-primary' : 'btn-secondary'} btn-sm btn-import-tab" data-type="competitors">Other Businesses</button>
             </div>
             
             ${this.errorMessage ? `
                 <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 12px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 14px;">
-                    <strong>Import Error:</strong> ${this.errorMessage}
+                    <strong>Upload Error:</strong> ${this.escapeHtml(this.errorMessage)}
                 </div>
             ` : ''}
 
@@ -53,9 +53,9 @@ export class Import {
             </div>
 
             <div class="card" style="margin-top: 32px; padding: 24px;">
-                <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 12px;">Recent Dataset Imports</h3>
+                <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 12px; color: var(--text-primary);">Recent Data Uploads</h3>
                 <div id="import-history-list" style="color: var(--text-secondary); font-size: 13px;">
-                    Loading import history...
+                    Loading upload history...
                 </div>
             </div>
         `;
@@ -98,16 +98,14 @@ export class Import {
             file,
             guidance,
             () => this.executeUpload(file),
-            () => console.log('File import cancelled')
+            () => {}
         );
     }
 
     async executeUpload(file) {
-        await projectStore.ensureInitialized();
-        const activeProjectId = projectStore.getSelectedProjectId();
-        if (!activeProjectId) {
-            this.errorMessage = 'No active project selected. Please select a project before uploading data.';
-            this.reRender();
+        const projectId = projectStore.getSelectedProjectId();
+        if (!projectId) {
+            alert('Please select a website project first.');
             return;
         }
 
@@ -116,15 +114,15 @@ export class Import {
         this.reRender();
 
         const formData = new FormData();
-        formData.append('data_type', this.selectedDataType);
         formData.append('file', file);
 
         try {
-            const token = localStorage.getItem('jwt_token');
+            const apiBase = getApiBaseUrl();
+            const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
             const headers = {};
             if (token) headers['Authorization'] = `Bearer ${token}`;
 
-            const response = await fetch(`${getApiBaseUrl()}/api/projects/${activeProjectId}/imports/upload`, {
+            const response = await fetch(`${apiBase}/api/projects/${projectId}/import/${this.selectedDataType}`, {
                 method: 'POST',
                 headers: headers,
                 body: formData
@@ -132,13 +130,14 @@ export class Import {
 
             if (!response.ok) {
                 const errData = await response.json().catch(() => ({}));
-                throw new Error(errData.detail || `Server returned status ${response.status}`);
+                throw new Error(errData.detail || `Upload failed with status ${response.status}`);
             }
 
             const data = await response.json();
             this.importResults = data;
+
         } catch (err) {
-            this.errorMessage = err.message || 'Failed to upload file.';
+            this.errorMessage = err.message || 'Data upload failed.';
         } finally {
             this.isUploading = false;
             this.reRender();
@@ -146,111 +145,76 @@ export class Import {
     }
 
     renderResultsHTML() {
-        const res = this.importResults;
-        const total = (res.successful_records || 0) + (res.error_records || 0);
-
+        const res = this.importResults || {};
         return `
-            <div class="card" style="padding: 24px; max-width: 800px; margin-bottom: 24px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 16px;">
-                    <div>
-                        <h3 style="font-size: 18px; font-weight: 600;">Import Diagnostics & Provenance Report</h3>
-                        <p style="color: var(--text-secondary); font-size: 13px; margin-top: 2px;">Dataset ID: ${res.dataset_id || 'N/A'} | Source: <strong>Imported CSV File</strong></p>
-                    </div>
-                    <span class="badge" style="padding: 6px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; background: ${res.error_records === 0 ? 'rgba(34, 197, 94, 0.1)' : 'rgba(234, 179, 8, 0.1)'}; color: ${res.error_records === 0 ? '#22c55e' : '#eab308'};">
-                        Status: ${res.status || 'SUCCESS'}
-                    </span>
+            <div class="card" style="padding: 24px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--success);">✓ Data Upload Successful</h3>
+                    <button class="btn btn-secondary btn-sm" id="btn-import-another">Upload Another File</button>
                 </div>
-
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
-                    <div style="background: var(--bg-tertiary, #f8fafc); padding: 16px; border-radius: 8px; text-align: center;">
-                        <div style="font-size: 20px; font-weight: 700;">${total}</div>
-                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">Total Rows Inspected</div>
-                    </div>
-                    <div style="background: rgba(34, 197, 94, 0.05); padding: 16px; border-radius: 8px; text-align: center;">
-                        <div style="font-size: 20px; font-weight: 700; color: #22c55e;">${res.successful_records || 0}</div>
-                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">Successfully Imported</div>
-                    </div>
-                    <div style="background: rgba(239, 68, 68, 0.05); padding: 16px; border-radius: 8px; text-align: center;">
-                        <div style="font-size: 20px; font-weight: 700; color: #ef4444;">${res.error_records || 0}</div>
-                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">Rows Skipped / Errors</div>
-                    </div>
+                <div style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 12px;">
+                    Rows Imported: <strong>${res.imported_count || res.count || 0}</strong>
                 </div>
-
-                ${res.error_details && res.error_details.length > 0 ? `
-                    <div style="margin-bottom: 24px;">
-                        <h4 style="font-size: 14px; font-weight: 600; margin-bottom: 10px; color: #ef4444;">Row-Level Errors & Explicit Diagnostics</h4>
-                        <div style="max-height: 200px; overflow-y: auto; background: var(--bg-tertiary, #f8fafc); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px;">
-                            ${res.error_details.map(e => `
-                                <div style="font-size: 12px; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,0.05);">
-                                    <strong style="color: #ef4444;">Row ${e.row}:</strong> ${e.message}
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                ` : ''}
-
-                <button class="btn btn-primary" id="btn-reset-import">Import Another Dataset</button>
             </div>
         `;
     }
 
-    reRender() {
-        const root = document.getElementById('main-content');
-        if (root) {
-            root.innerHTML = '';
-            root.appendChild(this.render());
-        }
-    }
-
     async loadImportHistory(element, projectId) {
         const historyContainer = element.querySelector('#import-history-list');
-        if (!historyContainer || !projectId) {
-            if (historyContainer) historyContainer.innerHTML = 'No project selected.';
-            return;
-        }
+        if (!historyContainer || !projectId) return;
 
         try {
-            const token = localStorage.getItem('jwt_token');
+            const apiBase = getApiBaseUrl();
+            const token = localStorage.getItem('auth_token') || sessionStorage.getItem('auth_token');
             const headers = {};
             if (token) headers['Authorization'] = `Bearer ${token}`;
 
-            const res = await fetch(`${getApiBaseUrl()}/api/projects/${projectId}/imports`, { headers });
-            if (!res.ok) throw new Error('Failed to fetch history');
+            const res = await fetch(`${apiBase}/api/projects/${projectId}/import/history`, { headers });
+            if (!res.ok) throw new Error('Failed to load history');
+            const history = await res.json();
 
-            const datasets = await res.json();
-            if (!datasets || datasets.length === 0) {
-                historyContainer.innerHTML = 'No dataset imports recorded for this project yet.';
+            if (!Array.isArray(history) || history.length === 0) {
+                historyContainer.innerHTML = 'No previous file uploads recorded for this website.';
                 return;
             }
 
+            const rows = history.map(item => `
+                <tr style="border-bottom: 1px solid var(--border);">
+                    <td style="padding: 8px 12px; font-weight: 600;">${this.escapeHtml(item.filename || 'data.csv')}</td>
+                    <td style="padding: 8px 12px;">${this.escapeHtml(item.data_type || 'Data')}</td>
+                    <td style="padding: 8px 12px;">${item.rows_imported || 0} rows</td>
+                    <td style="padding: 8px 12px; color: var(--text-tertiary);">${item.timestamp ? item.timestamp.split('T')[0] : 'Recently'}</td>
+                </tr>
+            `).join('');
+
             historyContainer.innerHTML = `
-                <table style="width: 100%; border-collapse: collapse; margin-top: 8px;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 12.5px;">
                     <thead>
-                        <tr style="text-align: left; border-bottom: 1px solid var(--border-color); color: var(--text-secondary);">
-                            <th style="padding: 8px 0;">Filename</th>
-                            <th style="padding: 8px;">Type</th>
-                            <th style="padding: 8px;">Records</th>
-                            <th style="padding: 8px;">Provenance</th>
-                            <th style="padding: 8px;">Status</th>
-                            <th style="padding: 8px; text-align: right;">Date</th>
+                        <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary);">
+                            <th style="padding: 8px 12px;">File Name</th>
+                            <th style="padding: 8px 12px;">Type</th>
+                            <th style="padding: 8px 12px;">Rows</th>
+                            <th style="padding: 8px 12px;">Date</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        ${datasets.map(d => `
-                            <tr style="border-bottom: 1px solid rgba(0,0,0,0.05);">
-                                <td style="padding: 10px 0; font-weight: 500;">${d.filename || 'Import'}</td>
-                                <td style="padding: 10px;"><span class="badge" style="text-transform: capitalize;">${d.data_type}</span></td>
-                                <td style="padding: 10px;">${d.record_count || 0}</td>
-                                <td style="padding: 10px; font-size: 12px; color: var(--text-secondary);">Imported CSV</td>
-                                <td style="padding: 10px;"><span style="color: ${d.status === 'SUCCESS' ? '#22c55e' : '#eab308'}; font-weight: 600;">${d.status}</span></td>
-                                <td style="padding: 10px; text-align: right; color: var(--text-secondary);">${d.imported_at ? new Date(d.imported_at).toLocaleDateString() : 'Recent'}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
+                    <tbody>${rows}</tbody>
                 </table>
             `;
-        } catch (err) {
-            historyContainer.innerHTML = 'Could not load import history.';
+        } catch (e) {
+            historyContainer.innerHTML = 'Upload history records available upon next file upload.';
         }
+    }
+
+    reRender() {
+        const root = document.querySelector('.import-view');
+        if (root && root.parentNode) {
+            const newEl = this.render();
+            root.parentNode.replaceChild(newEl, root);
+        }
+    }
+
+    escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 }

@@ -21,10 +21,25 @@ def get_lan_ip():
 def check_port(host, port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind((host, port))
             return False
         except OSError:
             return True
+
+def free_port_if_in_use(port):
+    if not check_port("0.0.0.0", port):
+        return True
+    try:
+        if sys.platform == "win32":
+            subprocess.run(
+                f'for /f "tokens=5" %a in (\'netstat -aon ^| findstr :{port}\') do taskkill /F /PID %a',
+                shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            time.sleep(1.0)
+    except Exception:
+        pass
+    return not check_port("0.0.0.0", port)
 
 def wait_for_server(url, name, timeout=30):
     print(f"[{name}] Waiting for server to become ready at {url}...", flush=True)
@@ -76,11 +91,11 @@ def main():
 
     lan_ip = get_lan_ip()
 
-    # Check ports before spawning
-    if check_port("0.0.0.0", port):
+    # Automatically free ports if occupied by leftover background processes
+    if not free_port_if_in_use(port):
         print(f"[WARNING] Port {port} is already in use. Please stop the running backend server.", flush=True)
         sys.exit(1)
-    if check_port("0.0.0.0", frontend_port):
+    if not free_port_if_in_use(frontend_port):
         print(f"[WARNING] Port {frontend_port} is already in use. Please stop the running frontend server.", flush=True)
         sys.exit(1)
 

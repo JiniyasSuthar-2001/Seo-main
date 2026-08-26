@@ -41,14 +41,23 @@ def free_port_if_in_use(port):
         pass
     return not check_port("0.0.0.0", port)
 
-def wait_for_server(url, name, timeout=30):
+def wait_for_server(url, name, port=None, timeout=30):
     print(f"[{name}] Waiting for server to become ready at {url}...", flush=True)
     start_time = time.time()
     while time.time() - start_time < timeout:
+        if port:
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(1.0)
+                    if s.connect_ex(("127.0.0.1", port)) == 0:
+                        print(f"[{name}] READY", flush=True)
+                        return True
+            except Exception:
+                pass
         try:
-            req = urllib.request.Request(url, method="GET")
-            with urllib.request.urlopen(req, timeout=1.5) as response:
-                if response.getcode() in (200, 404):
+            req = urllib.request.Request(url, method="GET", headers={"User-Agent": "HealthChecker/1.0"})
+            with urllib.request.urlopen(req, timeout=2.0) as response:
+                if response.getcode() in (200, 301, 302, 404):
                     print(f"[{name}] READY", flush=True)
                     return True
         except Exception:
@@ -142,9 +151,9 @@ def main():
         t1.start()
         t2.start()
 
-        # Perform health checks using loopback IP
-        backend_ready = wait_for_server(f"http://127.0.0.1:{port}/api/health", "HEALTH")
-        frontend_ready = wait_for_server(f"http://127.0.0.1:{frontend_port}", "HEALTH")
+        # Perform health checks using loopback IP and socket connectivity
+        backend_ready = wait_for_server(f"http://127.0.0.1:{port}/api/health", "HEALTH (Backend)", port=port)
+        frontend_ready = wait_for_server(f"http://127.0.0.1:{frontend_port}", "HEALTH (Frontend)", port=frontend_port)
 
         if backend_ready and frontend_ready:
             print("\n============================================================", flush=True)

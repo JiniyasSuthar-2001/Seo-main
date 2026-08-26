@@ -154,11 +154,11 @@ def main():
 
         # Keep main thread running and monitor processes
         while True:
-            time.sleep(1)
-            if backend_process.poll() is not None:
+            time.sleep(0.5)
+            if backend_process and backend_process.poll() is not None:
                 print(f"\n[BACKEND] Stopped (code {backend_process.returncode})", flush=True)
                 break
-            if frontend_process.poll() is not None:
+            if frontend_process and frontend_process.poll() is not None:
                 print(f"\n[FRONTEND] Stopped (code {frontend_process.returncode})", flush=True)
                 break
 
@@ -167,15 +167,26 @@ def main():
         print("Stopping SEO Intelligence Platform...", flush=True)
         print("--------------------------------------------------", flush=True)
     finally:
-        if frontend_process and frontend_process.poll() is None:
-            kill_process_tree(frontend_process.pid)
+        if frontend_process:
+            try:
+                if frontend_process.poll() is None:
+                    kill_process_tree(frontend_process.pid)
+            except Exception:
+                pass
             print("[FRONTEND] Stopped cleanly.", flush=True)
 
-        if backend_process and backend_process.poll() is None:
-            kill_process_tree(backend_process.pid)
+        if backend_process:
+            try:
+                if backend_process.poll() is None:
+                    kill_process_tree(backend_process.pid)
+            except Exception:
+                pass
             print("[BACKEND] Stopped cleanly.", flush=True)
 
-        print("All processes terminated. Goodbye.", flush=True)
+        print("SEO Intelligence Platform stopped cleanly. Goodbye.", flush=True)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(0)

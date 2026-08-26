@@ -16,23 +16,23 @@ export class InternalLinks {
         this.element.innerHTML = `
             <div style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
                 <div>
-                    <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">Page Links Overview</h1>
-                    <p style="color: var(--text-secondary); margin: 0; font-size: 13.5px;">How your website's pages link to each other and opportunities to improve page navigation.</p>
+                    <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">Internal Links</h1>
+                    <p style="color: var(--text-secondary); margin: 0; font-size: 13.5px;">View links connecting your website pages together and find opportunities to improve page navigation.</p>
                 </div>
                 <div id="links-actions" style="display: flex; gap: 10px;"></div>
             </div>
 
             <!-- SUB TABS -->
             <div style="display: flex; gap: 12px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 12px; flex-wrap: wrap;">
-                <button class="btn ${this.activeTab === 'graph' ? 'btn-primary' : 'btn-secondary'}" id="tab-graph-btn" style="font-size: 13px;">Page-to-Page Links</button>
+                <button class="btn ${this.activeTab === 'graph' ? 'btn-primary' : 'btn-secondary'}" id="tab-graph-btn" style="font-size: 13px;">Links Between Your Pages</button>
                 <button class="btn ${this.activeTab === 'orphans' ? 'btn-primary' : 'btn-secondary'}" id="tab-orphans-btn" style="font-size: 13px;">Pages With No Links</button>
-                <button class="btn ${this.activeTab === 'anchors' ? 'btn-primary' : 'btn-secondary'}" id="tab-anchors-btn" style="font-size: 13px;">Clickable Link Text</button>
+                <button class="btn ${this.activeTab === 'anchors' ? 'btn-primary' : 'btn-secondary'}" id="tab-anchors-btn" style="font-size: 13px;">Link Text</button>
                 <button class="btn ${this.activeTab === 'opportunities' ? 'btn-primary' : 'btn-secondary'}" id="tab-opps-btn" style="font-size: 13px;">Suggested Page Links</button>
             </div>
 
             <div id="links-content">
                 <div class="card" style="padding: 32px; text-align: center; color: var(--text-secondary);">
-                    Loading page links information...
+                    Loading internal link information...
                 </div>
             </div>
         `;
@@ -59,16 +59,19 @@ export class InternalLinks {
                 return;
             }
 
+            const safeProjName = (selectedProj.name || 'website').replace(/[^a-zA-Z0-9_-]/g, '_');
+            const todayStr = new Date().toISOString().split('T')[0];
+
             if (actionsContainer) {
                 actionsContainer.innerHTML = `
-                    <button id="btn-export-il-pdf" class="btn btn-secondary btn-sm">Download PDF</button>
-                    <button id="btn-export-il-csv" class="btn btn-secondary btn-sm">Export CSV</button>
+                    <button id="btn-export-il-pdf" class="btn btn-secondary btn-sm">Download Report (PDF)</button>
+                    <button id="btn-export-il-csv" class="btn btn-secondary btn-sm">Download CSV</button>
                 `;
 
                 const pdfBtn = document.getElementById('btn-export-il-pdf');
                 const csvBtn = document.getElementById('btn-export-il-csv');
-                if (pdfBtn) pdfBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/internal-links/report.pdf`, `${selectedProj.name || 'project'}_internal_links.pdf`, e.currentTarget);
-                if (csvBtn) csvBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/internal-links/export.csv`, `${selectedProj.name || 'project'}_internal_links.csv`, e.currentTarget);
+                if (pdfBtn) pdfBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/internal-links/report.pdf`, `${safeProjName}-Internal-Links-${todayStr}.pdf`, e.currentTarget);
+                if (csvBtn) csvBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/internal-links/export.csv`, `${safeProjName}-Internal-Links-${todayStr}.csv`, e.currentTarget);
             }
 
             if (this.activeTab === 'opportunities') {
@@ -113,7 +116,6 @@ export class InternalLinks {
                     </div>
                 `;
 
-                // Bind View AI Suggestions button handlers
                 container.querySelectorAll('.btn-view-anchor-suggestions').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         e.preventDefault();
@@ -137,7 +139,7 @@ export class InternalLinks {
                 let orphanRows = orphans.map(url => `
                     <tr style="border-bottom: 1px solid var(--border);">
                         <td style="font-family: monospace; font-size: 13px; color: var(--primary); padding: 12px 20px;">${this.escapeHtml(url)}</td>
-                        <td style="padding: 12px;"><span class="badge badge-critical">0 Incoming Links</span></td>
+                        <td style="padding: 12px;"><span class="badge badge-critical">0 Links Pointing to This Page</span></td>
                         <td style="padding: 12px; font-size: 12.5px; color: var(--text-secondary);">Add a link from your homepage or main menu to help visitors find this page.</td>
                     </tr>
                 `).join('');
@@ -145,7 +147,7 @@ export class InternalLinks {
                 container.innerHTML = `
                     <div class="card" style="padding: 0; overflow: hidden; border-radius: 14px;">
                         <div style="padding: 16px 20px; border-bottom: 1px solid var(--border);">
-                            <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Pages With No Links Pointing to Them (${orphans.length})</h3>
+                            <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Pages With No Links (${orphans.length})</h3>
                         </div>
                         <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
                             <thead>
@@ -156,7 +158,7 @@ export class InternalLinks {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${orphanRows.length > 0 ? orphanRows : `<tr><td colspan="3" style="padding: 32px; text-align: center; color: var(--text-secondary);">✓ No orphaned pages found. All discovered pages have links pointing to them.</td></tr>`}
+                                ${orphanRows.length > 0 ? orphanRows : `<tr><td colspan="3" style="padding: 32px; text-align: center; color: var(--text-secondary);">✓ No pages with missing links found. All discovered pages have links pointing to them.</td></tr>`}
                             </tbody>
                         </table>
                     </div>
@@ -175,12 +177,12 @@ export class InternalLinks {
                 container.innerHTML = `
                     <div class="card" style="padding: 0; overflow: hidden; border-radius: 14px; max-width: 650px;">
                         <div style="padding: 16px 20px; border-bottom: 1px solid var(--border);">
-                            <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Clickable Link Text Usage</h3>
+                            <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Link Text Usage</h3>
                         </div>
                         <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
                             <thead>
                                 <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase;">
-                                    <th style="padding: 12px 20px;">Clickable Link Text</th>
+                                    <th style="padding: 12px 20px;">Link Text</th>
                                     <th style="padding: 12px;">Times Used</th>
                                 </tr>
                             </thead>
@@ -205,14 +207,14 @@ export class InternalLinks {
             container.innerHTML = `
                 <div class="card" style="padding: 0; overflow: hidden; border-radius: 14px;">
                     <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between;">
-                        <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">How Your Pages Link to Each Other (${links.length})</h3>
+                        <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Links Between Your Pages (${links.length})</h3>
                     </div>
                     <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
                         <thead>
                             <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase;">
                                 <th style="padding: 12px 20px;">Source Page</th>
                                 <th style="padding: 12px;">Destination Page</th>
-                                <th style="padding: 12px;">Clickable Link Text ${renderTooltip('Text that visitors click to navigate between pages.')}</th>
+                                <th style="padding: 12px;">Link Text ${renderTooltip('Text that visitors click to navigate between pages.')}</th>
                             </tr>
                         </thead>
                         <tbody>${graphRows.length > 0 ? graphRows : `<tr><td colspan="3" style="padding: 32px; text-align: center; color: var(--text-secondary);">No page links discovered yet. Run a website scan to map your page links.</td></tr>`}</tbody>
@@ -220,7 +222,7 @@ export class InternalLinks {
                 </div>
             `;
         } catch (e) {
-            renderFeatureErrorState(container, "Failed to load page links", e.message || "Unable to load link information.", () => this.mounted());
+            renderBackendOfflineState(container, `We couldn't load this information right now. Please try again.`, () => this.mounted());
         }
     }
 

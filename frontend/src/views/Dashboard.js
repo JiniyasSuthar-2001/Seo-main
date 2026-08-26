@@ -103,15 +103,23 @@ export class Dashboard {
                 <!-- HEADER SECTION -->
                 <div class="header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
                     <div>
-                        <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.06em;">ACCOUNT OVERVIEW</div>
-                        <h1 style="font-size: 24px; font-weight: 700; margin-top: 2px; color: var(--text-primary);">Your Account Overview</h1>
-                        <p style="color: var(--text-secondary); font-size: 13.5px; margin-top: 4px;">Overview of your connected websites, recent scans, problems found, and action recommendations.</p>
+                        <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">SEO Overview</h1>
+                        <p style="color: var(--text-secondary); font-size: 13.5px; margin: 0;">Overview of your connected websites, health summaries, recent activity, and quick actions.</p>
                     </div>
-                    <div style="display: flex; gap: 10px;">
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                         <button class="btn btn-primary btn-sm" onclick="window.showCreateProjectModal()" style="display: inline-flex; align-items: center; gap: 6px;">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                             Add Website
                         </button>
+                        <button class="btn btn-secondary btn-sm" onclick="window.startCrawlFromOverview()" style="display: inline-flex; align-items: center; gap: 6px;">
+                            Scan Website
+                        </button>
+                        <a href="/import" data-link class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                            Import Data
+                        </a>
+                        <a href="/reports" data-link class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                            Download Report
+                        </a>
                     </div>
                 </div>
 

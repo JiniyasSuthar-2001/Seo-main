@@ -17,21 +17,21 @@ export class Keywords {
         this.element.innerHTML = `
             <div class="header" style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
                 <div>
-                    <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">Search Words You're Targeting</h1>
-                    <p style="color: var(--text-secondary); margin: 0; font-size: 13.5px;">Discover search suggestions, organize keyword groups by topic, and track how often key terms appear in your website content.</p>
+                    <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">Keywords</h1>
+                    <p style="color: var(--text-secondary); margin: 0; font-size: 13.5px;">Discover search suggestions, organize keyword topics, and track how often key terms appear in your content.</p>
                 </div>
                 <div style="display: flex; gap: 10px;" id="kw-actions-container">
-                    <button id="btn-export-kw-csv" class="btn btn-secondary btn-sm">Export CSV</button>
-                    <button id="btn-export-kw-pdf" class="btn btn-secondary btn-sm">Download PDF</button>
-                    <button class="btn btn-secondary btn-sm" id="btn-auto-cluster">⚡ Auto-Group Topics</button>
+                    <button id="btn-export-kw-csv" class="btn btn-secondary btn-sm">Download CSV</button>
+                    <button id="btn-export-kw-pdf" class="btn btn-secondary btn-sm">Download Report (PDF)</button>
+                    <button class="btn btn-secondary btn-sm" id="btn-auto-cluster">⚡ Group Keyword Topics</button>
                 </div>
             </div>
 
-            <!-- KEYWORD INTELLIGENCE SUB-TABS -->
+            <!-- SUB-TABS -->
             <div style="display: flex; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 24px; flex-wrap: wrap;" id="kw-tabs-nav">
                 <button class="kw-tab active" data-tab="overview">Overview</button>
                 <button class="kw-tab" data-tab="research">Search Suggestions</button>
-                <button class="kw-tab" data-tab="groups">Groups by Topic</button>
+                <button class="kw-tab" data-tab="groups">Keyword Topics</button>
                 <button class="kw-tab" data-tab="opportunities">Opportunities</button>
                 <button class="kw-tab" data-tab="ranking">Target Keywords</button>
                 <button class="kw-tab" data-tab="gap">Competitor Gap</button>
@@ -39,7 +39,7 @@ export class Keywords {
 
             <div id="kw-tab-content">
                 <div class="card" style="padding: 32px; text-align: center; color: var(--text-secondary);">
-                    Loading search words information...
+                    Loading keyword information...
                 </div>
             </div>
 
@@ -93,10 +93,10 @@ export class Keywords {
         if (!projectId) return;
         try {
             await apiClient.post(`/api/projects/${projectId}/keywords/cluster`, {});
-            alert("Keywords grouped by topic successfully!");
+            alert("Keyword topics grouped successfully!");
             this.mounted();
         } catch (e) {
-            alert("Failed to group topics: " + e.message);
+            alert("Failed to group keyword topics: " + e.message);
         }
     }
 
@@ -110,14 +110,17 @@ export class Keywords {
             const projectId = projectStore.getSelectedProjectId();
 
             if (!selectedProj || !projectId) {
-                contentContainer.innerHTML = `<div class="card" style="padding: 32px; text-align: center;">Please select a website project.</div>`;
+                contentContainer.innerHTML = `<div class="card" style="padding: 32px; text-align: center;">Please select a website project workspace.</div>`;
                 return;
             }
 
+            const safeProjName = (selectedProj.name || 'website').replace(/[^a-zA-Z0-9_-]/g, '_');
+            const todayStr = new Date().toISOString().split('T')[0];
+
             const pdfBtn = document.getElementById('btn-export-kw-pdf');
             const csvBtn = document.getElementById('btn-export-kw-csv');
-            if (pdfBtn) pdfBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/keywords/report.pdf`, `${selectedProj.name || 'project'}_keywords.pdf`, e.currentTarget);
-            if (csvBtn) csvBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/keywords/export.csv`, `${selectedProj.name || 'project'}_keywords.csv`, e.currentTarget);
+            if (pdfBtn) pdfBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/keywords/report.pdf`, `${safeProjName}-Keywords-${todayStr}.pdf`, e.currentTarget);
+            if (csvBtn) csvBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/keywords/export.csv`, `${safeProjName}-Keywords-${todayStr}.csv`, e.currentTarget);
 
             const data = await apiClient.get(`/api/projects/${projectId}/keywords`);
             const keywords = data.keywords || [];
@@ -131,26 +134,26 @@ export class Keywords {
                 <tr style="border-bottom: 1px solid var(--border);">
                     <td style="padding: 12px 18px; font-weight: 700; color: var(--text-primary);">${this.escapeHtml(k.keyword)}</td>
                     <td style="padding: 12px;">${this.escapeHtml(k.category || k.type || 'Content Keyword')}</td>
-                    <td style="padding: 12px; font-weight: 600;">${k.frequency || k.search_volume || 1} ${renderTooltip('How often this search word appears in your website content.')}</td>
+                    <td style="padding: 12px; font-weight: 600;">${k.frequency || k.search_volume || 1} times ${renderTooltip('Content Frequency: How often this keyword appears in your scanned website content.')}</td>
                     <td style="padding: 12px;">${k.pages_found || 1} pages</td>
                     <td style="padding: 12px; font-size: 12px; color: var(--text-secondary);">
-                        ${k.position ? `#${k.position}` : '<span style="color: var(--text-tertiary);">Not available (Requires Search Console)</span>'}
+                        ${k.position ? `#${k.position}` : '<span style="color: var(--text-tertiary);">Not available (Connect Search Data)</span>'}
                     </td>
-                    <td style="padding: 12px 18px; font-size: 11.5px; color: var(--text-secondary);">${this.escapeHtml(k.provenance || 'Crawled Content')}</td>
+                    <td style="padding: 12px 18px; font-size: 11.5px; color: var(--text-secondary);">${this.escapeHtml(k.provenance || 'Website Scan')}</td>
                 </tr>
             `).join('');
 
             contentContainer.innerHTML = `
                 <div class="card" style="padding: 0; overflow: hidden; border-radius: 14px;">
                     <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
-                        <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Search Words Discovered in Website Content (${keywords.length})</h3>
+                        <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Keywords Found in Content (${keywords.length})</h3>
                     </div>
                     <div style="overflow-x: auto;">
                         <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
                             <thead>
                                 <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
-                                    <th style="padding: 12px 18px;">Search Word / Keyword</th>
-                                    <th style="padding: 12px;">Topic Category</th>
+                                    <th style="padding: 12px 18px;">Keyword</th>
+                                    <th style="padding: 12px;">Keyword Topic</th>
                                     <th style="padding: 12px;">Content Frequency</th>
                                     <th style="padding: 12px;">Pages Found</th>
                                     <th style="padding: 12px;">Google Position</th>
@@ -165,7 +168,7 @@ export class Keywords {
                 </div>
             `;
         } catch (e) {
-            renderFeatureErrorState(contentContainer, "Failed to load keywords", e.message || "Unable to load search words.", () => this.mounted());
+            renderBackendOfflineState(contentContainer, `We couldn't load this information right now. Please try again.`, () => this.mounted());
         }
     }
 
@@ -198,7 +201,7 @@ export class Keywords {
                     let resRows = suggestions.map(s => `
                         <tr style="border-bottom: 1px solid var(--border);">
                             <td style="padding: 10px 16px; font-weight: 600; color: var(--text-primary);">${this.escapeHtml(typeof s === 'string' ? s : s.keyword)}</td>
-                            <td style="padding: 10px 16px; font-size: 12px; color: var(--text-secondary);">Google Autocomplete Suggestion</td>
+                            <td style="padding: 10px 16px; font-size: 12px; color: var(--text-secondary);">Google Search Suggestion</td>
                         </tr>
                     `).join('');
 

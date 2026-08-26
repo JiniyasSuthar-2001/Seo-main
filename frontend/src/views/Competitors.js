@@ -192,22 +192,22 @@ export class Competitors {
         this.container.innerHTML = `
             <div class="competitors-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; flex-wrap: wrap; gap: 16px;">
                 <div>
-                    <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">Other Businesses</h1>
+                    <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">Competitors</h1>
                     <p style="color: var(--text-secondary); margin: 0; font-size: 14px;">
                         Target Website: <strong style="color: var(--primary);">${this.escapeHtml(projectDomain)}</strong>
                     </p>
                 </div>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                     <a href="#/import" data-link class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
-                        Upload Competitors CSV
+                        Import Data
                     </a>
                     <button id="btn-auto-discover" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;" ${this.discovering ? 'disabled' : ''}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                        ${this.discovering ? 'Searching...' : 'Find Competitors on Google'}
+                        ${this.discovering ? 'Searching...' : 'Find Competitors'}
                     </button>
                     <button id="btn-add-manual" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                        + Add Competitor Website
+                        + Add Competitor
                     </button>
                 </div>
             </div>
@@ -272,14 +272,14 @@ export class Competitors {
                         <div style="width: 56px; height: 56px; border-radius: 14px; background: rgba(59, 130, 246, 0.1); color: var(--accent-primary, #3b82f6); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
                             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                         </div>
-                        <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">Competitor Discovery Not Yet Connected</h3>
+                        <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">We haven't found competitors yet</h3>
                         <p style="font-size: 13.5px; color: var(--text-secondary); margin: 0 auto 20px; line-height: 1.6;">
-                            We can analyze competitors once real search-result data is available. Website crawling analyzes content on your pages, but discovering competitor domains ranking on search engines requires connecting a SERP/search data provider or importing SERP ranking data.
+                            Scan available search data to find websites competing for similar searches.
                         </p>
                         <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
-                            <a href="/integrations" data-link class="btn btn-primary btn-sm">Connect SERP Data</a>
-                            <a href="/import" data-link class="btn btn-secondary btn-sm">Import Competitor Data</a>
-                            <button type="button" class="btn btn-secondary btn-sm" id="btn-learn-discovery">Learn How Competitor Discovery Works</button>
+                            <button class="btn btn-primary btn-sm" id="btn-auto-discover-empty" onclick="document.getElementById('btn-auto-discover').click()">Find Competitors</button>
+                            <a href="/integrations" data-link class="btn btn-secondary btn-sm">Connect Data Source</a>
+                            <a href="/import" data-link class="btn btn-secondary btn-sm">Import Data</a>
                         </div>
                     </div>
                 `;

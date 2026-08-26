@@ -15,22 +15,22 @@ export class Rankings {
         this.element.innerHTML = `
             <div class="header" style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
                 <div>
-                    <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">Your Google Ranking Positions</h1>
-                    <p style="color: var(--text-secondary); margin: 0; font-size: 13.5px;">Track your website's search positions on Google when real ranking data is connected.</p>
+                    <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">Search Rankings</h1>
+                    <p style="color: var(--text-secondary); margin: 0; font-size: 13.5px;">Monitor your website search engine positions on Google.</p>
                 </div>
                 <button class="btn btn-primary btn-sm" onclick="window.startCrawl ? window.startCrawl() : window.location.href='/'">Scan My Website</button>
             </div>
 
             <!-- POSITION TRACKING SUB-TABS -->
             <div style="display: flex; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 24px; flex-wrap: wrap;" id="rank-tabs-nav">
-                <button class="rank-tab active" data-tab="tracking">Ranking Positions</button>
-                <button class="rank-tab" data-tab="winners">Position Changes</button>
-                <button class="rank-tab" data-tab="config">Tracking Settings</button>
+                <button class="rank-tab active" data-tab="tracking">Search Rankings</button>
+                <button class="rank-tab" data-tab="winners">Ranking Changes</button>
+                <button class="rank-tab" data-tab="config">Settings</button>
             </div>
 
             <div id="rankings-tab-content">
                 <div class="card" style="padding: 32px; text-align: center; color: var(--text-secondary);">
-                    Loading ranking positions...
+                    Loading search rankings...
                 </div>
             </div>
 
@@ -97,9 +97,9 @@ export class Rankings {
             }
         } catch (e) {
             if (e.isNetworkError || apiClient.status === 'OFFLINE') {
-                renderBackendOfflineState(container, "Unable to connect right now. Please try again.", () => this.mounted());
+                renderBackendOfflineState(container, "We couldn't load this information right now. Please try again.", () => this.mounted());
             } else {
-                renderFeatureErrorState(container, "Rankings Load Error", e.message || "Failed to load ranking positions.", () => this.mounted());
+                renderFeatureErrorState(container, "Rankings Load Error", e.message || "Failed to load search rankings.", () => this.mounted());
             }
         }
     }
@@ -114,20 +114,20 @@ export class Rankings {
         const rankings = rankRes.rankings || [];
 
         container.innerHTML = `
-            <!-- CAMPAIGN SUMMARY HEADER -->
+            <!-- SUMMARY HEADER -->
             <div style="background: var(--bg-subtle); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
                 <div style="font-size: 13px;">
                     <strong>Website Target:</strong> ${project.name} (${project.domain})
                     &nbsp;•&nbsp; <strong>Search Engine:</strong> ${config.search_engine || 'Google'} (${config.target_country || 'Default'})
                 </div>
-                <button class="btn btn-secondary btn-sm" onclick="document.querySelector('[data-tab=config]').click()">⚙ Edit Tracking Settings</button>
+                <button class="btn btn-secondary btn-sm" onclick="document.querySelector('[data-tab=config]').click()">⚙ Tracking Settings</button>
             </div>
 
             <!-- OVERVIEW KPI CARDS -->
             <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;">
                 <div class="kpi-card" style="padding: 16px; background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border);">
                     <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">
-                        Visibility Score ${renderTooltip('How easy it is for people to find your website on Google. Higher is better.')}
+                        Website Visibility ${renderTooltip('How easily your website can currently be found in search based on available search data.')}
                     </div>
                     <div style="font-size: 26px; font-weight: 800; color: var(--primary); margin-top: 4px;">${ov.visibility || '0.0%'}</div>
                     <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 2px;">Search presence score</div>
@@ -135,9 +135,9 @@ export class Rankings {
 
                 <div class="kpi-card" style="padding: 16px; background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border);">
                     <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">
-                        Average Position ${renderTooltip('Your website average position in Google search results. Only shown when real ranking data is connected.')}
+                        Average Position ${renderTooltip('Your website average position in Google search results.')}
                     </div>
-                    <div style="font-size: 26px; font-weight: 800; color: var(--text-primary); margin-top: 4px;">${ov.average_position || 'Not Available'}</div>
+                    <div style="font-size: 26px; font-weight: 800; color: var(--text-primary); margin-top: 4px;">${ov.average_position || 'Not available'}</div>
                     <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 2px;">Mean Google rank</div>
                 </div>
 
@@ -161,19 +161,19 @@ export class Rankings {
             <!-- RANKINGS DATA TABLE -->
             <div class="card" style="padding: 24px; border-radius: 14px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                    <h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0;">Your Google Ranking Positions</h3>
+                    <h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0;">Search Rankings</h3>
                 </div>
 
                 ${rankings.length === 0 ? `
                     <div class="card" style="padding: 40px 28px; text-align: center; max-width: 580px; margin: 16px auto; background: var(--bg-subtle); border-radius: 12px; border: 1px dashed var(--border);">
                         <div style="font-size: 36px; margin-bottom: 12px;">📊</div>
-                        <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">No Google Ranking Data Connected Yet</h3>
+                        <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">Not available yet</h3>
                         <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.6;">
-                            Your website scan is complete. To track your actual Google search positions, connect your Google Search Console account or upload ranking data.
+                            Connect or import search data to see your website search rankings on Google.
                         </p>
                         <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
-                            <a href="/integrations" data-link class="btn btn-primary btn-sm">Connect Your Google Account</a>
-                            <a href="/import" data-link class="btn btn-secondary btn-sm">Upload Ranking Data</a>
+                            <a href="/integrations" data-link class="btn btn-primary btn-sm">Connect Data Source</a>
+                            <a href="/import" data-link class="btn btn-secondary btn-sm">Import Data</a>
                         </div>
                     </div>
                 ` : `
@@ -194,10 +194,10 @@ export class Rankings {
                                     <tr style="border-bottom: 1px solid var(--border);">
                                         <td style="padding: 12px 18px; font-weight: 700; color: var(--text-primary);">${this.escapeHtml(r.keyword)}</td>
                                         <td style="padding: 12px; font-family: monospace; font-size: 12px;">${this.escapeHtml(r.url || '-')}</td>
-                                        <td style="padding: 12px; font-weight: 800; color: var(--primary);">${r.position || 'Not Available'}</td>
+                                        <td style="padding: 12px; font-weight: 800; color: var(--primary);">${r.position || 'Not available'}</td>
                                         <td style="padding: 12px; color: var(--text-secondary);">${r.previous_position || '-'}</td>
                                         <td style="padding: 12px;">${r.change ? (r.change > 0 ? `<span style="color: #10b981;">+${r.change}</span>` : `<span style="color: #ef4444;">${r.change}</span>`) : '0'}</td>
-                                        <td style="padding: 12px 18px; font-size: 11.5px; color: var(--text-secondary);">${this.escapeHtml(r.provenance || 'Google Search Console')}</td>
+                                        <td style="padding: 12px 18px; font-size: 11.5px; color: var(--text-secondary);">${this.escapeHtml(r.provenance || 'Google Search Data')}</td>
                                     </tr>
                                 `).join('')}
                             </tbody>
@@ -211,7 +211,7 @@ export class Rankings {
     async renderWinnersTab(container, projectId) {
         container.innerHTML = `
             <div class="card" style="padding: 32px; text-align: center; color: var(--text-secondary);">
-                Track position movements after connecting your Google account or uploading ranking data.
+                Ranking changes will appear after connecting a search data source or importing ranking data.
             </div>
         `;
     }

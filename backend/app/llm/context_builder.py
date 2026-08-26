@@ -66,7 +66,7 @@ class LLMContextBuilder:
             # Compact normalized context payload with full validation against None and malformed records
             normalized_pages = []
             if isinstance(pages, list):
-                for p in pages[:50]:
+                for p in pages[:15]:
                     if isinstance(p, dict):
                         wc = p.get("word_count")
                         wc_val = int(wc) if isinstance(wc, (int, float)) and wc is not None else 0
@@ -90,13 +90,13 @@ class LLMContextBuilder:
 
             normalized_issues = []
             if isinstance(issues, list):
-                for i in issues[:30]:
+                for i in issues[:15]:
                     if isinstance(i, dict):
                         normalized_issues.append({
                             "severity": i.get("severity") or "Notice",
                             "issue_type": i.get("issue_type") or "General",
                             "affected_url": i.get("affected_url") or "",
-                            "details": i.get("details") or ""
+                            "details": (i.get("details") or "")[:150]
                         })
                     else:
                         print(f"[CONTEXT BUILDER WARNING] Skipping non-dict issue record: {i}", flush=True)

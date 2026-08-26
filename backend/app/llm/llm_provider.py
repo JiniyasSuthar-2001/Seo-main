@@ -429,7 +429,42 @@ class GroqProviderAdapter(LLMProvider):
             except urllib.error.HTTPError as e:
                 err_body = e.read().decode("utf-8", errors="replace")
                 logger.error(f"Groq API HTTP {e.code} error for '{target_model}': {err_body[:200]}")
-                if e.code in (400, 404):
+                if e.code == 413:
+                    logger.warning(f"[GROQ 413] Payload too large for model '{target_model}'. Truncating context samples and retrying...")
+                    # Truncate context payload dynamically to fit Groq limit
+                    compact_context = dict(context_data)
+                    compact_context["pages_sample"] = compact_context.get("pages_sample", [])[:5]
+                    compact_context["issues_sample"] = compact_context.get("issues_sample", [])[:5]
+                    try:
+                        retry_payload = {
+                            "model": target_model,
+                            "messages": [
+                                {"role": "system", "content": system_instructions},
+                                {"role": "user", "content": f"{user_prompt}\n\nEVIDENCE CONTEXT:\n{json.dumps(compact_context, indent=2)}"}
+                            ],
+                            "temperature": 0.2,
+                            "response_format": {"type": "json_object"}
+                        }
+                        retry_req = urllib.request.Request(
+                            endpoint,
+                            data=json.dumps(retry_payload).encode("utf-8"),
+                            headers={
+                                "Content-Type": "application/json",
+                                "Authorization": f"Bearer {self.api_key}",
+                                "User-Agent": "SEO-Intelligence-Platform/1.0"
+                            },
+                            method="POST"
+                        )
+                        with urllib.request.urlopen(retry_req, timeout=timeout) as retry_resp:
+                            retry_data = json.loads(retry_resp.read().decode("utf-8"))
+                            self.model = target_model
+                            content_text = retry_data["choices"][0]["message"]["content"]
+                            return json.loads(content_text.strip())
+                    except Exception as retry_err:
+                        logger.error(f"[GROQ 413 RETRY FAILED] {retry_err}")
+                        last_exception = AIProviderException(f"Groq payload size exceeded model token limit (HTTP 413).", status_code=413, code="PAYLOAD_TOO_LARGE")
+                        continue
+                elif e.code in (400, 404):
                     last_exception = AIProviderException(f"Groq model '{target_model}' not supported.", status_code=404, code="MODEL_NOT_FOUND")
                     continue
                 elif e.code in (401, 403):
@@ -550,7 +585,40 @@ class GroqProviderAdapter(LLMProvider):
                     self.model = target_model
                     return resp_data["choices"][0]["message"]["content"]
             except urllib.error.HTTPError as e:
-                if e.code in (400, 404):
+                err_body = e.read().decode("utf-8", errors="replace")
+                logger.error(f"Groq chat HTTP {e.code} error for '{target_model}': {err_body[:200]}")
+                if e.code == 413:
+                    logger.warning(f"[GROQ CHAT 413] Payload too large for model '{target_model}'. Truncating context samples and retrying...")
+                    compact_context = dict(context_data)
+                    compact_context["pages_sample"] = compact_context.get("pages_sample", [])[:5]
+                    compact_context["issues_sample"] = compact_context.get("issues_sample", [])[:5]
+                    try:
+                        retry_payload = {
+                            "model": target_model,
+                            "messages": [
+                                {"role": "system", "content": system_instructions},
+                                {"role": "user", "content": f"EVIDENCE CONTEXT:\n{json.dumps(compact_context, indent=2)}\n\nUSER QUESTION: {query}"}
+                            ]
+                        }
+                        retry_req = urllib.request.Request(
+                            endpoint,
+                            data=json.dumps(retry_payload).encode("utf-8"),
+                            headers={
+                                "Content-Type": "application/json",
+                                "Authorization": f"Bearer {self.api_key}",
+                                "User-Agent": "SEO-Intelligence-Platform/1.0"
+                            },
+                            method="POST"
+                        )
+                        with urllib.request.urlopen(retry_req, timeout=timeout) as retry_resp:
+                            retry_data = json.loads(retry_resp.read().decode("utf-8"))
+                            self.model = target_model
+                            return retry_data["choices"][0]["message"]["content"]
+                    except Exception as retry_err:
+                        logger.error(f"[GROQ CHAT 413 RETRY FAILED] {retry_err}")
+                        last_exception = AIProviderException(f"Groq payload size exceeded model token limit (HTTP 413).", status_code=413, code="PAYLOAD_TOO_LARGE")
+                        continue
+                elif e.code in (400, 404):
                     last_exception = AIProviderException(f"Groq model '{target_model}' not supported.", status_code=404, code="MODEL_NOT_FOUND")
                     continue
                 elif e.code in (401, 403):

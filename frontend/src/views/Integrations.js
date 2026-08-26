@@ -1,4 +1,5 @@
 import { apiClient } from '../services/apiClient.js';
+import { authStore } from '../core/authStore.js';
 
 export class Integrations {
     constructor() {
@@ -11,6 +12,8 @@ export class Integrations {
     }
 
     render() {
+        const isGuest = !!(authStore.user && (authStore.user.is_guest || authStore.user.auth_provider === 'guest' || (authStore.user.id && String(authStore.user.id).startsWith('guest_'))));
+
         this.element.innerHTML = `
             <!-- HEADER SECTION -->
             <div class="header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
@@ -27,6 +30,20 @@ export class Integrations {
                     </button>
                 </div>
             </div>
+
+            ${isGuest ? `
+                <!-- GUEST NOTICE BANNER -->
+                <div class="card" style="padding: 16px 20px; margin-bottom: 24px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 12px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+                        <div>
+                            <div style="font-size: 14px; font-weight: 700; color: var(--text-primary);">Guest Mode Active</div>
+                            <div style="font-size: 13px; color: var(--text-secondary);">Sign in to connect external accounts (Google Search Console, Google Business Profile, OpenAI, Claude, Gemini).</div>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="authStore.logout()">Sign in to connect external accounts</button>
+                </div>
+            ` : ''}
 
             <!-- ACTIVE PREFERRED PROVIDER SELECTOR BAR -->
             <div class="card" style="padding: 20px; margin-bottom: 28px; background: var(--bg-card); border-left: 4px solid var(--primary); border-radius: 12px;">

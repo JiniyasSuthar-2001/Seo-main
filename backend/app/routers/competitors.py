@@ -112,23 +112,18 @@ def get_discovered_competitors(
     db: Session = Depends(get_db)
 ):
     """
-    Returns suggested auto-discovered competitors for the project.
+    Returns suggested auto-discovered competitors for the project along with SERP provider status.
     """
     project = _get_project_or_404(project_id, db, user_id)
+    disc_res = discover_competitors_for_project(project, db)
+    suggested = disc_res.get("suggested_competitors", [])
     
-    suggested = db.query(Competitor).filter(
-        Competitor.project_id == project.id,
-        Competitor.status == "Suggested"
-    ).order_by(Competitor.relevance_score.desc()).all()
-    
-    if not suggested:
-        discover_competitors_for_project(project, db)
-        suggested = db.query(Competitor).filter(
-            Competitor.project_id == project.id,
-            Competitor.status == "Suggested"
-        ).order_by(Competitor.relevance_score.desc()).all()
-        
-    return [_serialize_competitor(c) for c in suggested]
+    return {
+        "has_serp_provider": disc_res.get("has_serp_provider", False),
+        "provider_name": disc_res.get("provider_name", "None"),
+        "message": disc_res.get("message", ""),
+        "suggested_competitors": [_serialize_competitor(c) for c in suggested]
+    }
 
 
 @router.post("/discover")
@@ -141,14 +136,16 @@ def run_competitor_discovery(
     Triggers automated competitor discovery for the project.
     """
     project = _get_project_or_404(project_id, db, user_id)
-    all_competitors = discover_competitors_for_project(project, db)
+    disc_res = discover_competitors_for_project(project, db)
     
-    suggested = [c for c in all_competitors if c.status == "Suggested"]
-    confirmed = [c for c in all_competitors if c.status == "Confirmed"]
+    suggested = disc_res.get("suggested_competitors", [])
+    confirmed = disc_res.get("confirmed_competitors", [])
     
     return {
-        "status": "success",
-        "message": f"Competitor discovery completed for '{project.name}'.",
+        "status": "success" if disc_res.get("has_serp_provider") else "no_serp_provider",
+        "has_serp_provider": disc_res.get("has_serp_provider", False),
+        "provider_name": disc_res.get("provider_name", "None"),
+        "message": disc_res.get("message", ""),
         "discovered_count": len(suggested),
         "confirmed_count": len(confirmed),
         "suggested_competitors": [_serialize_competitor(c) for c in suggested],
@@ -218,12 +215,12 @@ def add_competitor(
         url=full_url,
         location=payload.get("location") or "Local Market",
         geographic_level=payload.get("geographic_level") or "City",
-        relevance_score=float(payload.get("relevance_score", 85.0)),
-        keyword_overlap=int(payload.get("keyword_overlap", 40)),
-        search_appearances=int(payload.get("search_appearances", 20)),
+        relevance_score=float(payload.get("relevance_score", 0.0)),
+        keyword_overlap=int(payload.get("keyword_overlap", 0)),
+        search_appearances=int(payload.get("search_appearances", 0)),
         status="Confirmed",
         is_primary=is_primary,
-        discovery_source="Manual Entry",
+        discovery_source="User Specified Domain",
         notes=(payload.get("notes") or "").strip(),
         first_discovered=datetime.utcnow(),
         last_checked=datetime.utcnow()
@@ -388,3 +385,13 @@ def get_keyword_gap_analysis(
     """
     project = _get_project_or_404(project_id, db, user_id)
     return perform_keyword_gap_analysis(project, db)
+
+from app.routers.reports import export_competitors_csv
+
+@router.get("/export.csv")
+def competitors_export_csv(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    return export_competitors_csv(project_id, user_id, db)

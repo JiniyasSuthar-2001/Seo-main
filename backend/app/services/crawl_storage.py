@@ -9,17 +9,20 @@ class CrawlStorage:
         self.base_dir = base_dir
 
     def _get_website_folder(self, key: str, domain: str = None) -> str:
-        if not key:
-            safe_domain = get_sanitized_domain(domain)
-            return os.path.join(self.base_dir, safe_domain)
-        proj_dir = os.path.join(self.base_dir, key)
-        if os.path.exists(proj_dir) or not domain:
-            return proj_dir
-        safe_domain = get_sanitized_domain(domain)
-        domain_dir = os.path.join(self.base_dir, safe_domain)
-        if os.path.exists(domain_dir):
-            return domain_dir
-        return proj_dir
+        safe_key = get_sanitized_domain(key) if key else None
+        safe_domain = get_sanitized_domain(domain) if domain else None
+
+        target_name = safe_key or safe_domain or "unknown_domain"
+        key_dir = os.path.join(self.base_dir, target_name)
+        if os.path.exists(key_dir):
+            return key_dir
+
+        if safe_domain:
+            domain_dir = os.path.join(self.base_dir, safe_domain)
+            if os.path.exists(domain_dir):
+                return domain_dir
+
+        return key_dir
 
     def save_crawl_snapshot(self, key: str, session_id: str, results: Dict[str, Any], domain: str = None) -> str:
         website_dir = self._get_website_folder(key, domain)

@@ -142,20 +142,30 @@ class CrawlProgressOverlayManager {
                     statusTextEl.innerText = `Crawling HTML, extracting links & meta tags...`;
                 }
 
-                if (statusData.status === 'completed') {
+                if (statusData.status === 'completed' || statusData.status === 'completed_with_errors') {
                     clearInterval(this.activeInterval);
                     this.activeInterval = null;
 
-                    if (statsEl) statsEl.innerText = `${crawled} page(s) audited!`;
-                    if (statusTextEl) statusTextEl.innerHTML = `<span style="color: #4ade80; font-weight: 600;">✓ Website audit completed successfully!</span>`;
-                    if (titleEl) titleEl.innerText = "Crawl Complete";
+                    const isPartial = statusData.status === 'completed_with_errors';
+
+                    if (statsEl) statsEl.innerText = `${crawled} / ${discovered} page(s) audited`;
+                    if (statusTextEl) {
+                        statusTextEl.innerHTML = isPartial
+                            ? `<span style="color: #f59e0b; font-weight: 600;">⚠ Crawl completed with issues (page timeouts/errors skipped).</span>`
+                            : `<span style="color: #4ade80; font-weight: 600;">✓ Website audit completed successfully!</span>`;
+                    }
+                    if (titleEl) {
+                        titleEl.innerText = isPartial ? "Crawl Completed with Issues" : "Crawl Complete";
+                    }
                     if (barEl) {
                         barEl.style.width = "100%";
-                        barEl.style.backgroundColor = "#10b981";
+                        barEl.style.backgroundColor = isPartial ? "#f59e0b" : "#10b981";
                         barEl.classList.remove('crawl-progress-striped');
                     }
                     if (spinnerEl) {
-                        spinnerEl.outerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+                        spinnerEl.outerHTML = isPartial
+                            ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`
+                            : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
                     }
 
                     this.setButtonsState(false);
@@ -168,7 +178,7 @@ class CrawlProgressOverlayManager {
                     clearInterval(this.activeInterval);
                     this.activeInterval = null;
 
-                    if (statusTextEl) statusTextEl.innerHTML = `<span style="color: #f87171; font-weight: 600;">✕ Crawl encountered an error.</span>`;
+                    if (statusTextEl) statusTextEl.innerHTML = `<span style="color: #f87171; font-weight: 600;">✕ Crawl failed (website connection unreachable).</span>`;
                     if (titleEl) titleEl.innerText = "Crawl Failed";
                     if (barEl) {
                         barEl.style.width = "100%";

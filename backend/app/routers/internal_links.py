@@ -161,7 +161,7 @@ def get_internal_link_opportunities(project_id: str, db: Session = Depends(get_d
             opportunities.append({
                 "source_page": f"https://{domain}/",
                 "target_page": url,
-                "suggested_anchor": p.get("h1") or "Learn More",
+                "suggested_anchor": p.get("h1") or p.get("title") or "Target Page Topic",
                 "reason": "Page has only 1 incoming link. Adding a secondary internal link distributes PageRank Authority.",
                 "priority": "MEDIUM",
                 "data_source": "Local Crawl Link Graph"
@@ -172,3 +172,52 @@ def get_internal_link_opportunities(project_id: str, db: Session = Depends(get_d
         "total_opportunities": len(opportunities),
         "opportunities": opportunities
     }
+
+from pydantic import BaseModel
+from app.services.anchor_suggestion_service import AnchorSuggestionService
+
+class AnchorSuggestionRequest(BaseModel):
+    source_url: str
+    target_url: str
+    refresh: Optional[bool] = False
+
+@router.post("/anchor-suggestions")
+@router.get("/anchor-suggestions")
+def get_anchor_suggestions(
+    project_id: str,
+    source_url: Optional[str] = Query(None),
+    target_url: Optional[str] = Query(None),
+    refresh: Optional[bool] = Query(False),
+    payload: Optional[AnchorSuggestionRequest] = None,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    src = (payload.source_url if payload and payload.source_url else source_url) or ""
+    tgt = (payload.target_url if payload and payload.target_url else target_url) or ""
+    force_refresh = (payload.refresh if payload and payload.refresh is not None else refresh) or False
+
+    if not src or not tgt:
+        raise HTTPException(status_code=400, detail="Both source_url and target_url parameters are required.")
+
+    return AnchorSuggestionService.get_suggestions(
+        project_id=project.id,
+        domain=project.domain,
+        source_url=src,
+        target_url=tgt,
+        refresh=force_refresh
+    )
+
+from app.routers.reports import export_internal_links_csv
+
+@router.get("/export.csv")
+def internal_links_export_csv(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    return export_internal_links_csv(project_id, user_id, db)

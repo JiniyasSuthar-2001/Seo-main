@@ -118,6 +118,12 @@ def connect_provider_oauth(
     p = provider.lower()
     print(f"[GOOGLE OAUTH] Explicit OAuth login URL requested for provider='{p}', user_id='{user_id}'", flush=True)
 
+    if user_id.startswith("guest_"):
+        raise HTTPException(
+            status_code=403,
+            detail="Sign in to connect external accounts."
+        )
+
     if p in ("openai", "gemini", "claude"):
         raise HTTPException(
             status_code=400,
@@ -340,6 +346,12 @@ def submit_customer_api_key(
     Encrypted at rest in database and bound strictly to current user_id.
     """
     p_clean = provider.lower().strip()
+    if user_id.startswith("guest_"):
+        raise HTTPException(
+            status_code=403,
+            detail="Sign in to connect external accounts."
+        )
+
     if p_clean not in ("openai", "gemini", "claude", "anthropic"):
         raise HTTPException(status_code=400, detail=f"Provider '{provider}' is not supported for custom API key integration.")
 

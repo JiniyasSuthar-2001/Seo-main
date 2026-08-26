@@ -20,6 +20,22 @@ KNOWN_INSECURE_SECRETS = {
     "password"
 }
 
+import socket
+
+def get_lan_ip() -> str:
+    """
+    Detects primary active IPv4 address on the local area network (Wi-Fi/LAN).
+    Falls back cleanly to '127.0.0.1' if network interfaces are offline.
+    """
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=_ENV_PATH, extra="ignore")
 
@@ -28,15 +44,13 @@ class Settings(BaseSettings):
     CRAWL_DATA_DIR: str = os.path.join(_BACKEND_DIR, "data", "websites")
     AUTOCOMPLETE_ENDPOINT_URL: str = os.environ.get("AUTOCOMPLETE_ENDPOINT_URL", "https://suggestqueries.google.com/complete/search")
 
-
-    
-    # Server & Host Settings
-    HOST: str = os.environ.get("HOST", "127.0.0.1")
+    # Server & Host Settings - Default to 0.0.0.0 for dual Local + LAN development access
+    HOST: str = os.environ.get("HOST", "0.0.0.0")
     PORT: int = int(os.environ.get("PORT", "8020"))
-    FRONTEND_HOST: str = os.environ.get("FRONTEND_HOST", "127.0.0.1")
+    FRONTEND_HOST: str = os.environ.get("FRONTEND_HOST", "0.0.0.0")
     FRONTEND_PORT: int = int(os.environ.get("FRONTEND_PORT", "8030"))
     
-    API_BASE_URL: str = os.environ.get("API_BASE_URL", f"http://{os.environ.get('HOST', '127.0.0.1')}:{os.environ.get('PORT', '8020')}")
+    API_BASE_URL: str = os.environ.get("API_BASE_URL", f"http://127.0.0.1:{os.environ.get('PORT', '8020')}")
     CORS_ORIGINS: str = os.environ.get(
         "CORS_ORIGINS", 
         f"http://localhost:{os.environ.get('FRONTEND_PORT', '8030')},http://127.0.0.1:{os.environ.get('FRONTEND_PORT', '8030')},http://localhost:3000,http://127.0.0.1:3000"
@@ -66,22 +80,34 @@ class Settings(BaseSettings):
 
     FRONTEND_BASE_URL: str = os.environ.get(
         "FRONTEND_BASE_URL", 
-        f"http://{os.environ.get('FRONTEND_HOST', '127.0.0.1')}:{os.environ.get('FRONTEND_PORT', '8030')}"
+        f"http://127.0.0.1:{os.environ.get('FRONTEND_PORT', '8030')}"
     )
 
     @property
     def cors_origins_list(self) -> List[str]:
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+        origins = [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+        lan_ip = get_lan_ip()
+        if lan_ip and lan_ip != "127.0.0.1":
+            lan_frontend = f"http://{lan_ip}:{self.FRONTEND_PORT}"
+            lan_3000 = f"http://{lan_ip}:3000"
+            if lan_frontend not in origins:
+                origins.append(lan_frontend)
+            if lan_3000 not in origins:
+                origins.append(lan_3000)
+        return origins
 
 settings = Settings()
 
-def build_frontend_redirect(path: str = "/settings", query_params: Optional[dict] = None) -> str:
+def build_frontend_redirect(path: str = "/settings", query_params: Optional[dict] = None, base_url: Optional[str] = None) -> str:
     """
-    Constructs an absolute frontend SPA redirect URL targeting FRONTEND_BASE_URL (Port 8030).
+    Constructs an absolute frontend SPA redirect URL.
+    Targeting base_url if provided, otherwise FRONTEND_BASE_URL (Port 8030).
     Safely encodes query parameters while excluding sensitive internal tokens or stack traces.
     """
     import urllib.parse
-    base = settings.FRONTEND_BASE_URL.rstrip("/")
+    base = (base_url or settings.FRONTEND_BASE_URL).rstrip("/")
+    if "0.0.0.0" in base:
+        base = base.replace("0.0.0.0", "127.0.0.1")
     clean_path = path if path.startswith("/") else f"/{path}"
     if query_params:
         clean_params = {}

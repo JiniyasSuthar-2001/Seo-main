@@ -69,11 +69,18 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
         
         # Save snapshot to disk
         storage = CrawlStorage()
-        crawl_dir = storage.save_crawl_snapshot(start_url, session_id, results)
+        project = db.query(Project).filter(Project.id == crawl_session.project_id).first() if crawl_session else None
+        target_domain = (project.domain if project and project.domain else (project.url if project and project.url else start_url))
+        crawl_dir = storage.save_crawl_snapshot(target_domain, session_id, results, domain=target_domain)
         
         # Determine status
         raw_status = results.get("status", "completed")
-        crawl_status = "completed" if raw_status in ("completed", "access_denied") else "failed"
+        if raw_status == "completed_with_errors":
+            crawl_status = "completed_with_errors"
+        elif raw_status in ("completed", "access_denied"):
+            crawl_status = "completed"
+        else:
+            crawl_status = "failed"
 
         crawl_session.status = crawl_status
         crawl_session.pages_crawled = len(results.get("pages", []))
@@ -169,3 +176,24 @@ async def get_crawl_history(
     storage = CrawlStorage()
     history = storage.get_crawl_history(domain)
     return history
+
+from app.routers.reports import build_export_filename, record_report_generation, CSVExportService
+from fastapi import Response
+
+@router.get("/{project_id}/crawl-history/export.csv")
+def export_crawl_history_csv(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    storage = CrawlStorage()
+    history = storage.get_crawl_history(project.domain)
+    csv_str = CSVExportService.generate_crawl_history_csv(history)
+    filename = build_export_filename(project.domain, "crawl-history", "csv")
+    record_report_generation(db, project, "Crawl History CSV", "csv", filename, None, "Crawl Engine Logs")
+    return Response(content=csv_str.encode("utf-8"), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})

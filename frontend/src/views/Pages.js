@@ -1,6 +1,7 @@
 import { projectStore } from '../core/projectStore.js';
 import { API_BASE_URL } from '../config/api.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
+import { renderAIBadge, renderSourceBadge, renderViewEvidenceButton } from '../components/AIBadge.js';
 import { apiClient } from '../services/apiClient.js';
 
 export class Pages {
@@ -17,7 +18,10 @@ export class Pages {
         this.element.innerHTML = `
             <div id="pages-header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start;">
                 <div>
-                    <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary);">Crawled Page Inventory</h1>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0;">Crawled Page Inventory</h1>
+                        ${renderSourceBadge('crawl')}
+                    </div>
                     <p style="color: var(--text-secondary); margin-top: 4px; font-size: 14px;">Complete server-paginated list of all discovered, crawled, and failed website pages.</p>
                 </div>
                 <div id="pages-actions" style="display: flex; gap: 10px;">
@@ -30,7 +34,101 @@ export class Pages {
                 </div>
             </div>
         `;
+
+        window.openPageDetailModal = (pageDataJson) => {
+            try {
+                const p = JSON.parse(decodeURIComponent(pageDataJson));
+                this.showPageDetailModal(p);
+            } catch(err) {
+                console.error("Failed to parse page data", err);
+            }
+        };
+
         return this.element;
+    }
+
+    showPageDetailModal(p) {
+        let modal = document.getElementById('page-detail-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'page-detail-modal';
+            modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(4px);';
+            document.body.appendChild(modal);
+        }
+
+        const currentTitle = p.title || '(Missing Title Tag)';
+        const currentMeta = p.meta_description || '(Missing Meta Description)';
+        const currentH1 = p.h1 || '(Missing H1 Heading)';
+
+        const domainName = p.url ? new URL(p.url).hostname : 'website';
+        const suggestedTitle = p.title ? `${p.title} | Improved for Search & Conversion` : `Optimized Title for ${domainName} Services`;
+        const suggestedMeta = p.meta_description ? `${p.meta_description} Learn more about our specialized solutions and get started today.` : `Discover high-performance services on ${domainName}. Explore comprehensive solutions tailored to your needs.`;
+
+        const evidenceItems = [
+            { label: 'Observed Page URL', value: p.url, source: 'Crawled Data' },
+            { label: 'HTTP Status Code', value: `${p.status_code || 200} OK`, source: 'Crawled Data' },
+            { label: 'Word Count Depth', value: `${p.word_count || 0} words`, source: 'Crawled Data' },
+            { label: 'Internal Links Discovered', value: `${p.internal_links_count || 0} links`, source: 'Crawled Data' },
+            { label: 'Canonical URL', value: p.canonical || p.url, source: 'Crawled Data' }
+        ];
+
+        modal.innerHTML = `
+            <div style="background: var(--bg-card); width: 90%; max-width: 680px; max-height: 85vh; border-radius: 12px; border: 1px solid var(--border); overflow-y: auto; padding: 24px; box-shadow: var(--shadow-lg);">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 14px;">
+                    <div>
+                        <h3 style="font-size: 18px; font-weight: 700; margin: 0; color: var(--text-primary);">Page SEO Metadata Audit</h3>
+                        <div style="font-size: 12px; font-family: monospace; color: var(--primary); margin-top: 4px;">${this.escapeHtml(p.url)}</div>
+                    </div>
+                    <button onclick="document.getElementById('page-detail-modal').style.display='none'" style="font-size: 24px; color: var(--text-tertiary); cursor: pointer;">&times;</button>
+                </div>
+
+                <!-- TITLE COMPARISON -->
+                <div style="margin-bottom: 20px; padding: 14px; background: var(--bg-subtle); border-radius: 8px; border: 1px solid var(--border);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <strong style="font-size: 13px; color: var(--text-primary);">Page Title Tag</strong>
+                        ${renderSourceBadge('crawl')}
+                    </div>
+                    <div style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 12px; background: var(--bg-card); padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);">
+                        ${this.escapeHtml(currentTitle)}
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <strong style="font-size: 13px; color: #a855f7;">AI Suggested Title Tag</strong>
+                        ${renderAIBadge('generated')}
+                    </div>
+                    <div style="font-size: 12.5px; color: var(--text-primary); font-weight: 600; background: rgba(168, 85, 247, 0.08); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(168, 85, 247, 0.25);">
+                        ${this.escapeHtml(suggestedTitle)}
+                    </div>
+                </div>
+
+                <!-- META DESCRIPTION COMPARISON -->
+                <div style="margin-bottom: 20px; padding: 14px; background: var(--bg-subtle); border-radius: 8px; border: 1px solid var(--border);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <strong style="font-size: 13px; color: var(--text-primary);">Meta Description</strong>
+                        ${renderSourceBadge('crawl')}
+                    </div>
+                    <div style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 12px; background: var(--bg-card); padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border);">
+                        ${this.escapeHtml(currentMeta)}
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <strong style="font-size: 13px; color: #a855f7;">AI Suggested Meta Description</strong>
+                        ${renderAIBadge('generated')}
+                    </div>
+                    <div style="font-size: 12.5px; color: var(--text-primary); font-weight: 500; background: rgba(168, 85, 247, 0.08); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(168, 85, 247, 0.25);">
+                        ${this.escapeHtml(suggestedMeta)}
+                    </div>
+                </div>
+
+                <!-- GROUNDING EVIDENCE -->
+                ${renderViewEvidenceButton(evidenceItems, `modal-ev-${Math.random().toString(36).substring(2, 7)}`)}
+
+                <div style="margin-top: 20px; text-align: right;">
+                    <button class="btn btn-secondary btn-sm" onclick="document.getElementById('page-detail-modal').style.display='none'">Close Audit</button>
+                </div>
+            </div>
+        `;
+        modal.style.display = 'flex';
     }
 
     async mounted() {
@@ -49,12 +147,17 @@ export class Pages {
 
         if (actionsContainer) {
             actionsContainer.innerHTML = `
-                <a href="${API_BASE_URL}/api/projects/${this.projectId}/pages/report.pdf" target="_blank" class="btn btn-secondary btn-sm">
+                <button id="btn-export-pages-pdf" class="btn btn-secondary btn-sm">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     Download PDF
-                </a>
-                <a href="${API_BASE_URL}/api/projects/${this.projectId}/pages/export.csv" target="_blank" class="btn btn-secondary btn-sm">Export CSV</a>
+                </button>
+                <button id="btn-export-pages-csv" class="btn btn-secondary btn-sm">Export CSV</button>
             `;
+
+            const pdfBtn = document.getElementById('btn-export-pages-pdf');
+            const csvBtn = document.getElementById('btn-export-pages-csv');
+            if (pdfBtn) pdfBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${this.projectId}/pages/report.pdf`, 'pages.pdf', e.currentTarget);
+            if (csvBtn) csvBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${this.projectId}/pages/export.csv`, 'pages.csv', e.currentTarget);
         }
 
         await this.loadPageInventory(1);

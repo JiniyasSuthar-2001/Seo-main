@@ -30,14 +30,16 @@ router = APIRouter()
 @router.get("/google/login-url")
 def get_google_oauth_login_url(
     user_id: Optional[str] = Query("anonymous_guest"),
-    redirect_base: Optional[str] = Query(None)
+    redirect_base: Optional[str] = Query(None),
+    request: Request = None
 ):
     """
     Generates official Google OAuth 2.0 authorization URL.
     Redirects browser to https://accounts.google.com/o/oauth2/v2/auth
     """
     try:
-        auth_url = build_authorization_url("google", user_id, redirect_base)
+        base = redirect_base or (str(request.base_url).rstrip("/") if request else settings.API_BASE_URL)
+        auth_url = build_authorization_url("google", user_id, base)
         return {
             "status": "success",
             "auth_url": auth_url,
@@ -53,6 +55,7 @@ def google_oauth_callback(
     state: Optional[str] = Query(None),
     error: Optional[str] = Query(None),
     payload: dict = Body(default={}),
+    request: Request = None,
     db: Session = Depends(get_db)
 ):
     """
@@ -208,10 +211,17 @@ def google_oauth_callback(
 
     # If browser GET redirect, redirect directly to frontend discovery with token
     if code:
+        frontend_base = None
+        if request:
+            req_base = str(request.base_url).rstrip("/")
+            if ":8020" in req_base:
+                frontend_base = req_base.replace(":8020", f":{settings.FRONTEND_PORT}")
+            else:
+                frontend_base = req_base
         target_url = build_frontend_redirect("/discovery", {
             "token": session_token,
             "auth": "success"
-        })
+        }, base_url=frontend_base)
         return RedirectResponse(url=target_url)
 
     return {
@@ -298,21 +308,67 @@ def google_oauth_login(payload: dict = Body(default={}), db: Session = Depends(g
         }
     }
 
+@router.post("/guest-session")
+def create_guest_session(db: Session = Depends(get_db)):
+    """
+    Creates a temporary, server-controlled guest session.
+    Generates a unique guest identity (guest_<uuid_hex>) and issues an authentic JWT session token.
+    NO shared hardcoded identity and NO header-controlled identity.
+    """
+    guest_uuid = uuid.uuid4().hex[:12]
+    guest_id = f"guest_{guest_uuid}"
+    guest_email = f"{guest_id}@guest.local"
+    guest_name = "Guest User"
+
+    # Upsert temporary Guest User record in DB
+    user = db.query(User).filter(User.id == guest_id).first()
+    if not user:
+        user = User(
+            id=guest_id,
+            email=guest_email,
+            name=guest_name,
+            picture=None,
+            google_id=None
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    session_token = create_access_token(user_id=guest_id)
+
+    return {
+        "status": "success",
+        "access_token": session_token,
+        "token_type": "bearer",
+        "user": {
+            "id": guest_id,
+            "email": guest_email,
+            "masked_email": "guest***@guest.local",
+            "name": guest_name,
+            "picture": None,
+            "is_guest": True,
+            "auth_provider": "guest"
+        }
+    }
+
 @router.get("/me")
 def get_authenticated_user(user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db)):
     """
     Returns persistent authenticated user session profile details, Google connection,
-    and active project memberships.
+    and active project memberships. Supports guest session profile detection.
     """
     email = user_id.strip().lower()
+    is_guest = email.startswith("guest_")
     user = db.query(User).filter(User.email == email).first()
     
-    masked = email[0] + "***" + email[email.find("@"):] if "@" in email else "user***@gmail.com"
+    masked = "guest***@guest.local" if is_guest else (email[0] + "***" + email[email.find("@"):] if "@" in email else "user***@gmail.com")
 
-    conn = db.query(ExternalConnection).filter(
-        ExternalConnection.user_id == email,
-        ExternalConnection.provider == "google"
-    ).first()
+    conn = None
+    if not is_guest:
+        conn = db.query(ExternalConnection).filter(
+            ExternalConnection.user_id == email,
+            ExternalConnection.provider == "google"
+        ).first()
 
     memberships = db.query(ProjectMembership).filter(
         ProjectMembership.user_id == email,
@@ -323,11 +379,12 @@ def get_authenticated_user(user_id: str = Depends(get_current_user_id), db: Sess
         "user_id": email,
         "email": email,
         "masked_email": masked,
-        "name": user.name if user else "SEO User",
+        "name": user.name if user else ("Guest User" if is_guest else "SEO User"),
         "picture": user.picture if user else None,
         "status": "authenticated",
+        "is_guest": is_guest,
         "google_connected": conn is not None and conn.status == "CONNECTED",
-        "auth_provider": "google",
+        "auth_provider": "guest" if is_guest else "google",
         "memberships_count": len(memberships)
     }
 

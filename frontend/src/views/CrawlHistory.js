@@ -60,8 +60,8 @@ export class CrawlHistory {
                             </span>
                             <h3 style="font-size: 18px; font-weight: 600; margin-top: 4px;">${snap.timestamp}</h3>
                         </div>
-                        <span class="badge badge-success" style="text-transform: uppercase;">
-                            ${snap.status}
+                        <span class="badge ${snap.status === 'completed_with_errors' ? 'badge-warning' : (snap.status === 'failed' ? 'badge-critical' : 'badge-success')}" style="text-transform: uppercase;">
+                            ${snap.status === 'completed_with_errors' ? 'Completed with Issues' : (snap.status || 'Completed')}
                         </span>
                     </div>
 
@@ -84,8 +84,11 @@ export class CrawlHistory {
                         </div>
                     </div>
 
-                    <div style="margin-top: 16px; font-size: 12px; font-family: monospace; color: var(--text-secondary);">
-                        Storage Path: data/websites/${safeDomain}/crawls/${snap.folder_name}/
+                    <div style="margin-top: 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                        <div style="font-size: 12px; font-family: monospace; color: var(--text-secondary);">
+                            Storage Path: data/websites/${safeDomain}/crawls/${snap.folder_name}/
+                        </div>
+                        <button class="btn btn-secondary btn-sm" onclick="apiClient.downloadFile('/api/projects/${projectId}/crawl-history/export.csv', 'crawl-history.csv', this)">Export Snapshot CSV</button>
                     </div>
                 </div>
             `).join('');

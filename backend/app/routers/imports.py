@@ -85,3 +85,19 @@ def get_imports(
     from app.models.dataset import Dataset
     datasets = db.query(Dataset).filter(Dataset.project_id == project_id).order_by(Dataset.imported_at.desc()).all()
     return datasets
+
+from fastapi import Response
+from app.services.reports.guideline_service import GuidelineReportService
+
+@router.get("/guidelines/{guideline_id}/pdf")
+@router.get("/guidelines/{guideline_id}.pdf")
+def get_guideline_pdf(guideline_id: str):
+    pdf_bytes = GuidelineReportService.generate_guideline_pdf(guideline_id)
+    filename = f"SEO_Platform_{guideline_id.capitalize()}_Upload_Guidelines.pdf"
+    return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
+
+@router.get("/guidelines/{guideline_id}/template.csv")
+def get_guideline_template(guideline_id: str):
+    csv_str = GuidelineReportService.generate_sample_template_csv(guideline_id)
+    filename = f"{guideline_id}-upload-template.csv"
+    return Response(content=csv_str.encode("utf-8"), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})

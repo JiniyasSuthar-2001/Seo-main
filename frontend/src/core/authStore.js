@@ -65,7 +65,8 @@ class AuthStore {
           masked_email: data.masked_email,
           name: data.name,
           picture: data.picture,
-          auth_provider: 'google'
+          is_guest: !!(data.is_guest || data.auth_provider === 'guest' || (data.user_id && String(data.user_id).startsWith('guest_'))),
+          auth_provider: data.auth_provider || (data.is_guest ? 'guest' : 'google')
         };
         this.isAuthenticated = true;
         localStorage.setItem(this.USER_KEY, JSON.stringify(this.user));
@@ -83,6 +84,29 @@ class AuthStore {
       this.isCheckingSession = false;
       return this.isAuthenticated;
     }
+  }
+
+  async createGuestSession() {
+    const res = await fetch(`${API_BASE_URL}/api/auth/guest-session`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Failed to create temporary guest session.');
+    }
+
+    const data = await res.json();
+    this.token = data.access_token;
+    this.user = data.user;
+    this.isAuthenticated = true;
+
+    localStorage.setItem(this.TOKEN_KEY, this.token);
+    localStorage.setItem(this.USER_KEY, JSON.stringify(this.user));
+
+    this.notify();
+    return data;
   }
 
   async getGoogleOAuthLoginUrl() {

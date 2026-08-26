@@ -2,6 +2,7 @@ import { projectStore } from '../core/projectStore.js';
 import { API_BASE_URL } from '../config/api.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
 import { apiClient } from '../services/apiClient.js';
+import { renderAIBadge, renderSourceBadge, renderViewEvidenceButton } from '../components/AIBadge.js';
 
 export class Technical {
     constructor() {
@@ -82,9 +83,14 @@ export class Technical {
 
             if (actionsContainer) {
                 actionsContainer.innerHTML = `
-                    <a href="${API_BASE_URL}/api/projects/${projectId}/technical/report.pdf" target="_blank" class="btn btn-secondary btn-sm">Download PDF</a>
-                    <a href="${API_BASE_URL}/api/projects/${projectId}/technical/export.csv" target="_blank" class="btn btn-secondary btn-sm">Export CSV</a>
+                    <button id="btn-export-tech-pdf" class="btn btn-secondary btn-sm">Download PDF</button>
+                    <button id="btn-export-tech-csv" class="btn btn-secondary btn-sm">Export CSV</button>
                 `;
+
+                const pdfBtn = document.getElementById('btn-export-tech-pdf');
+                const csvBtn = document.getElementById('btn-export-tech-csv');
+                if (pdfBtn) pdfBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/technical/report.pdf`, 'technical-seo.pdf', e.currentTarget);
+                if (csvBtn) csvBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/technical/export.csv`, 'technical-seo.csv', e.currentTarget);
             }
 
             if (this.activeTab === 'history') {
@@ -180,20 +186,33 @@ export class Technical {
                 else if (sev === 'warning') badgeClass = 'badge-warning';
 
                 const urlsList = iss.affected_urls || [];
-                const urlsPreview = urlsList.slice(0, 3).map(u => `<div><code>${u}</code></div>`).join('');
-                const moreCount = urlsList.length > 3 ? urlsList.length - 3 : 0;
+                const isAIAssisted = iss.is_ai_generated || iss.source_type === 'ai_analysis';
+
+                const evidenceItems = urlsList.map(u => ({
+                    label: 'Affected Page URL',
+                    value: u,
+                    source: 'Crawled Data'
+                }));
+                if (evidenceItems.length === 0) {
+                    evidenceItems.push({ label: 'Audit Scope', value: 'Workspace HTML Crawler', source: 'Crawled Data' });
+                }
 
                 return `
                     <tr style="border-bottom: 1px solid var(--border);">
                         <td style="padding: 12px 16px;"><span class="badge ${badgeClass}">${iss.severity.toUpperCase()}</span></td>
-                        <td style="padding: 12px 16px; font-weight: 600;">${iss.category || 'Technical'}</td>
+                        <td style="padding: 12px 16px; font-weight: 600;">
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span>${iss.category || 'Technical'}</span>
+                                ${isAIAssisted ? renderAIBadge('assisted') : renderSourceBadge('crawl')}
+                            </div>
+                        </td>
                         <td style="padding: 12px 16px;">
                             <div style="font-weight: 600; color: var(--text-primary);">${iss.title}</div>
                             <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">${iss.description || ''}</div>
+                            ${renderViewEvidenceButton(evidenceItems, `tech-ev-${idx}-${Math.random().toString(36).substring(2, 6)}`)}
                         </td>
                         <td style="padding: 12px 16px; font-size: 12px;">
-                            ${urlsPreview || '<code>All pages</code>'}
-                            ${moreCount > 0 ? `<div style="font-size: 11px; color: var(--text-tertiary); margin-top: 2px;">+ ${moreCount} more URLs</div>` : ''}
+                            <span class="badge badge-secondary" style="font-size: 10.5px;">${urlsList.length} Affected URL${urlsList.length === 1 ? '' : 's'}</span>
                         </td>
                         <td style="padding: 12px 16px; font-size: 12px; color: var(--text-secondary);">${iss.recommendation || 'Fix identified issue.'}</td>
                     </tr>

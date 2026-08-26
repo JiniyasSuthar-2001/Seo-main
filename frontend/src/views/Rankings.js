@@ -186,8 +186,18 @@ export class Rankings {
                 </div>
 
                 ${rankings.length === 0 ? `
-                    <div style="padding: 24px; text-align: center; color: var(--text-secondary);">
-                        No ranking data available for this domain. Connect Google Search Console or import ranking CSV.
+                    <div class="card" style="padding: 40px 28px; text-align: center; max-width: 580px; margin: 16px auto; background: var(--bg-subtle); border-radius: 12px; border: 1px dashed var(--border);">
+                        <div style="width: 56px; height: 56px; border-radius: 14px; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                        </div>
+                        <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">No Ranking Data Available</h3>
+                        <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.6;">
+                            Your website has been crawled successfully. To see Google search positions, connect Google Search Console or configure a supported rank-tracking provider.
+                        </p>
+                        <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                            <a href="/integrations" data-link class="btn btn-primary btn-sm">Connect Search Console</a>
+                            <a href="/import" data-link class="btn btn-secondary btn-sm">Import Advanced Data</a>
+                        </div>
                     </div>
                 ` : `
                     <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">

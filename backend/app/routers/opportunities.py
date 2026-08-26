@@ -127,6 +127,16 @@ def update_opportunity_status(
     db.commit()
     return {"id": opp.id, "status": opp.status, "message": f"Opportunity status updated to '{new_status}'."}
 
+from app.routers.reports import export_opportunities_csv
+
+@router.get("/export.csv")
+def opportunities_export_csv(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    return export_opportunities_csv(project_id, user_id, db)
+
 def json_dumps(val):
     import json
     return json.dumps(val)

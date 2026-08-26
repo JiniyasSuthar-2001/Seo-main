@@ -3,7 +3,7 @@ import socketserver
 import os
 import sys
 
-HOST = os.environ.get("FRONTEND_HOST") or os.environ.get("HOST") or "127.0.0.1"
+HOST = os.environ.get("FRONTEND_HOST") or os.environ.get("HOST") or "0.0.0.0"
 PORT = int(os.environ.get("FRONTEND_PORT") or os.environ.get("PORT") or "8030")
 FRONTEND_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -36,10 +36,13 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
         sys.stdout.write(f"[FRONTEND HTTP] {args[0]} - {args[1]}\n")
         sys.stdout.flush()
 
+class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
 if __name__ == "__main__":
     os.chdir(FRONTEND_DIR)
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer((HOST, PORT), SPAHandler) as httpd:
+    with ThreadedTCPServer((HOST, PORT), SPAHandler) as httpd:
         print(f"[FRONTEND] SPA server running on http://{HOST}:{PORT} (Serving from {FRONTEND_DIR})", flush=True)
         try:
             httpd.serve_forever()

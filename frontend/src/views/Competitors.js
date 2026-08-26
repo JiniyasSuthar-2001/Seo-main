@@ -7,10 +7,13 @@ export class Competitors {
         this.suggestedCompetitors = [];
         this.confirmedCompetitors = [];
         this.gapAnalysis = null;
+        this.hasSerpProvider = false;
+        this.serpProviderMessage = '';
         this.loading = false;
         this.discovering = false;
         this.error = null;
         this.showModal = false;
+        this.showLearnModal = false;
         this.editingCompetitor = null;
         this.unsubscribeStore = null;
     }
@@ -51,18 +54,27 @@ export class Competitors {
         try {
             const projectId = currentProject.id;
 
-            // Fetch suggested & confirmed competitors and keyword gap in parallel
-            const [suggestedData, confirmedData, gapData] = await Promise.all([
+            const [suggestedRes, confirmedData, gapData] = await Promise.all([
                 apiClient.get(`/api/projects/${projectId}/competitors/discovered`),
                 apiClient.get(`/api/projects/${projectId}/competitors?status=Confirmed`),
                 apiClient.get(`/api/projects/${projectId}/competitors/gap-analysis`).catch(() => null)
             ]);
 
-            this.suggestedCompetitors = Array.isArray(suggestedData) ? suggestedData : [];
+            if (Array.isArray(suggestedRes)) {
+                this.suggestedCompetitors = suggestedRes;
+                this.hasSerpProvider = false;
+            } else if (suggestedRes && typeof suggestedRes === 'object') {
+                this.suggestedCompetitors = suggestedRes.suggested_competitors || [];
+                this.hasSerpProvider = !!suggestedRes.has_serp_provider;
+                this.serpProviderMessage = suggestedRes.message || '';
+            } else {
+                this.suggestedCompetitors = [];
+                this.hasSerpProvider = false;
+            }
+
             this.confirmedCompetitors = Array.isArray(confirmedData) ? confirmedData : [];
             this.gapAnalysis = gapData;
             
-            // Default to 'confirmed' tab if user already has confirmed competitors
             if (this.confirmedCompetitors.length > 0 && this.activeTab === 'suggested' && this.suggestedCompetitors.length === 0) {
                 this.activeTab = 'confirmed';
             }
@@ -84,15 +96,19 @@ export class Competitors {
 
         try {
             const res = await apiClient.post(`/api/projects/${currentProject.id}/competitors/discover`);
-            if (res && res.suggested_competitors) {
-                this.suggestedCompetitors = res.suggested_competitors;
-            }
-            if (res && res.confirmed_competitors) {
-                this.confirmedCompetitors = res.confirmed_competitors;
+            if (res) {
+                this.hasSerpProvider = !!res.has_serp_provider;
+                this.serpProviderMessage = res.message || '';
+                if (res.suggested_competitors) {
+                    this.suggestedCompetitors = res.suggested_competitors;
+                }
+                if (res.confirmed_competitors) {
+                    this.confirmedCompetitors = res.confirmed_competitors;
+                }
             }
             this.activeTab = 'suggested';
         } catch (err) {
-            alert('Competitor discovery failed: ' + err.message);
+            alert('Competitor discovery notice: ' + err.message);
         } finally {
             this.discovering = false;
             this.loadData();
@@ -176,18 +192,24 @@ export class Competitors {
         this.container.innerHTML = `
             <div class="competitors-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; flex-wrap: wrap; gap: 16px;">
                 <div>
-                    <h1 style="font-size: 24px; font-weight: 600; color: var(--text-primary); margin: 0 0 4px 0;">Competitor Discovery & Ranking Engine</h1>
+                    <h1 style="font-size: 24px; font-weight: 600; color: var(--text-primary); margin: 0 0 4px 0;">Competitor Discovery & Market Analysis</h1>
                     <p style="color: var(--text-secondary); margin: 0; font-size: 14px;">
                         Target Domain: <strong style="color: var(--accent-primary);">${this.escapeHtml(projectDomain)}</strong>
                     </p>
                 </div>
-                <div style="display: flex; gap: 12px;">
-                    <button id="btn-auto-discover" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 8px;" ${this.discovering ? 'disabled' : ''}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                        ${this.discovering ? 'Discovering Competitors...' : 'Auto-Discover Competitors'}
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <a href="${API_BASE_URL}/api/guidelines/competitors/pdf" target="_blank" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                        📄 Guidelines PDF
+                    </a>
+                    <a href="#/import" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                        Import Competitors CSV
+                    </a>
+                    <button id="btn-auto-discover" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;" ${this.discovering ? 'disabled' : ''}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+                        ${this.discovering ? 'Discovering...' : 'Auto-Discover'}
                     </button>
-                    <button id="btn-add-manual" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 8px;">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    <button id="btn-add-manual" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                         Add Competitor
                     </button>
                 </div>
@@ -219,13 +241,16 @@ export class Competitors {
                 ${this.loading ? `
                     <div style="text-align: center; padding: 48px;">
                         <div class="spinner" style="width: 32px; height: 32px; border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--accent-primary); border-radius: 50%; animation: spin 1s infinite linear; margin: 0 auto 16px;"></div>
-                        <p style="color: var(--text-secondary);">Analyzing search competitors and location relevance...</p>
+                        <p style="color: var(--text-secondary);">Analyzing search competitors and market signals...</p>
                     </div>
                 ` : this.renderTabContent()}
             </div>
 
             <!-- Modal for Manual Add / Edit -->
             ${this.showModal ? this.renderModal() : ''}
+
+            <!-- Modal for Learning Competitor Discovery Pipeline Architecture -->
+            ${this.showLearnModal ? this.renderLearnModal() : ''}
         `;
 
         this.bindEvents();
@@ -244,13 +269,32 @@ export class Competitors {
 
     renderSuggestedTab() {
         if (this.suggestedCompetitors.length === 0) {
+            if (!this.hasSerpProvider) {
+                return `
+                    <div class="card" style="text-align: center; padding: 48px 24px; background: var(--bg-card); border-radius: 12px; border: 1px dashed var(--border-color); max-width: 680px; margin: 0 auto;">
+                        <div style="width: 56px; height: 56px; border-radius: 14px; background: rgba(59, 130, 246, 0.1); color: var(--accent-primary, #3b82f6); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        </div>
+                        <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">Competitor Discovery Not Yet Connected</h3>
+                        <p style="font-size: 13.5px; color: var(--text-secondary); margin: 0 auto 20px; line-height: 1.6;">
+                            We can analyze competitors once real search-result data is available. Website crawling analyzes content on your pages, but discovering competitor domains ranking on search engines requires connecting a SERP/search data provider or importing SERP ranking data.
+                        </p>
+                        <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                            <a href="/integrations" data-link class="btn btn-primary btn-sm">Connect SERP Data</a>
+                            <a href="/import" data-link class="btn btn-secondary btn-sm">Import Competitor Data</a>
+                            <button type="button" class="btn btn-secondary btn-sm" id="btn-learn-discovery">Learn How Competitor Discovery Works</button>
+                        </div>
+                    </div>
+                `;
+            }
+
             return `
                 <div class="card" style="text-align: center; padding: 48px 24px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color);">
                     <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">No Pending Suggested Competitors</div>
                     <p style="color: var(--text-secondary); max-width: 480px; margin: 0 auto 20px;">
                         All auto-discovered competitors have been approved or ignored. Click <strong>Auto-Discover Competitors</strong> to scan SERPs for new market candidates.
                     </p>
-                    <button class="btn btn-primary" onclick="document.getElementById('btn-auto-discover').click()">Scan SERPs for Competitors</button>
+                    <button class="btn btn-primary" id="btn-scan-serps">Scan SERPs for Competitors</button>
                 </div>
             `;
         }
@@ -459,18 +503,18 @@ export class Competitors {
                     <form id="form-competitor">
                         <div style="margin-bottom: 16px;">
                             <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px;">Company / Brand Name *</label>
-                            <input type="text" name="name" value="${this.escapeHtml(c.name || '')}" placeholder="e.g. Fallon Solutions" required style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                            <input type="text" name="name" value="${this.escapeHtml(c.name || '')}" placeholder="e.g. Competitor Brand" required style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
                         </div>
 
                         <div style="margin-bottom: 16px;">
                             <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px;">Website Domain or URL *</label>
-                            <input type="text" name="url" value="${this.escapeHtml(c.url || c.domain || '')}" placeholder="e.g. fallonsolutions.com.au" required style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                            <input type="text" name="url" value="${this.escapeHtml(c.url || c.domain || '')}" placeholder="e.g. competitor.com" required style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
                         </div>
 
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
                             <div>
                                 <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px;">Location</label>
-                                <input type="text" name="location" value="${this.escapeHtml(c.location || 'Brisbane, QLD')}" placeholder="e.g. Brisbane, QLD" style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
+                                <input type="text" name="location" value="${this.escapeHtml(c.location || 'Local Market')}" placeholder="e.g. Local Market" style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary);">
                             </div>
                             <div>
                                 <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px;">Geographic Level</label>
@@ -493,7 +537,7 @@ export class Competitors {
 
                         <div style="margin-bottom: 20px;">
                             <label style="display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px;">Notes / Strategy</label>
-                            <textarea name="notes" rows="3" placeholder="Targeting overlapping battery installation keywords..." style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); font-family: inherit;">${this.escapeHtml(c.notes || '')}</textarea>
+                            <textarea name="notes" rows="3" placeholder="Targeting overlapping keywords..." style="width: 100%; padding: 10px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); font-family: inherit;">${this.escapeHtml(c.notes || '')}</textarea>
                         </div>
 
                         <div style="display: flex; justify-content: flex-end; gap: 12px;">
@@ -506,16 +550,53 @@ export class Competitors {
         `;
     }
 
+    renderLearnModal() {
+        return `
+            <div class="modal-backdrop" style="position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;">
+                <div class="modal-card" style="background: var(--bg-card, #1e293b); border: 1px solid var(--border-color, #334155); border-radius: 12px; width: 100%; max-width: 580px; padding: 24px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <h2 style="font-size: 18px; font-weight: 600; margin: 0; color: var(--text-primary);">How Competitor Discovery Works</h2>
+                        <button id="btn-close-learn-modal" style="background: none; border: none; color: var(--text-secondary); font-size: 20px; cursor: pointer;">&times;</button>
+                    </div>
+
+                    <div style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 20px;">
+                        <p style="margin-bottom: 12px;">
+                            Our platform strictly enforces <strong>Real Data Only</strong>. AI reasoning (such as Groq or Gemini) is used to classify and analyze real evidence, but it cannot manufacture fake Google rankings or fake competitor domains out of thin air.
+                        </p>
+                        
+                        <div style="background: rgba(0,0,0,0.25); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+                            <strong style="color: var(--text-primary); font-size: 14px; display: block; margin-bottom: 8px;">Competitor Discovery Pipeline:</strong>
+                            <ol style="margin: 0; padding-left: 20px; space-y: 6px;">
+                                <li><strong>Real Website Crawl:</strong> Extracts your page titles, H1 headings, content topics, and keywords.</li>
+                                <li><strong>Market Signal Extraction:</strong> Identifies target keywords and service themes.</li>
+                                <li><strong>SERP Data Provider:</strong> Queries real Google/search engine result rankings for those target keywords.</li>
+                                <li><strong>Candidate Domain Extraction:</strong> Filters your own domain, deduplicates ranking sites, and calculates SERP overlap frequency.</li>
+                                <li><strong>AI Classification (Groq):</strong> Evaluates real candidate domains against your topics to label Direct vs. Indirect competitors, Directories, or Marketplaces.</li>
+                            </ol>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: flex-end; gap: 12px;">
+                        <button type="button" id="btn-dismiss-learn-modal" class="btn btn-primary btn-sm">Got It</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
     bindEvents() {
         if (!this.container) return;
 
-        // Auto-Discover button
         const btnAuto = this.container.querySelector('#btn-auto-discover');
         if (btnAuto) {
             btnAuto.addEventListener('click', () => this.runAutoDiscovery());
         }
 
-        // Add Manual button
+        const btnScan = this.container.querySelector('#btn-scan-serps');
+        if (btnScan) {
+            btnScan.addEventListener('click', () => this.runAutoDiscovery());
+        }
+
         const btnAdd = this.container.querySelector('#btn-add-manual');
         if (btnAdd) {
             btnAdd.addEventListener('click', () => {
@@ -525,7 +606,30 @@ export class Competitors {
             });
         }
 
-        // Tabs navigation
+        const btnLearn = this.container.querySelector('#btn-learn-discovery');
+        if (btnLearn) {
+            btnLearn.addEventListener('click', () => {
+                this.showLearnModal = true;
+                this.renderState();
+            });
+        }
+
+        const btnCloseLearn = this.container.querySelector('#btn-close-learn-modal');
+        if (btnCloseLearn) {
+            btnCloseLearn.addEventListener('click', () => {
+                this.showLearnModal = false;
+                this.renderState();
+            });
+        }
+
+        const btnDismissLearn = this.container.querySelector('#btn-dismiss-learn-modal');
+        if (btnDismissLearn) {
+            btnDismissLearn.addEventListener('click', () => {
+                this.showLearnModal = false;
+                this.renderState();
+            });
+        }
+
         const tabBtns = this.container.querySelectorAll('.tab-btn');
         tabBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -537,7 +641,6 @@ export class Competitors {
             });
         });
 
-        // Approve buttons
         const approveBtns = this.container.querySelectorAll('.btn-approve');
         approveBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -546,7 +649,6 @@ export class Competitors {
             });
         });
 
-        // Ignore buttons
         const ignoreBtns = this.container.querySelectorAll('.btn-ignore');
         ignoreBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -555,7 +657,6 @@ export class Competitors {
             });
         });
 
-        // Toggle primary buttons
         const primaryBtns = this.container.querySelectorAll('.btn-toggle-primary');
         primaryBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -565,7 +666,6 @@ export class Competitors {
             });
         });
 
-        // Edit buttons
         const editBtns = this.container.querySelectorAll('.btn-edit-comp');
         editBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -579,7 +679,6 @@ export class Competitors {
             });
         });
 
-        // Delete buttons
         const deleteBtns = this.container.querySelectorAll('.btn-delete-comp');
         deleteBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -588,7 +687,6 @@ export class Competitors {
             });
         });
 
-        // Modal Close/Cancel buttons
         const btnClose = this.container.querySelector('#btn-close-modal');
         if (btnClose) {
             btnClose.addEventListener('click', () => {
@@ -604,7 +702,6 @@ export class Competitors {
             });
         }
 
-        // Form Submit
         const formComp = this.container.querySelector('#form-competitor');
         if (formComp) {
             formComp.addEventListener('submit', async (e) => {

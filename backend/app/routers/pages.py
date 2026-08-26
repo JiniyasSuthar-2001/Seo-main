@@ -127,3 +127,13 @@ def get_page(
         if page.get("url") == page_id or page.get("title") == page_id or page.get("id") == page_id:
             return page
     raise HTTPException(status_code=404, detail="Page not found in latest crawl snapshot.")
+
+from app.routers.reports import export_pages_csv
+
+@router.get("/export.csv")
+def pages_export_csv(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    return export_pages_csv(project_id, user_id, db)

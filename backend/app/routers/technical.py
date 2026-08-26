@@ -146,3 +146,13 @@ def update_issue_status(issue_id: str, payload: dict = Body(...), db: Session = 
     issue.status = new_status
     db.commit()
     return {"id": issue.id, "status": issue.status, "message": "Issue status updated successfully."}
+
+from app.routers.reports import export_technical_csv
+
+@router.get("/export.csv")
+def technical_export_csv(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    return export_technical_csv(project_id, user_id, db)

@@ -11,6 +11,7 @@ from app.models.external_connection import ExternalConnection
 from app.models.crawl_session import CrawlSession
 from app.models.audit_issue import AuditIssue
 from app.models.action_opportunity import ActionOpportunity
+from app.models.report import ReportRecord
 
 __all__ = [
     "Project",
@@ -25,5 +26,6 @@ __all__ = [
     "ExternalConnection",
     "CrawlSession",
     "AuditIssue",
-    "ActionOpportunity"
+    "ActionOpportunity",
+    "ReportRecord"
 ]

@@ -20,9 +20,10 @@ export class Keywords {
                     <h1 style="font-size: 24px; font-weight: 700;">Keyword Intelligence Workspace</h1>
                     <p style="color: var(--text-secondary); margin-top: 4px;">Explore keyword opportunities, research search terms, organize semantic topic groups, and track keyword rankings.</p>
                 </div>
-                <div style="display: flex; gap: 10px;">
+                <div style="display: flex; gap: 10px;" id="kw-actions-container">
+                    <button id="btn-export-kw-csv" class="btn btn-secondary btn-sm">Export CSV</button>
+                    <button id="btn-export-kw-pdf" class="btn btn-secondary btn-sm">Download PDF</button>
                     <button class="btn btn-secondary btn-sm" id="btn-auto-cluster">⚡ Auto-Cluster Groups</button>
-                    <button class="btn btn-primary btn-sm" onclick="window.startCrawl ? window.startCrawl() : window.location.href='/'">Run Crawl</button>
                 </div>
             </div>
 
@@ -126,6 +127,11 @@ export class Keywords {
             return;
         }
 
+        const csvBtn = this.element.querySelector('#btn-export-kw-csv');
+        const pdfBtn = this.element.querySelector('#btn-export-kw-pdf');
+        if (csvBtn) csvBtn.href = `${API_BASE_URL}/api/projects/${projectId}/keywords/export.csv`;
+        if (pdfBtn) pdfBtn.href = `${API_BASE_URL}/api/projects/${projectId}/reports/keywords`;
+
         try {
             if (this.activeTab === 'overview') {
                 await this.renderOverviewTab(container, projectId, selectedProj);
@@ -194,8 +200,8 @@ export class Keywords {
             <div class="card" style="padding: 24px; margin-bottom: 24px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
                     <div>
-                        <h3 style="font-size: 16px; font-weight: 700;">Extracted Content Terms</h3>
-                        <div style="font-size: 12px; color: var(--text-secondary);">Extracted from website HTML titles, meta tags, and headings via Local Open-Source NLP</div>
+                        <h3 style="font-size: 16px; font-weight: 700;">Website Content Keywords</h3>
+                        <div style="font-size: 12px; color: var(--text-secondary);">Derived directly from real website HTML title tags, meta descriptions, and page content (Crawled Data)</div>
                     </div>
                     <button class="btn btn-secondary btn-sm" onclick="document.querySelector('[data-tab=research]').click()">Search Autocomplete Ideas &rarr;</button>
                 </div>
@@ -212,7 +218,7 @@ export class Keywords {
                                 <th style="padding: 10px 14px;">Group</th>
                                 <th style="padding: 10px 14px;">Search Volume</th>
                                 <th style="padding: 10px 14px;">CPC</th>
-                                <th style="padding: 10px 14px;">Position</th>
+                                <th style="padding: 10px 14px;">Google Position</th>
                                 <th style="padding: 10px 14px; text-align: right;">Data Source</th>
                             </tr>
                         </thead>
@@ -223,8 +229,8 @@ export class Keywords {
                                     <td style="padding: 10px 14px;"><span class="badge badge-info" style="font-size: 11px;">${k.group_name}</span></td>
                                     <td style="padding: 10px 14px; color: var(--text-secondary);">${k.search_volume}</td>
                                     <td style="padding: 10px 14px; color: var(--text-secondary);">${k.cpc}</td>
-                                    <td style="padding: 10px 14px; font-weight: 700; color: var(--primary);">${k.position ? '#' + k.position : 'Unranked'}</td>
-                                    <td style="padding: 10px 14px; text-align: right;"><span class="source-tag">${k.source}</span></td>
+                                    <td style="padding: 10px 14px; font-weight: 600; color: ${k.position ? 'var(--primary)' : 'var(--text-tertiary)'};">${k.position ? '#' + k.position : 'Not Available'}</td>
+                                    <td style="padding: 10px 14px; text-align: right;"><span class="source-tag">${k.source_label || k.source || 'Crawled Data'}</span></td>
                                 </tr>
                             `).join('')}
                         </tbody>

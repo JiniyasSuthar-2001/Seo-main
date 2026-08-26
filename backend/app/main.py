@@ -22,10 +22,11 @@ import traceback
 
 app = FastAPI(title="SEO Intelligence API")
 
-# Configure CORS dynamically from settings (no wildcards)
+# Configure CORS dynamically from settings with regex fallback for private LAN development origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}):(8030|3000)$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "Accept"],
@@ -67,6 +68,7 @@ app.include_router(rankings.router, prefix="/api/projects/{project_id}/rankings"
 app.include_router(datasources.router, prefix="/api/projects/{project_id}/datasources", tags=["datasources"])
 app.include_router(ai.router, prefix="/api/projects", tags=["ai"])
 app.include_router(imports.router, prefix="/api/projects/{project_id}/imports", tags=["imports"])
+app.include_router(imports.router, prefix="/api", tags=["guidelines"])
 app.include_router(competitors.router, prefix="/api/projects/{project_id}/competitors", tags=["competitors"])
 app.include_router(alerts.router, prefix="/api/projects/{project_id}/alerts", tags=["alerts"])
 

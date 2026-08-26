@@ -8,9 +8,12 @@ function resolveApiBaseUrl() {
         return window.APP_CONFIG.API_BASE_URL;
     }
     if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+        const protocol = window.location.protocol || 'http:';
+        const hostname = window.location.hostname;
         if (window.location.port === "8020") {
             return window.location.origin;
         }
+        return `${protocol}//${hostname}:8020`;
     }
     return "http://127.0.0.1:8020";
 }
@@ -18,5 +21,5 @@ function resolveApiBaseUrl() {
 export const API_BASE_URL = resolveApiBaseUrl();
 
 export function getApiBaseUrl() {
-    return API_BASE_URL;
+    return resolveApiBaseUrl();
 }

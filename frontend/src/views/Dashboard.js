@@ -5,6 +5,7 @@ import { renderBackendOfflineState, renderFeatureErrorState } from '../component
 import { apiClient } from '../services/apiClient.js';
 import { API_BASE_URL } from '../config/api.js';
 import { crawlConfigModal } from '../components/CrawlConfigModal.js';
+import { renderAIBadge, renderSourceBadge, renderViewEvidenceButton } from '../components/AIBadge.js';
 
 window.startCrawlFromOverview = (explicitProjectId, explicitUrl) => {
     let targetId = explicitProjectId || projectStore.getSelectedProjectId();
@@ -118,25 +119,37 @@ export class Dashboard {
                 <!-- LEVEL 1: ACCOUNT PORTFOLIO SUMMARY CARDS -->
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 28px;">
                     <div class="card" style="padding: 20px;">
-                        <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Portfolio Websites</div>
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Portfolio Websites</div>
+                            <span style="font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: var(--bg-subtle); color: var(--text-tertiary); border: 1px solid var(--border);">Active Projects</span>
+                        </div>
                         <div style="font-size: 28px; font-weight: 800; color: var(--text-primary);">${totalSites}</div>
                         <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Active projects in workspace</div>
                     </div>
 
                     <div class="card" style="padding: 20px;">
-                        <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Average SEO Health</div>
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Average SEO Health</div>
+                            <span style="font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: var(--bg-subtle); color: var(--primary); border: 1px solid var(--border);">Crawled Data</span>
+                        </div>
                         <div style="font-size: 28px; font-weight: 800; color: ${avgHealth >= 80 ? '#10b981' : (avgHealth >= 60 ? '#f59e0b' : '#ef4444')};">${avgHealth}<span style="font-size: 16px; font-weight: 600;">/100</span></div>
                         <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Weighted portfolio audit score</div>
                     </div>
 
                     <div class="card" style="padding: 20px;">
-                        <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Total Crawled Pages</div>
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Total Crawled Pages</div>
+                            <span style="font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: var(--bg-subtle); color: var(--primary); border: 1px solid var(--border);">Crawled Data</span>
+                        </div>
                         <div style="font-size: 28px; font-weight: 800; color: #3b82f6;">${totalCrawledPages.toLocaleString()}</div>
                         <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Discovered HTML pages</div>
                     </div>
 
                     <div class="card" style="padding: 20px;">
-                        <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Critical Audit Issues</div>
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Critical Audit Issues</div>
+                            <span style="font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; background: var(--bg-subtle); color: var(--primary); border: 1px solid var(--border);">Crawled Data</span>
+                        </div>
                         <div style="font-size: 28px; font-weight: 800; color: ${totalIssuesCount > 0 ? '#ef4444' : '#10b981'};">${totalIssuesCount}</div>
                         <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Aggregated technical findings</div>
                     </div>
@@ -173,33 +186,33 @@ export class Dashboard {
                     <div id="portfolio-table-container"></div>
                 </div>
 
-                <!-- GOOGLE GEMINI AI INTEGRATION SECTION -->
+                <!-- DYNAMIC AI INTEGRATION SECTION -->
                 <div class="card" style="padding: 24px; margin-bottom: 28px; border-left: 4px solid #3b82f6; background: var(--bg-card);">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
                         <div>
                             <div style="display: flex; align-items: center; gap: 10px;">
-                                <h3 style="font-size: 17px; font-weight: 700; margin: 0; color: var(--text-primary);">Google Gemini AI Intelligence</h3>
+                                <h3 style="font-size: 17px; font-weight: 700; margin: 0; color: var(--text-primary);" id="ai-card-title">AI Intelligence Engine</h3>
                                 <span id="gemini-status-badge" class="badge badge-secondary" style="font-size: 11px;">Checking status...</span>
                             </div>
-                            <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 4px;">
-                                Multimodal AI reasoning engine for automated SEO analysis using real workspace crawl evidence.
+                            <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 4px;" id="ai-card-subtext">
+                                High-performance LLM reasoning engine for automated SEO analysis using real workspace crawl evidence.
                             </div>
                         </div>
 
                         <div style="display: flex; gap: 10px;" id="gemini-actions">
                             <button type="button" id="btn-test-gemini" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
-                                ⚡ Test Gemini Connection
+                                ⚡ Test Connection
                             </button>
                             <button type="button" id="btn-analyze-gemini" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 6px; background: #2563eb;">
-                                ✨ Analyze SEO with Gemini
+                                ✨ Analyze SEO with AI
                             </button>
                         </div>
                     </div>
 
-                    <!-- GEMINI OUTPUT / RESULT BOX -->
+                    <!-- AI OUTPUT / RESULT BOX -->
                     <div id="gemini-output-box" style="padding: 16px; background: var(--bg-subtle); border-radius: 10px; border: 1px solid var(--border); font-size: 13px; color: var(--text-secondary);">
                         <div id="gemini-default-msg">
-                            Click <strong>Test Gemini Connection</strong> to verify backend API configuration or <strong>Analyze SEO with Gemini</strong> to run real AI audit reasoning on your active project.
+                            Click <strong id="ai-test-btn-label">Test Connection</strong> to verify backend API configuration or <strong id="ai-analyze-btn-label">Analyze SEO with AI</strong> to run real AI audit reasoning on your active project.
                         </div>
                     </div>
                 </div>
@@ -297,26 +310,51 @@ export class Dashboard {
     }
 
     async bindGeminiSection() {
+        const titleEl = this.element.querySelector('#ai-card-title');
+        const subtextEl = this.element.querySelector('#ai-card-subtext');
         const badge = this.element.querySelector('#gemini-status-badge');
         const btnTest = this.element.querySelector('#btn-test-gemini');
         const btnAnalyze = this.element.querySelector('#btn-analyze-gemini');
         const outputBox = this.element.querySelector('#gemini-output-box');
 
+        let activeProvider = "groq";
+        let testEndpoint = "/api/ai/groq/test";
+
         try {
-            const statusData = await apiClient.get('/api/ai/gemini/status');
-            this.geminiStatus = statusData;
+            const statusData = await apiClient.get('/api/ai/status');
+            this.aiStatus = statusData;
+            activeProvider = (statusData.provider || "groq").toLowerCase();
+
+            let providerTitle = "Groq AI Intelligence";
+            if (activeProvider === 'gemini') {
+                providerTitle = "Google Gemini AI Intelligence";
+                testEndpoint = "/api/ai/gemini/test";
+            } else if (activeProvider === 'ollama') {
+                providerTitle = "Ollama Local AI Intelligence";
+                testEndpoint = "/api/ai/ollama/test";
+            } else if (activeProvider === 'openai') {
+                providerTitle = "OpenAI Intelligence";
+                testEndpoint = "/api/ai/status";
+            } else if (activeProvider === 'groq') {
+                providerTitle = "Groq AI Intelligence";
+                testEndpoint = "/api/ai/groq/test";
+            }
+
+            if (titleEl) titleEl.innerText = providerTitle;
+            if (btnTest) btnTest.innerText = `⚡ Test ${providerTitle.split(' ')[0]} Connection`;
+            if (btnAnalyze) btnAnalyze.innerText = `✨ Analyze SEO with ${providerTitle.split(' ')[0]}`;
 
             if (badge) {
                 if (statusData && statusData.configured) {
                     badge.className = 'badge badge-success';
-                    badge.innerHTML = `✓ Available (${statusData.model || 'gemini-1.5-flash'})`;
+                    badge.innerHTML = `✓ Available (${statusData.model || 'active'})`;
                 } else {
                     badge.className = 'badge badge-secondary';
                     badge.innerHTML = `Not Configured`;
                 }
             }
         } catch (err) {
-            console.warn('[GEMINI UI] Failed to check status:', err);
+            console.warn('[AI UI] Failed to check status:', err);
             if (badge) {
                 badge.className = 'badge badge-secondary';
                 badge.innerHTML = `Not Configured`;
@@ -331,13 +369,13 @@ export class Dashboard {
                 btnTest.innerText = 'Testing...';
 
                 try {
-                    const testRes = await apiClient.post('/api/ai/gemini/test', {});
-                    if (testRes.status === 'connected') {
+                    const testRes = await apiClient.post(testEndpoint, {});
+                    if (testRes.status === 'connected' || testRes.available) {
                         if (outputBox) {
                             outputBox.innerHTML = `
                                 <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981; padding: 14px; border-radius: 8px;">
-                                    <strong style="display: block; margin-bottom: 4px; font-size: 14px;">✓ Gemini Connection Successful</strong>
-                                    <span>Model: <code>${testRes.model}</code> • ${this.escapeHtml(testRes.message)}</span>
+                                    <strong style="display: block; margin-bottom: 4px; font-size: 14px;">✓ Connection Successful</strong>
+                                    <span>Provider: <code>${testRes.provider || activeProvider}</code> • Model: <code>${testRes.model || 'active'}</code> • ${this.escapeHtml(testRes.message || 'AI engine is connected.')}</span>
                                 </div>
                             `;
                         }
@@ -345,8 +383,8 @@ export class Dashboard {
                         if (outputBox) {
                             outputBox.innerHTML = `
                                 <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 14px; border-radius: 8px;">
-                                    <strong style="display: block; margin-bottom: 4px; font-size: 14px;">✕ Gemini Connection Failed</strong>
-                                    <span>${this.escapeHtml(testRes.message || 'Gemini API key is not configured in backend environment.')}</span>
+                                    <strong style="display: block; margin-bottom: 4px; font-size: 14px;">✕ Connection Failed</strong>
+                                    <span>${this.escapeHtml(testRes.message || 'AI API provider is not configured in environment.')}</span>
                                 </div>
                             `;
                         }
@@ -355,7 +393,7 @@ export class Dashboard {
                     if (outputBox) {
                         outputBox.innerHTML = `
                             <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 14px; border-radius: 8px;">
-                                <strong>✕ Connection Error:</strong> ${this.escapeHtml(err.message || 'Unable to test Gemini connection.')}
+                                <strong>✕ Connection Error:</strong> ${this.escapeHtml(err.message || 'Unable to test AI provider connection.')}
                             </div>
                         `;
                     }
@@ -417,18 +455,35 @@ export class Dashboard {
                             </div>
                         `).join('');
 
+                        const domainEv = selectedProj ? (selectedProj.domain || selectedProj.url) : 'Target Domain';
+                        const summaryEvidence = [
+                            { label: 'Target Domain', value: domainEv, source: 'Crawled Data' },
+                            { label: 'Pages Analyzed', value: `${res.total_pages_analyzed || 'Crawl snapshot'} pages`, source: 'Crawled Data' },
+                            { label: 'Audit Timestamp', value: res.timestamp || new Date().toISOString().split('T')[0], source: 'Crawled Data' }
+                        ];
+
                         outputBox.innerHTML = `
                             <div style="color: var(--text-primary);">
-                                <div style="font-size: 14px; font-weight: 700; margin-bottom: 8px; color: #3b82f6;">Executive Summary</div>
-                                <p style="font-size: 13px; line-height: 1.5; color: var(--text-primary); margin-bottom: 16px;">${this.escapeHtml(res.summary || 'Analysis completed successfully.')}</p>
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                    <div style="font-size: 14px; font-weight: 700; color: #3b82f6;">Executive Summary</div>
+                                    ${renderAIBadge('analysis')}
+                                </div>
+                                <p style="font-size: 13px; line-height: 1.5; color: var(--text-primary); margin-bottom: 10px;">${this.escapeHtml(res.summary || 'Analysis completed successfully.')}</p>
+                                ${renderViewEvidenceButton(summaryEvidence, 'dash-summary-ev')}
 
                                 ${insights.length > 0 ? `
-                                    <div style="font-size: 13px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">Key Audit Insights (${insights.length})</div>
+                                    <div style="font-size: 13px; font-weight: 700; margin: 20px 0 10px; color: var(--text-primary); display: flex; justify-content: space-between; align-items: center;">
+                                        <span>Key Audit Insights (${insights.length})</span>
+                                        ${renderAIBadge('assisted')}
+                                    </div>
                                     <div style="margin-bottom: 16px;">${insightsHTML}</div>
                                 ` : ''}
 
                                 ${actions.length > 0 ? `
-                                    <div style="font-size: 13px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">Recommended Actions (${actions.length})</div>
+                                    <div style="font-size: 13px; font-weight: 700; margin: 20px 0 10px; color: var(--text-primary); display: flex; justify-content: space-between; align-items: center;">
+                                        <span>Recommended Actions (${actions.length})</span>
+                                        ${renderAIBadge('assisted')}
+                                    </div>
                                     <div>${actionsHTML}</div>
                                 ` : ''}
                             </div>

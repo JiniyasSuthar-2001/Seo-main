@@ -26,6 +26,20 @@ autocomplete_provider = GoogleAutocompleteProvider()
 
 
 def _serialize_keyword(k: Keyword, group_name: Optional[str] = None) -> dict:
+    raw_source = k.source or "Crawled Data"
+    source_label = "Crawled Data"
+    if "import" in raw_source.lower() or "csv" in raw_source.lower():
+        source_label = "Imported Data"
+        source_type = "import"
+    elif "console" in raw_source.lower() or "gsc" in raw_source.lower():
+        source_label = "Google Search Console"
+        source_type = "google_search_console"
+    elif "serp" in raw_source.lower() or "provider" in raw_source.lower():
+        source_label = "SERP Provider"
+        source_type = "serp_provider"
+    else:
+        source_type = "crawl"
+
     return {
         "id": k.id,
         "project_id": k.project_id,
@@ -36,12 +50,15 @@ def _serialize_keyword(k: Keyword, group_name: Optional[str] = None) -> dict:
         "cpc": k.cpc if k.cpc is not None else "Unavailable",
         "intent": k.intent or "Informational",
         "position": k.position,
+        "position_display": str(k.position) if k.position is not None else "Not Available",
         "country": k.country or "Global",
         "device": k.device or "Desktop",
         "group_id": k.group_id,
         "group_name": group_name or "Ungrouped",
         "serp_features": json.loads(k.serp_features) if k.serp_features else ["Organic Result"],
-        "source": k.source or "Crawler"
+        "source": source_label,
+        "source_type": source_type,
+        "source_label": source_label
     }
 
 
@@ -89,11 +106,11 @@ def get_keywords(
                 id=str(uuid.uuid4()),
                 project_id=project.id,
                 keyword=item.get("keyword"),
-                position=item.get("position") or (idx + 1 if idx < 20 else None),
+                position=item.get("position"), # Real position only (None for content extraction)
                 search_volume=None,  # Honest null -> Unavailable
                 difficulty=None,
                 intent="Informational",
-                source="Crawler"
+                source="Crawled Data"
             )
             db.add(new_kw)
             kw_records.append(new_kw)
@@ -391,3 +408,13 @@ def get_keyword_opportunities(project_id: str, db: Session = Depends(get_db)):
         "opportunities": opportunities,
         "data_source": "Database & Crawl Audit Engine"
     }
+
+from app.routers.reports import export_keywords_csv
+
+@router.get("/export.csv")
+def keywords_export_csv(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    return export_keywords_csv(project_id, user_id, db)

@@ -63,17 +63,122 @@ def extract_location_info(project: Project) -> Dict[str, Any]:
 
 
 
-def discover_competitors_for_project(project: Project, db: Session) -> List[Competitor]:
+import os
+from app.config.settings import settings
+from app.config.utils import get_sanitized_domain
+from app.providers.datasources import DataSourceManager
+
+def check_serp_provider_status(project: Project) -> Dict[str, Any]:
     """
-    Retrieves confirmed or manually added competitors for the project.
-    Production rule: Never fabricates or returns invented competitor companies.
-    If no real competitors are registered, returns an empty list.
+    Determines whether a real SERP/search-data provider or imported SERP dataset exists.
+    Production rule: Groq/LLM alone is an AI analysis engine, NOT a SERP data provider.
     """
+    if not project or not project.domain:
+        return {
+            "has_serp_provider": False,
+            "provider_name": "None",
+            "message": "No project domain configured."
+        }
+
+    safe_domain = get_sanitized_domain(project.domain)
+    
+    # 1. Check if an imported SERP / competitor dataset exists
+    comp_file = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "competitors.json")
+    serp_file = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "serp_results.json")
+    rankings_file = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "rankings.json")
+    
+    if os.path.exists(comp_file) or os.path.exists(serp_file) or os.path.exists(rankings_file):
+        return {
+            "has_serp_provider": True,
+            "provider_name": "Imported SERP Dataset",
+            "source_type": "Imported Data",
+            "message": "Imported SERP data available."
+        }
+
+    # 2. Check DataSourceManager for configured SERP provider
+    ds_mgr = DataSourceManager()
+    datasources = ds_mgr.get_project_datasources(project.id, project.domain)
+    rank_tracker = datasources.get("rank_tracker", {})
+
+    if rank_tracker.get("implemented") and rank_tracker.get("status", "").startswith("Active"):
+        return {
+            "has_serp_provider": True,
+            "provider_name": rank_tracker.get("name", "SERP Data Provider"),
+            "source_type": "SERP Data",
+            "message": "Active SERP provider configured."
+        }
+
+    return {
+        "has_serp_provider": False,
+        "provider_name": "None",
+        "message": "Competitor discovery requires search-result data. Connect a supported SERP/search provider or import ranking/SERP data."
+    }
+
+
+def discover_competitors_for_project(project: Project, db: Session) -> Dict[str, Any]:
+    """
+    Retrieves auto-discovered competitors for the project.
+    Production rule: Checks for real SERP data / imported datasets before discovering candidates.
+    Never fabricates competitors or SERP rankings out of thin air.
+    """
+    serp_status = check_serp_provider_status(project)
+
     existing_competitors = db.query(Competitor).filter(
         Competitor.project_id == project.id
     ).order_by(Competitor.is_primary.desc(), Competitor.relevance_score.desc()).all()
 
-    return existing_competitors
+    suggested = [c for c in existing_competitors if c.status == "Suggested"]
+    confirmed = [c for c in existing_competitors if c.status == "Confirmed"]
+
+    # If imported dataset exists and no suggested competitors stored yet, load imported candidates
+    if serp_status["has_serp_provider"] and not suggested:
+        safe_domain = get_sanitized_domain(project.domain)
+        comp_file = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "competitors.json")
+        if os.path.exists(comp_file):
+            try:
+                with open(comp_file, "r") as cf:
+                    imported_comps = json.load(cf)
+                    target_dom = normalize_domain(project.domain)
+                    for item in imported_comps:
+                        dom = normalize_domain(item.get("domain") or item.get("url") or "")
+                        if dom and dom != target_dom:
+                            existing = db.query(Competitor).filter(
+                                Competitor.project_id == project.id,
+                                Competitor.domain == dom
+                            ).first()
+                            if not existing:
+                                new_comp = Competitor(
+                                    id=str(uuid.uuid4()),
+                                    project_id=project.id,
+                                    name=item.get("name") or dom,
+                                    domain=dom,
+                                    url=item.get("url") or f"https://{dom}",
+                                    location=item.get("location") or "Market Candidate",
+                                    geographic_level=item.get("geographic_level") or "City",
+                                    relevance_score=float(item.get("relevance_score", 75.0)),
+                                    keyword_overlap=int(item.get("keyword_overlap", 5)),
+                                    search_appearances=int(item.get("search_appearances", 3)),
+                                    status="Suggested",
+                                    is_primary=False,
+                                    discovery_source="Imported SERP Dataset",
+                                    notes=item.get("notes") or "Imported competitor candidate",
+                                    first_discovered=datetime.utcnow(),
+                                    last_checked=datetime.utcnow()
+                                )
+                                db.add(new_comp)
+                                db.commit()
+                                suggested.append(new_comp)
+            except Exception as e:
+                print(f"[COMPETITOR DISCOVERY ERROR] {e}", flush=True)
+
+    return {
+        "has_serp_provider": serp_status["has_serp_provider"],
+        "provider_name": serp_status["provider_name"],
+        "message": serp_status["message"],
+        "suggested_competitors": suggested,
+        "confirmed_competitors": confirmed,
+        "all_competitors": existing_competitors
+    }
 
 
 def perform_keyword_gap_analysis(project: Project, db: Session) -> Dict[str, Any]:

@@ -18,14 +18,14 @@ export class Projects {
                     <p style="color: var(--text-secondary); margin-top: 4px; font-size: 14px;">Manage, review, edit and export all your SEO projects from one place.</p>
                 </div>
                 <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                    <a href="${API_BASE_URL}/api/projects/all/pdf" target="_blank" class="btn btn-secondary" title="Download Consolidated PDF Report for All Projects">
+                    <button id="btn-export-all-pdf" class="btn btn-secondary" title="Download Consolidated PDF Report for All Projects">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                         <span>Download All Projects PDF</span>
-                    </a>
-                    <a href="${API_BASE_URL}/api/projects/all/export" target="_blank" class="btn btn-secondary" title="Export Consolidated ZIP Data for All Projects">
+                    </button>
+                    <button id="btn-export-all-zip" class="btn btn-secondary" title="Export Consolidated ZIP Data for All Projects">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                         <span>Export All Project Data</span>
-                    </a>
+                    </button>
                     <button class="btn btn-primary" onclick="window.showCreateProjectModalModalView()">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 6px;"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                         <span>+ Add Project</span>
@@ -318,8 +318,8 @@ export class Projects {
                             <div style="display: flex; gap: 6px; flex-wrap: wrap;">
                                 <button class="btn btn-primary btn-sm" onclick="window.openProjectWorkspace('${p.id}')">View</button>
                                 <button class="btn btn-secondary btn-sm" onclick="window.openEditProjectModal('${p.id}')">Edit</button>
-                                <a href="${API_BASE_URL}/api/projects/${p.id}/report.pdf" target="_blank" class="btn btn-secondary btn-sm" title="Download Full Project PDF Report">Download PDF</a>
-                                <a href="${API_BASE_URL}/api/projects/${p.id}/export" target="_blank" class="btn btn-secondary btn-sm" title="Download ZIP CSV Package">Download Data</a>
+                                <button class="btn btn-secondary btn-sm" title="Download Full Project PDF Report" onclick="apiClient.downloadFile('/api/projects/${p.id}/report.pdf', 'project-report.pdf', this)">Download PDF</button>
+                                <button class="btn btn-secondary btn-sm" title="Download ZIP CSV Package" onclick="apiClient.downloadFile('/api/projects/${p.id}/export', 'project-export.zip', this)">Download Data</button>
                                 <button class="btn btn-secondary btn-sm" style="color: #ef4444;" onclick="window.confirmDeleteProject('${p.id}', '${p.name.replace(/'/g, "\\'")}')">Delete</button>
                             </div>
                         </div>
@@ -335,6 +335,11 @@ export class Projects {
         };
 
         try {
+            const allPdf = this.element.querySelector('#btn-export-all-pdf');
+            const allZip = this.element.querySelector('#btn-export-all-zip');
+            if (allPdf) allPdf.onclick = (e) => apiClient.downloadFile('/api/projects/all/pdf', 'all-projects-report.pdf', e.currentTarget);
+            if (allZip) allZip.onclick = (e) => apiClient.downloadFile('/api/projects/all/export', 'all-projects-export.zip', e.currentTarget);
+
             const projects = await projectStore.fetchProjects();
             renderProjectsList(projects);
 

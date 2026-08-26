@@ -98,6 +98,22 @@ export class Login {
                 <span id="google-btn-text">Continue with Google</span>
               </button>
 
+              <div class="login-divider">
+                <span>OR</span>
+              </div>
+
+              <!-- CONTINUE AS GUEST SECONDARY CTA BUTTON -->
+              <button id="btn-guest-login" class="btn-guest-oauth">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="12" cy="7" r="4"></circle>
+                </svg>
+                <span id="guest-btn-text">Continue as Guest</span>
+              </button>
+              <div class="guest-caption">
+                Guest access is temporary and intended for testing.
+              </div>
+
               <div class="privacy-notice">
                 By continuing, you agree to the Terms of Service and Privacy Policy.
               </div>
@@ -335,6 +351,51 @@ export class Login {
           box-shadow: 0 4px 14px var(--primary-glow);
           transform: translateY(-1px);
         }
+        .login-divider {
+          display: flex;
+          align-items: center;
+          text-align: center;
+          color: var(--text-tertiary);
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.05em;
+          margin: 2px 0;
+        }
+        .login-divider::before, .login-divider::after {
+          content: '';
+          flex: 1;
+          border-bottom: 1px solid var(--border-subtle);
+        }
+        .login-divider span {
+          padding: 0 10px;
+        }
+        .btn-guest-oauth {
+          width: 100%;
+          padding: 12px 20px;
+          border-radius: 10px;
+          border: 1px solid var(--border);
+          background: var(--bg-subtle);
+          color: var(--text-primary);
+          font-size: 14px;
+          font-weight: 700;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+        .btn-guest-oauth:hover {
+          background: var(--bg-card);
+          border-color: var(--primary);
+          transform: translateY(-1px);
+        }
+        .guest-caption {
+          font-size: 11.5px;
+          color: var(--text-tertiary);
+          text-align: center;
+          margin-top: -6px;
+        }
         .privacy-notice {
           font-size: 11.5px;
           color: var(--text-tertiary);
@@ -471,6 +532,32 @@ export class Login {
             if (errorBox) {
               errorBox.style.display = 'block';
               errorBox.innerText = err.message || 'Unable to generate Google OAuth URL. Please check backend GOOGLE_CLIENT_ID configuration.';
+            }
+          }
+        });
+      }
+
+      const guestBtn = document.getElementById('btn-guest-login');
+      const guestBtnText = document.getElementById('guest-btn-text');
+
+      if (guestBtn) {
+        guestBtn.addEventListener('click', async () => {
+          guestBtn.disabled = true;
+          if (googleBtn) googleBtn.disabled = true;
+          if (guestBtnText) guestBtnText.innerText = 'Creating Guest Session...';
+          if (errorBox) errorBox.style.display = 'none';
+
+          try {
+            await authStore.createGuestSession();
+            console.log('[GUEST UI] Guest session established cleanly. Navigating to dashboard.');
+            window.location.href = '/';
+          } catch (err) {
+            guestBtn.disabled = false;
+            if (googleBtn) googleBtn.disabled = false;
+            if (guestBtnText) guestBtnText.innerText = 'Continue as Guest';
+            if (errorBox) {
+              errorBox.style.display = 'block';
+              errorBox.innerText = err.message || 'Unable to create guest session.';
             }
           }
         });

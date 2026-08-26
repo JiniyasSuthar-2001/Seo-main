@@ -27,37 +27,37 @@ class DataSourceManager:
         default_sources = {
             "crawler": {
                 "name": "Website Crawler & HTML Parser",
-                "type": "Local Engine",
-                "status": "Connected",
+                "type": "Primary Engine",
+                "status": "Active (Default Source)",
                 "implemented": True,
-                "description": "Directly crawls HTML, sitemaps, canonicals, and metadata.",
+                "description": "Directly crawls website URLs, HTML titles, meta tags, H1-H6 headings, canonicals, internal/outbound links, sitemaps, and robots directives.",
                 "credentials_required": False,
                 "local_only": True
             },
             "nlp_keywords": {
-                "name": "Local Open-Source NLP Keyword Extractor",
-                "type": "Local Engine",
-                "status": "Connected",
+                "name": "Website Content Keyword Extractor",
+                "type": "Crawled Data Engine",
+                "status": "Active",
                 "implemented": True,
-                "description": "Extracts content topics, n-grams, and page-to-topic mappings.",
+                "description": "Derives content keywords, frequencies, and page topics directly from crawled HTML content.",
                 "credentials_required": False,
                 "local_only": True
             },
             "google_autocomplete": {
-                "name": "Google Autocomplete Keyword Ideas",
-                "type": "Public API Provider",
+                "name": "Google Autocomplete Search Ideas",
+                "type": "Public SERP Provider",
                 "status": "Available",
                 "implemented": True,
-                "description": "Generates real-time keyword suggestions from Google Search API.",
+                "description": "Generates live search query expansions and autocomplete phrase ideas.",
                 "credentials_required": False,
                 "local_only": False
             },
             "google_search_console": {
                 "name": "Google Search Console API",
-                "type": "First-Party Official API",
-                "status": "Not Implemented",
+                "type": "First-Party Google API",
+                "status": "OAuth Active / Data Pending",
                 "implemented": False,
-                "description": "Integration stub. Provider implementation not active in backend.",
+                "description": "Google OAuth authorization active. Direct Search Console API metric retrieval requires configuring GSC API data endpoint.",
                 "credentials_required": True,
                 "local_only": False
             },
@@ -66,7 +66,7 @@ class DataSourceManager:
                 "type": "First-Party API",
                 "status": "Not Implemented",
                 "implemented": False,
-                "description": "Integration stub. Core Web Vitals provider implementation not active in backend.",
+                "description": "Core Web Vitals performance API provider implementation not active in backend.",
                 "credentials_required": False,
                 "local_only": False
             },
@@ -75,25 +75,25 @@ class DataSourceManager:
                 "type": "Local / Provider Adapter",
                 "status": "Not Implemented",
                 "implemented": False,
-                "description": "Integration stub. Live SERP API provider implementation not active in backend.",
+                "description": "Live SERP API provider implementation not active in backend.",
                 "credentials_required": False,
                 "local_only": True
             },
             "backlink_engine": {
-                "name": "Backlink & Link Graph Engine",
-                "type": "Crawler + Provider Adapter",
-                "status": "Partial (Outbound Links Only)",
+                "name": "Backlink Data Provider Service",
+                "type": "External Data Service",
+                "status": "Outbound Crawl Links Active / Inbound Unavailable",
                 "implemented": True,
-                "description": "Maps internal/external outbound links. Inbound backlinks require CSV dataset import.",
+                "description": "Analyzes outbound links via website crawl. Inbound backlinks require connecting an external backlink API provider or historical CSV import.",
                 "credentials_required": False,
                 "local_only": True
             },
             "csv_import": {
-                "name": "CSV Dataset Importer",
-                "type": "Import Engine",
-                "status": "Available",
+                "name": "Advanced Data Import Engine",
+                "type": "Optional Fallback Importer",
+                "status": "Available (Optional)",
                 "implemented": True,
-                "description": "Import external keyword, backlink, or ranking CSV files.",
+                "description": "Optional historical data import tool for importing keyword, ranking, or backlink CSV files.",
                 "credentials_required": False,
                 "local_only": True
             }

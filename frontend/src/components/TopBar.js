@@ -3,6 +3,11 @@ import { apiClient } from '../services/apiClient.js';
 import { crawlConfigModal } from './CrawlConfigModal.js';
 import { themeStore } from '../core/themeStore.js';
 import { authStore } from '../core/authStore.js';
+import { aiChatModal } from './AIChatModal.js';
+
+window.openAIChatAssistant = () => {
+    aiChatModal.open();
+};
 
 window.startCrawl = () => {
     const selectedProj = projectStore.getSelectedProject();
@@ -77,6 +82,10 @@ window.submitNewProject = async (e) => {
     if (res && res.project && res.project.id) {
       projectStore.setSelectedProjectId(res.project.id);
       window.dispatchEvent(new CustomEvent('project:selected', { detail: { projectId: res.project.id } }));
+      // Directly trigger real crawl modal for the newly created website domain
+      setTimeout(() => {
+        crawlConfigModal.open(res.project.id, res.project.domain || res.project.url || domain);
+      }, 200);
     }
   } catch (err) {
     alert(`Failed to create project: ${err.message || "Please check backend server status."}`);
@@ -91,11 +100,24 @@ export class TopBar {
   }
 
   render() {
-    const userEmail = authStore.user && authStore.user.email ? authStore.user.email : 'jiniyassuthar87@gmail.com';
-    const userInitial = authStore.user && authStore.user.name ? authStore.user.name.charAt(0).toUpperCase() : (userEmail.charAt(0).toUpperCase() || 'J');
+    const isGuest = !!(authStore.user && (authStore.user.is_guest || authStore.user.auth_provider === 'guest' || (authStore.user.id && String(authStore.user.id).startsWith('guest_'))));
+    const userEmail = isGuest ? 'Guest User' : (authStore.user && authStore.user.email ? authStore.user.email : 'jiniyassuthar87@gmail.com');
+    const userInitial = isGuest ? 'G' : (authStore.user && authStore.user.name ? authStore.user.name.charAt(0).toUpperCase() : (userEmail.charAt(0).toUpperCase() || 'J'));
 
     this.element.innerHTML = `
-      <div style="height: 100%; padding: 0 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px;">
+      ${isGuest ? `
+        <div class="guest-mode-banner" style="background: linear-gradient(90deg, #2563eb, #7c3aed); color: #ffffff; padding: 5px 24px; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="background: rgba(255,255,255,0.25); padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 800; letter-spacing: 0.04em;">GUEST MODE</span>
+            <span>Your data is temporary. Sign in with Google to keep your workspace.</span>
+          </div>
+          <button id="guest-signin-google-btn" style="background: #ffffff; color: #0f172a; border: none; padding: 4px 12px; border-radius: 6px; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: all 0.15s ease;" onclick="authStore.logout()">
+            Sign in with Google
+          </button>
+        </div>
+      ` : ''}
+
+      <div style="height: ${isGuest ? 'calc(100% - 29px)' : '100%'}; padding: 0 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px;">
         
         <!-- LEFT: WORKSPACE / CATEGORIZED PROJECT SELECTOR DROPDOWN & (+) ADD BUTTON & GLOBAL SEARCH -->
         <div style="display: flex; align-items: center; gap: 12px; flex: 1; max-width: 680px;">
@@ -110,7 +132,7 @@ export class TopBar {
             </div>
 
             <!-- (+) ADD PROJECT BUTTON -->
-            <button onclick="window.showCreateProjectModal()" title="Add New Project (You as Lead)" style="width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-subtle); color: var(--primary); font-weight: 700; font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s ease;">
+            <button onclick="window.showCreateProjectModal()" title="Add New Project" style="width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-subtle); color: var(--primary); font-weight: 700; font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s ease;">
               +
             </button>
           </div>
@@ -134,6 +156,11 @@ export class TopBar {
             <span id="health-text">Backend Online</span>
           </div>
 
+          <!-- AI ASSISTANT BUTTON -->
+          <button class="btn btn-secondary btn-sm" onclick="window.openAIChatAssistant ? window.openAIChatAssistant() : null" style="display: flex; align-items: center; gap: 6px; border-color: rgba(139, 92, 246, 0.4); color: #8b5cf6;" title="Open Evidence-Grounded AI SEO Assistant">
+            <span>🤖 AI Assistant</span>
+          </button>
+
           <!-- QUICK CRAWL BUTTON -->
           <button class="btn btn-primary btn-sm" onclick="window.startCrawl ? window.startCrawl() : window.location.href='/'">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
@@ -146,13 +173,13 @@ export class TopBar {
             <span id="theme-label" style="font-size: 12px;">${themeStore.isDark() ? 'Dark' : 'Light'}</span>
           </button>
 
-          <!-- USER GOOGLE PROFILE CONTAINER -->
+          <!-- USER PROFILE CONTAINER -->
           <div style="display: flex; align-items: center; gap: 8px; background: var(--bg-subtle); padding: 3px 10px 3px 4px; border-radius: 20px; border: 1px solid var(--border);">
-            <div style="width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, #4285f4, #34a853); color: #fff; font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: ${isGuest ? 'linear-gradient(135deg, #2563eb, #7c3aed)' : 'linear-gradient(135deg, #4285f4, #34a853)'}; color: #fff; font-weight: 700; font-size: 12px; display: flex; align-items: center; justify-content: center;">
               ${userInitial}
             </div>
             <span style="font-size: 12px; font-weight: 600; color: var(--text-primary); max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${userEmail}</span>
-            <button id="btn-logout" title="Sign Out of Google Account" style="background: none; border: none; font-size: 12px; color: var(--text-tertiary); cursor: pointer; padding: 2px 4px;">
+            <button id="btn-logout" title="${isGuest ? 'Sign Out of Guest Mode' : 'Sign Out of Google Account'}" style="background: none; border: none; font-size: 12px; color: var(--text-tertiary); cursor: pointer; padding: 2px 4px;">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
             </button>
           </div>
@@ -174,7 +201,9 @@ export class TopBar {
       const logoutBtn = document.getElementById('btn-logout');
       if (logoutBtn) {
         logoutBtn.addEventListener('click', () => {
-          if (confirm('Sign out of your Google Account?')) {
+          const isGuest = !!(authStore.user && (authStore.user.is_guest || authStore.user.auth_provider === 'guest' || (authStore.user.id && String(authStore.user.id).startsWith('guest_'))));
+          const msg = isGuest ? 'Sign out of Guest Mode?' : 'Sign out of your Google Account?';
+          if (confirm(msg)) {
             authStore.logout();
           }
         });

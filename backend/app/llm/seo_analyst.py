@@ -105,10 +105,18 @@ class SEOAnalystAgent:
             actions = llm_result.get("actions", [])
             summary = llm_result.get("summary", "")
 
+            p_name = getattr(llm_provider, "__class__", {}).__name__.replace("ProviderAdapter", "").lower()
             return {
                 "status": "AI_ANALYSIS_COMPLETE",
-                "provider": getattr(llm_provider, "__class__", {}).__name__.replace("ProviderAdapter", "").lower(),
+                "provider": p_name,
                 "is_llm_generated": True,
+                "provenance": {
+                    "source_type": "ai_analysis",
+                    "source_label": "AI Analysis",
+                    "badge_text": "AI Analysis",
+                    "provider_info": p_name,
+                    "evidence_grounded": True
+                },
                 "domain": domain,
                 "crawl_id": context.get("crawl_id"),
                 "timestamp": context.get("timestamp"),
@@ -149,10 +157,18 @@ class SEOAnalystAgent:
                 query=query,
                 context_data=context
             )
+            p_name = getattr(llm_provider, "__class__", {}).__name__.replace("ProviderAdapter", "").lower()
             return {
                 "status": "SUCCESS",
-                "provider": getattr(llm_provider, "__class__", {}).__name__.replace("ProviderAdapter", "").lower(),
+                "provider": p_name,
                 "is_llm_generated": True,
+                "provenance": {
+                    "source_type": "ai_analysis",
+                    "source_label": "AI Analysis",
+                    "badge_text": "AI Analysis",
+                    "provider_info": p_name,
+                    "evidence_grounded": True
+                },
                 "query": query,
                 "answer": answer,
                 "context_used": {
@@ -164,4 +180,4 @@ class SEOAnalystAgent:
         except AIProviderException:
             raise
         except Exception as e:
-            raise AIProviderException(f"Failed to process AI chat query: {e}", status_code=502, code="LLM_CHAT_FAILED")
+            raise AIProviderException(f"Failed to process AI chat: {e}", status_code=502, code="LLM_EXECUTION_FAILED")

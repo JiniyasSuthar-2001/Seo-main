@@ -20,6 +20,9 @@ backend/data/websites/*
 .env
 .env.local
 
+# Scratch scripts
+scratch/
+
 # IDE & OS Files
 .vscode/
 .idea/

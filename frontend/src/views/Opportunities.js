@@ -2,6 +2,7 @@ import { projectStore } from '../core/projectStore.js';
 import { API_BASE_URL } from '../config/api.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
 import { apiClient } from '../services/apiClient.js';
+import { renderAIBadge, renderSourceBadge, renderViewEvidenceButton } from '../components/AIBadge.js';
 
 export class Opportunities {
     constructor() {
@@ -118,30 +119,38 @@ export class Opportunities {
                 return;
             }
 
-            let cards = opps.map(opp => {
+            let cards = opps.map((opp, idx) => {
                 let badgeStyle = 'background: rgba(239,68,68,0.1); color: var(--critical);';
                 if (opp.priority_level === 'HIGH') badgeStyle = 'background: rgba(245,158,11,0.1); color: var(--warning);';
                 else if (opp.priority_level === 'MEDIUM') badgeStyle = 'background: rgba(59,130,246,0.1); color: var(--primary);';
+
+                const isAIAssisted = opp.is_ai_generated || opp.ai_assisted || (opp.source && opp.source.includes('AI'));
+                const evidenceItems = [
+                    { label: 'SEO Pillar Category', value: opp.category || 'General', source: 'Crawled Audit Engine' },
+                    { label: 'Underlying Evidence', value: opp.evidence || 'HTML structure signal', source: 'Crawled Data' },
+                    { label: 'Deterministic Score', value: `${opp.priority_score || 0} / 100`, source: 'Crawled Audit Engine' }
+                ];
 
                 return `
                     <div class="card" style="padding: 20px; margin-bottom: 12px; border-left: 4px solid ${opp.priority_level === 'CRITICAL' ? 'var(--critical)' : (opp.priority_level === 'HIGH' ? 'var(--warning)' : 'var(--primary)')};">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
                             <div style="flex: 1;">
-                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                                    <span style="font-weight: 700; font-size: 15px;">${opp.title}</span>
+                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">
+                                    <span style="font-weight: 700; font-size: 15px; color: var(--text-primary);">${opp.title}</span>
                                     <span class="badge" style="${badgeStyle}; font-size: 10px; font-weight: 700;">
                                         ${opp.priority_level} (${opp.priority_score})
                                     </span>
                                     <span class="badge badge-info" style="font-size: 10px;">${opp.category}</span>
+                                    ${isAIAssisted ? renderAIBadge('assisted') : renderSourceBadge('crawl')}
                                     <span class="badge" style="background: var(--bg-subtle); color: var(--text-secondary); font-size: 10px;">Status: ${opp.status}</span>
                                 </div>
                                 <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 8px;">
                                     ${opp.impact || ''}
                                 </div>
-                                ${opp.evidence ? `<div style="font-size: 12px; font-family: monospace; background: var(--bg-subtle); padding: 8px; border-radius: 4px; color: var(--text-secondary); margin-bottom: 8px;">Evidence: ${opp.evidence}</div>` : ''}
-                                <div style="font-size: 12px; color: var(--primary); font-weight: 500;">
+                                <div style="font-size: 12.5px; color: var(--primary); font-weight: 600; margin-bottom: 8px;">
                                     Recommendation: ${opp.recommendation}
                                 </div>
+                                ${renderViewEvidenceButton(evidenceItems, `opp-ev-${idx}-${Math.random().toString(36).substring(2, 6)}`)}
                             </div>
                             <div style="display: flex; flex-direction: column; gap: 6px;">
                                 <button class="btn btn-secondary btn-sm" onclick="window.updateOppStatus('${opp.id}', 'In Progress')">Mark In Progress</button>

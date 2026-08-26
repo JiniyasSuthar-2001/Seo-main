@@ -2,6 +2,7 @@ import { projectStore } from '../core/projectStore.js';
 import { API_BASE_URL } from '../config/api.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
 import { apiClient } from '../services/apiClient.js';
+import { AIAnchorModal } from '../components/AIAnchorModal.js';
 
 export class InternalLinks {
     constructor() {
@@ -52,7 +53,6 @@ export class InternalLinks {
             const selectedProj = projectStore.getSelectedProject();
             const projectId = projectStore.getSelectedProjectId();
 
-
             if (!selectedProj || !projectId) {
                 container.innerHTML = `<div class="card" style="padding: 32px; text-align: center;">Please select or create a project workspace.</div>`;
                 return;
@@ -60,23 +60,32 @@ export class InternalLinks {
 
             if (actionsContainer) {
                 actionsContainer.innerHTML = `
-                    <a href="${API_BASE_URL}/api/projects/${projectId}/internal-links/report.pdf" target="_blank" class="btn btn-secondary btn-sm">Download PDF</a>
-                    <a href="${API_BASE_URL}/api/projects/${projectId}/internal-links/export.csv" target="_blank" class="btn btn-secondary btn-sm">Export CSV</a>
+                    <button id="btn-export-il-pdf" class="btn btn-secondary btn-sm">Download PDF</button>
+                    <button id="btn-export-il-csv" class="btn btn-secondary btn-sm">Export CSV</button>
                 `;
+
+                const pdfBtn = document.getElementById('btn-export-il-pdf');
+                const csvBtn = document.getElementById('btn-export-il-csv');
+                if (pdfBtn) pdfBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/internal-links/report.pdf`, 'internal-links.pdf', e.currentTarget);
+                if (csvBtn) csvBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/internal-links/export.csv`, 'internal-links.csv', e.currentTarget);
             }
 
             if (this.activeTab === 'opportunities') {
                 const oppsData = await apiClient.get(`/api/projects/${projectId}/internal-links/opportunities`);
                 const oppList = oppsData.opportunities || [];
 
-
                 let rows = oppList.map(o => `
                     <tr>
-                        <td style="font-family: monospace; font-size: 12px; color: var(--primary);">${o.source_page}</td>
-                        <td style="font-family: monospace; font-size: 12px;">${o.target_page}</td>
-                        <td style="font-weight: 600;">${o.suggested_anchor}</td>
-                        <td style="font-size: 12px; color: var(--text-secondary);">${o.reason}</td>
-                        <td><span class="badge ${o.priority === 'HIGH' ? 'badge-critical' : 'badge-warning'}">${o.priority}</span></td>
+                        <td style="font-family: monospace; font-size: 12px; color: var(--primary); padding: 12px 18px; max-width: 240px; overflow: hidden; text-overflow: ellipsis;">${this.escapeHtml(o.source_page)}</td>
+                        <td style="font-family: monospace; font-size: 12px; padding: 12px; max-width: 240px; overflow: hidden; text-overflow: ellipsis;">${this.escapeHtml(o.target_page)}</td>
+                        <td style="padding: 12px;">
+                            <button class="btn btn-secondary btn-sm btn-view-anchor-suggestions" data-source="${this.escapeHtml(o.source_page)}" data-target="${this.escapeHtml(o.target_page)}" style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;">
+                                ✨ View AI Suggestions
+                                <span class="badge-ai-analysis" style="font-size: 9px; padding: 1px 4px;">AI Analysis</span>
+                            </button>
+                        </td>
+                        <td style="font-size: 12px; color: var(--text-secondary); padding: 12px;">${this.escapeHtml(o.reason)}</td>
+                        <td style="padding: 12px 18px;"><span class="badge ${o.priority === 'HIGH' ? 'badge-critical' : 'badge-warning'}">${this.escapeHtml(o.priority)}</span></td>
                     </tr>
                 `).join('');
 
@@ -103,19 +112,31 @@ export class InternalLinks {
                         </div>
                     </div>
                 `;
+
+                // Bind View AI Suggestions button handlers
+                container.querySelectorAll('.btn-view-anchor-suggestions').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        const src = btn.getAttribute('data-source');
+                        const tgt = btn.getAttribute('data-target');
+                        if (src && tgt) {
+                            AIAnchorModal.show(src, tgt);
+                        }
+                    });
+                });
+
                 return;
             }
 
             const data = await apiClient.get(`/api/projects/${projectId}/internal-links?limit=200&offset=0`);
             const links = data.internal_links || [];
-
             const orphans = data.orphan_pages || [];
             const anchors = data.anchor_texts || [];
 
             if (this.activeTab === 'orphans') {
                 let orphanRows = orphans.map(url => `
                     <tr>
-                        <td style="font-family: monospace; font-size: 13px; color: var(--primary); padding: 12px 20px;">${url}</td>
+                        <td style="font-family: monospace; font-size: 13px; color: var(--primary); padding: 12px 20px;">${this.escapeHtml(url)}</td>
                         <td style="padding: 12px;"><span class="badge badge-critical">0 Incoming Internal Links</span></td>
                         <td style="padding: 12px; font-size: 12px; color: var(--text-secondary);">Add an internal link from the homepage or main menu to index this page.</td>
                     </tr>
@@ -146,7 +167,7 @@ export class InternalLinks {
             if (this.activeTab === 'anchors') {
                 let anchorRows = anchors.map(a => `
                     <tr>
-                        <td style="font-weight: 600; padding: 12px 20px;">${a.anchor_text}</td>
+                        <td style="font-weight: 600; padding: 12px 20px;">${this.escapeHtml(a.anchor_text)}</td>
                         <td style="padding: 12px;">${a.frequency}</td>
                     </tr>
                 `).join('');
@@ -175,9 +196,9 @@ export class InternalLinks {
             // Default 'graph'
             let graphRows = links.map(l => `
                 <tr>
-                    <td style="font-family: monospace; font-size: 12px; color: var(--primary); padding: 12px 20px;">${l.source}</td>
-                    <td style="font-family: monospace; font-size: 12px;">${l.target}</td>
-                    <td style="font-weight: 500;">${l.anchor_text || '(No Anchor)'}</td>
+                    <td style="font-family: monospace; font-size: 12px; color: var(--primary); padding: 12px 20px;">${this.escapeHtml(l.source)}</td>
+                    <td style="font-family: monospace; font-size: 12px;">${this.escapeHtml(l.target)}</td>
+                    <td style="font-weight: 500;">${this.escapeHtml(l.anchor_text || '(No Anchor)')}</td>
                 </tr>
             `).join('');
 
@@ -205,5 +226,15 @@ export class InternalLinks {
                 renderFeatureErrorState(container, "Internal Link Intelligence Error", e.message || "Unable to load link graph.", () => this.mounted());
             }
         }
+    }
+
+    escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
     }
 }

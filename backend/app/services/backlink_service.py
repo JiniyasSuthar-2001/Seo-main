@@ -105,8 +105,8 @@ class BacklinkDataService:
         broken_count = 0
 
         for link in raw_outbound:
-            src = link.get("source") or link.get("source_url") or "Not collected"
-            target = link.get("target") or link.get("destination_url") or "Not collected"
+            src = link.get("source") or link.get("source_url") or link.get("source_page") or "Not collected"
+            target = link.get("target") or link.get("destination_url") or link.get("target_url") or "Not collected"
             
             dest_domain = "Not collected"
             if target and target != "Not collected":
@@ -119,8 +119,20 @@ class BacklinkDataService:
                 except Exception:
                     pass
 
+            # Classify Link Type (Social, Email, Telephone, External, Nofollow, etc.)
+            target_lower = target.lower()
             rel_str = str(link.get("rel") or "").lower()
             rel_types = []
+            
+            if target_lower.startswith("mailto:"):
+                link_type_category = "Email Link"
+            elif target_lower.startswith("tel:"):
+                link_type_category = "Telephone Link"
+            elif any(s in target_lower for s in ["facebook.com", "instagram.com", "twitter.com", "x.com", "linkedin.com", "youtube.com", "pinterest.com", "tiktok.com"]):
+                link_type_category = "Social Link"
+            else:
+                link_type_category = "External Link"
+
             if "nofollow" in rel_str:
                 rel_types.append("Nofollow")
                 nofollow_count += 1
@@ -131,23 +143,39 @@ class BacklinkDataService:
                 rel_types.append("UGC")
                 ugc_count += 1
 
-            link_type = ", ".join(rel_types) if rel_types else "Follow"
+            rel_label = ", ".join(rel_types) if rel_types else "Follow"
+            full_link_type = f"{link_type_category} ({rel_label})" if rel_types else link_type_category
 
             st_code = link.get("status_code")
             if isinstance(st_code, int) and st_code >= 400:
                 broken_count += 1
             formatted_status = st_code if isinstance(st_code, int) and st_code > 0 else "Not checked"
 
+            # Smart Anchor Text Fallback
+            raw_anchor = (link.get("anchor_text") or "").strip()
+            if not raw_anchor or raw_anchor == "[External Link]":
+                if any(ext in target_lower for ext in [".png", ".jpg", ".jpeg", ".svg", ".gif", ".webp", "image", "icon"]):
+                    anchor_display = "Image link"
+                else:
+                    anchor_display = "No anchor text"
+            else:
+                anchor_display = raw_anchor
+
             formatted_outbound.append({
                 "source_url": src,
+                "source_page": src,
+                "source": src,
                 "destination_url": target,
+                "target_url": target,
+                "target": target,
                 "destination_domain": dest_domain,
-                "anchor_text": link.get("anchor_text") or "[External Link]",
-                "link_type": link_type,
+                "anchor_text": anchor_display,
+                "link_type": full_link_type,
                 "rel": rel_str or "Not collected",
                 "status_code": formatted_status,
                 "first_discovered": link.get("first_discovered") or crawl_timestamp,
-                "last_discovered": link.get("last_discovered") or crawl_timestamp
+                "last_discovered": link.get("last_discovered") or crawl_timestamp,
+                "data_source": "Website Scan"
             })
 
         # 3. Calculate referring domains for inbound backlinks

@@ -187,6 +187,7 @@ export class Sidebar {
           font-weight: 500;
           text-decoration: none;
           transition: all 0.15s ease;
+          position: relative;
         }
         .nav-item:hover {
           background: var(--sidebar-hover-bg);
@@ -197,16 +198,95 @@ export class Sidebar {
           color: var(--sidebar-active-text);
           font-weight: 600;
         }
+        .nav-item.active::before {
+          content: '';
+          position: absolute;
+          left: 0;
+          top: 15%;
+          bottom: 15%;
+          width: 3px;
+          background: var(--primary, #3b82f6);
+          border-top-right-radius: 4px;
+          border-bottom-right-radius: 4px;
+        }
         .nav-item svg {
           flex-shrink: 0;
           opacity: 0.8;
         }
         .nav-item.active svg {
           opacity: 1;
+          color: var(--primary, #3b82f6);
         }
       </style>
     `;
 
+    // Immediately trigger initial active route highlighting
+    setTimeout(() => this.updateActiveState(element), 0);
+
+    // Register router and location event listeners
+    const handleUpdate = () => this.updateActiveState(element);
+    window.addEventListener('popstate', handleUpdate);
+    window.addEventListener('routechange', handleUpdate);
+    window.addEventListener('project:selected', handleUpdate);
+
     return element;
+  }
+
+  /**
+   * Updates sidebar active item based on current URL path.
+   */
+  updateActiveState(container = document) {
+    const currentPath = window.location.pathname || '/';
+    const items = container.querySelectorAll ? container.querySelectorAll('.nav-item') : document.querySelectorAll('.nav-item');
+    if (!items || items.length === 0) return;
+
+    let bestMatch = null;
+    let bestMatchScore = -1;
+
+    items.forEach(item => {
+      item.classList.remove('active');
+      item.removeAttribute('aria-current');
+
+      const href = item.getAttribute('href');
+      if (!href) return;
+
+      const score = this.getRouteMatchScore(href, currentPath);
+      if (score > bestMatchScore) {
+        bestMatchScore = score;
+        bestMatch = item;
+      }
+    });
+
+    if (bestMatch && bestMatchScore > 0) {
+      bestMatch.classList.add('active');
+      bestMatch.setAttribute('aria-current', 'page');
+    }
+  }
+
+  /**
+   * Scores match quality between sidebar link href and current route.
+   */
+  getRouteMatchScore(href, currentPath) {
+    const cleanHref = href.toLowerCase().replace(/\/$/, '') || '/';
+    const cleanPath = currentPath.toLowerCase().replace(/\/$/, '') || '/';
+
+    // 1. Exact URL Match
+    if (cleanHref === cleanPath) return 100;
+
+    // 2. Root path special handling
+    if (cleanHref === '/') {
+      if (cleanPath === '/' || cleanPath === '' || cleanPath === '/overview') return 90;
+      return 0;
+    }
+
+    // 3. Parent route match (e.g. /reports/custom-builder -> /reports)
+    if (cleanPath.startsWith(cleanHref + '/')) return 80;
+
+    // 4. Sub-path segment match (e.g. /projects/123/pages -> /pages)
+    const segments = cleanPath.split('/').filter(Boolean);
+    const hrefSegment = cleanHref.replace(/^\//, '');
+    if (segments.includes(hrefSegment)) return 70;
+
+    return 0;
   }
 }

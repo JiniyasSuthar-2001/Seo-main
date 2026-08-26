@@ -4,9 +4,10 @@ import { Pagination } from '../components/Pagination.js';
 
 export class Competitors {
     constructor() {
-        this.activeTab = 'suggested'; // 'suggested', 'confirmed', 'gap'
+        this.activeTab = 'suggested'; // 'suggested', 'confirmed', 'ignored', 'gap'
         this.suggestedCompetitors = [];
         this.confirmedCompetitors = [];
+        this.ignoredCompetitors = [];
         this.gapAnalysis = null;
         this.hasSerpProvider = false;
         this.serpProviderMessage = '';
@@ -21,6 +22,7 @@ export class Competitors {
         // Pagination state
         this.suggestedPage = 1;
         this.confirmedPage = 1;
+        this.ignoredPage = 1;
         this.gapPage = 1;
         this.pageSize = 20; // MANDATORY PLATFORM STANDARD: 20 rows per page
     }
@@ -61,9 +63,10 @@ export class Competitors {
         try {
             const projectId = currentProject.id;
 
-            const [suggestedRes, confirmedData, gapData] = await Promise.all([
+            const [suggestedRes, confirmedData, ignoredData, gapData] = await Promise.all([
                 apiClient.get(`/api/projects/${projectId}/competitors/discovered`),
                 apiClient.get(`/api/projects/${projectId}/competitors?status=Confirmed`),
+                apiClient.get(`/api/projects/${projectId}/competitors?status=Ignored`).catch(() => []),
                 apiClient.get(`/api/projects/${projectId}/competitors/gap-analysis`).catch(() => null)
             ]);
 
@@ -80,6 +83,7 @@ export class Competitors {
             }
 
             this.confirmedCompetitors = Array.isArray(confirmedData) ? confirmedData : [];
+            this.ignoredCompetitors = Array.isArray(ignoredData) ? ignoredData : [];
             this.gapAnalysis = gapData;
             
             if (this.confirmedCompetitors.length > 0 && this.activeTab === 'suggested' && this.suggestedCompetitors.length === 0) {
@@ -144,6 +148,18 @@ export class Competitors {
             await this.loadData();
         } catch (err) {
             alert('Failed to ignore competitor: ' + err.message);
+        }
+    }
+
+    async unignoreCompetitor(competitorId) {
+        const currentProject = projectStore.getCurrentProject();
+        if (!currentProject) return;
+
+        try {
+            await apiClient.post(`/api/projects/${currentProject.id}/competitors/${competitorId}/unignore`);
+            await this.loadData();
+        } catch (err) {
+            alert('Failed to restore competitor: ' + err.message);
         }
     }
 
@@ -216,6 +232,10 @@ export class Competitors {
             return;
         }
 
+        const serpMsg = !this.hasSerpProvider 
+            ? "SERP data is not connected. Connect a search-result provider or import competitor SERP data to discover market candidates."
+            : (this.serpProviderMessage || "Active SERP provider connected.");
+
         this.container.innerHTML = `
             <div style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
                 <div>
@@ -245,17 +265,19 @@ export class Competitors {
                     Confirmed Competitors
                     <span class="badge" style="margin-left: 6px; background: rgba(16,185,129,0.2); color: #34d399;">${this.confirmedCompetitors.length}</span>
                 </button>
+                <button class="comp-tab ${this.activeTab === 'ignored' ? 'active' : ''}" data-tab="ignored">
+                    Ignored
+                    ${this.ignoredCompetitors.length > 0 ? `<span class="badge" style="margin-left: 6px; background: rgba(245,158,11,0.2); color: #f59e0b;">${this.ignoredCompetitors.length}</span>` : ''}
+                </button>
                 <button class="comp-tab ${this.activeTab === 'gap' ? 'active' : ''}" data-tab="gap">
                     Keyword Gap Analysis
                 </button>
             </div>
 
-            ${this.serpProviderMessage ? `
-                <div style="margin-bottom: 20px; padding: 12px 16px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 8px; font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; justify-content: space-between;">
-                    <span>ℹ️ ${this.escapeHtml(this.serpProviderMessage)}</span>
-                    <a href="/integrations" data-link style="color: var(--accent-primary, #3b82f6); text-decoration: none; font-weight: 600;">Manage Integrations &rarr;</a>
-                </div>
-            ` : ''}
+            <div style="margin-bottom: 20px; padding: 12px 16px; background: ${this.hasSerpProvider ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.08)'}; border: 1px solid ${this.hasSerpProvider ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)'}; border-radius: 8px; font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                <span>ℹ️ ${this.escapeHtml(serpMsg)}</span>
+                <a href="/integrations" data-link style="color: var(--accent-primary, #3b82f6); text-decoration: none; font-weight: 600;">Manage Integrations &rarr;</a>
+            </div>
 
             <!-- TAB CONTENT -->
             <div id="competitor-tab-content">
@@ -296,6 +318,20 @@ export class Competitors {
             confSlot.appendChild(pag.render());
         }
 
+        const ignSlot = this.container.querySelector('#ignored-pagination-slot');
+        if (ignSlot && this.ignoredCompetitors.length > 0) {
+            const pag = new Pagination({
+                totalItems: this.ignoredCompetitors.length,
+                currentPage: this.ignoredPage,
+                pageSize: this.pageSize,
+                onPageChange: (newPage) => {
+                    this.ignoredPage = newPage;
+                    this.renderState();
+                }
+            });
+            ignSlot.appendChild(pag.render());
+        }
+
         const gapSlot = this.container.querySelector('#gap-pagination-slot');
         if (gapSlot && this.gapAnalysis && this.gapAnalysis.keyword_gap) {
             const items = this.gapAnalysis.keyword_gap;
@@ -319,6 +355,8 @@ export class Competitors {
             return this.renderSuggestedTab();
         } else if (this.activeTab === 'confirmed') {
             return this.renderConfirmedTab();
+        } else if (this.activeTab === 'ignored') {
+            return this.renderIgnoredTab();
         } else if (this.activeTab === 'gap') {
             return this.renderGapTab();
         }
@@ -333,13 +371,13 @@ export class Competitors {
                         <div style="width: 56px; height: 56px; border-radius: 14px; background: rgba(59, 130, 246, 0.1); color: var(--accent-primary, #3b82f6); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
                             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                         </div>
-                        <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">We haven't found competitors yet</h3>
+                        <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">SERP Data Is Not Connected</h3>
                         <p style="font-size: 13.5px; color: var(--text-secondary); margin: 0 auto 20px; line-height: 1.6;">
-                            Scan available search data to find websites competing for similar searches.
+                            Auto-discovering competitors requires a connected search-result provider or an imported SERP dataset.
                         </p>
                         <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
-                            <button class="btn btn-primary btn-sm" id="btn-auto-discover-empty" onclick="document.getElementById('btn-auto-discover').click()">Find Competitors</button>
-                            <a href="/integrations" data-link class="btn btn-secondary btn-sm">Connect Data Source</a>
+                            <button class="btn btn-primary btn-sm" id="btn-add-manual-empty" onclick="document.getElementById('btn-add-manual').click()">+ Add Competitor Manually</button>
+                            <a href="/integrations" data-link class="btn btn-secondary btn-sm">Connect Integration</a>
                             <a href="/import" data-link class="btn btn-secondary btn-sm">Import Data</a>
                         </div>
                     </div>
@@ -350,9 +388,9 @@ export class Competitors {
                 <div class="card" style="text-align: center; padding: 48px 24px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color);">
                     <div style="font-size: 16px; font-weight: 600; margin-bottom: 8px;">No Pending Suggested Competitors</div>
                     <p style="color: var(--text-secondary); max-width: 480px; margin: 0 auto 20px;">
-                        All auto-discovered competitors have been approved or ignored. Click <strong>Auto-Discover Competitors</strong> to scan SERPs for new market candidates.
+                        All auto-discovered competitors have been approved or ignored. Click <strong>Find Competitors</strong> to scan SERPs for new market candidates.
                     </p>
-                    <button class="btn btn-primary" id="btn-scan-serps">Scan SERPs for Competitors</button>
+                    <button class="btn btn-primary" id="btn-scan-serps">Find Competitors</button>
                 </div>
             `;
         }
@@ -389,17 +427,6 @@ export class Competitors {
                                     <div><strong style="color: var(--text-primary);">${c.keyword_overlap}</strong> Overlapping Keywords</div>
                                     <div><strong style="color: var(--text-primary);">${c.search_appearances}</strong> SERP Appearances</div>
                                 </div>
-
-                                ${c.competing_services && c.competing_services.length > 0 ? `
-                                    <div style="margin-bottom: 16px;">
-                                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">Competing Services:</div>
-                                        <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-                                            ${c.competing_services.map(svc => `
-                                                <span style="font-size: 11px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px;">${this.escapeHtml(svc)}</span>
-                                            `).join('')}
-                                        </div>
-                                    </div>
-                                ` : ''}
 
                                 <div style="font-size: 12px; color: var(--text-tertiary, #94a3b8); margin-bottom: 16px;">
                                     Source: ${this.escapeHtml(c.discovery_source)}
@@ -488,6 +515,56 @@ export class Competitors {
         `;
     }
 
+    renderIgnoredTab() {
+        if (this.ignoredCompetitors.length === 0) {
+            return `
+                <div class="card" style="text-align: center; padding: 48px 24px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color);">
+                    <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">No Ignored Competitors</div>
+                    <p style="color: var(--text-secondary); max-width: 480px; margin: 0 auto;">
+                        Any competitors you ignore from the Suggested tab will appear here. You can restore them to your active suggestions anytime.
+                    </p>
+                </div>
+            `;
+        }
+
+        const paginated = Pagination.paginateArray(this.ignoredCompetitors, this.ignoredPage, this.pageSize);
+        this.ignoredPage = paginated.currentPage;
+
+        return `
+            <div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 20px; margin-bottom: 16px;">
+                    ${paginated.items.map(c => `
+                        <div class="card competitor-card" style="background: var(--bg-card, #1e293b); border: 1px solid var(--border-color, #334155); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; justify-content: space-between; opacity: 0.85;">
+                            <div>
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                                    <div>
+                                        <h3 style="font-size: 16px; font-weight: 600; margin: 0 0 4px 0;">${this.escapeHtml(c.name)}</h3>
+                                        <a href="${this.escapeHtml(c.url)}" target="_blank" style="color: var(--accent-primary, #3b82f6); font-size: 13px; text-decoration: none;">${this.escapeHtml(c.domain)} &rarr;</a>
+                                    </div>
+                                    <span style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 20px;">
+                                        Ignored
+                                    </span>
+                                </div>
+                                <div style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 16px;">
+                                    Domain: <strong>${this.escapeHtml(c.domain)}</strong>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 10px; margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 14px;">
+                                <button class="btn btn-secondary btn-unignore" data-id="${c.id}" style="flex: 1; padding: 8px; font-size: 13px;">
+                                    ↩ Restore to Suggested
+                                </button>
+                                <button class="btn btn-secondary btn-delete-comp" data-id="${c.id}" style="padding: 8px 12px; font-size: 13px; color: #ef4444;">
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                <div id="ignored-pagination-slot" style="background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border-color);"></div>
+            </div>
+        `;
+    }
+
     renderGapTab() {
         if (!this.gapAnalysis || !this.gapAnalysis.keyword_gap || this.gapAnalysis.keyword_gap.length === 0) {
             return `
@@ -545,7 +622,7 @@ export class Competitors {
                                                 `<span style="color: #ef4444; font-weight: 600;">Not Ranking</span>` : 
                                                 `<strong style="color: #3b82f6;">#${row.target_position}</strong>`}
                                         </td>
-                                        <td style="padding: 12px 16px;"><strong style="color: #10b981;">#${row.competitor_position}</strong></td>
+                                        <td style="padding: 12px 16px;"><strong style="color: #10b981;">${row.competitor_position === 'Data Unavailable' ? 'Data Unavailable' : '#' + row.competitor_position}</strong></td>
                                         <td style="padding: 12px 16px;">${row.search_volume} / mo</td>
                                         <td style="padding: 12px 16px;">${row.keyword_difficulty}%</td>
                                         <td style="padding: 12px 16px;">
@@ -726,6 +803,13 @@ export class Competitors {
             btn.addEventListener('click', (e) => {
                 const id = e.currentTarget.getAttribute('data-id');
                 if (id) this.ignoreCompetitor(id);
+            });
+        });
+
+        this.container.querySelectorAll('.btn-unignore').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const id = e.currentTarget.getAttribute('data-id');
+                if (id) this.unignoreCompetitor(id);
             });
         });
 

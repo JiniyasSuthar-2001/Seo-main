@@ -63,10 +63,10 @@ def get_internal_links(
 
     for link in internal_links:
         src = link.get("source")
-        tgt = link.get("target")
+        tgt = (link.get("target") or "").rstrip('/')
         anc = (link.get("anchor_text") or "").strip()
         if src:
-            outgoing_map[src] += 1
+            outgoing_map[src.rstrip('/')] += 1
         if tgt:
             incoming_map[tgt] += 1
         if anc:
@@ -74,8 +74,15 @@ def get_internal_links(
 
     # 2. Identify Orphan Pages (Pages with 0 incoming internal links)
     all_urls = [p.get("url") for p in pages if p.get("url")]
-    homepage_url = f"https://{domain}/"
-    orphan_pages = [url for url in all_urls if incoming_map[url] == 0 and url.rstrip('/') != homepage_url.rstrip('/')]
+    clean_domain = domain.lower().replace("https://", "").replace("http://", "").replace("www.", "").rstrip('/')
+    orphan_pages = []
+    for url in all_urls:
+        clean_url = url.rstrip('/')
+        clean_host = clean_url.replace("https://", "").replace("http://", "").replace("www.", "")
+        if clean_host == clean_domain:
+            continue # Exclude homepage variations
+        if incoming_map[clean_url] == 0:
+            orphan_pages.append(url)
 
     # 3. Anchor text frequency table
     top_anchors = [{"anchor_text": k, "frequency": v} for k, v in anchor_counter.most_common(15)]

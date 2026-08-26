@@ -349,6 +349,38 @@ def ignore_competitor(
     }
 
 
+@router.post("/{competitor_id}/unignore")
+def unignore_competitor(
+    project_id: str,
+    competitor_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Restores an ignored competitor back to 'Suggested'.
+    """
+    project = _get_project_or_404(project_id, db, user_id)
+    
+    competitor = db.query(Competitor).filter(
+        Competitor.id == competitor_id,
+        Competitor.project_id == project.id
+    ).first()
+    
+    if not competitor:
+        raise HTTPException(status_code=404, detail="Competitor not found.")
+
+    competitor.status = "Suggested"
+    competitor.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(competitor)
+    return {
+        "status": "success",
+        "message": f"Competitor '{competitor.name}' restored to Suggested.",
+        "competitor": _serialize_competitor(competitor)
+    }
+
+
+
 @router.delete("/{competitor_id}")
 def delete_competitor(
     project_id: str,

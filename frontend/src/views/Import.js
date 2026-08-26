@@ -4,6 +4,7 @@ import { getUploadGuidance } from '../config/uploadGuidance.js';
 import { UploadGuidanceComponent } from '../components/UploadGuidanceComponent.js';
 import { FileInspectorModal } from '../components/FileInspectorModal.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
+import { Pagination } from '../components/Pagination.js';
 
 export class Import {
     constructor() {
@@ -11,6 +12,8 @@ export class Import {
         this.importResults = null;
         this.isUploading = false;
         this.errorMessage = null;
+        this.historyPage = 1;
+        this.pageSize = 20; // MANDATORY PLATFORM STANDARD: 20 rows per page
     }
 
     render() {
@@ -52,8 +55,10 @@ export class Import {
                 ${this.importResults ? this.renderResultsHTML() : ''}
             </div>
 
-            <div class="card" style="margin-top: 32px; padding: 24px;">
-                <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 12px; color: var(--text-primary);">Recent Data Imports</h3>
+            <div class="card" style="margin-top: 32px; padding: 0; overflow: hidden; border-radius: 14px;">
+                <div style="padding: 16px 20px; border-bottom: 1px solid var(--border);">
+                    <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--text-primary);">Recent Data Imports</h3>
+                </div>
                 <div id="import-history-list" style="color: var(--text-secondary); font-size: 13px;">
                     Loading import history...
                 </div>
@@ -174,34 +179,55 @@ export class Import {
             const history = await res.json();
 
             if (!Array.isArray(history) || history.length === 0) {
-                historyContainer.innerHTML = 'No previous file imports recorded for this website.';
+                historyContainer.innerHTML = '<div style="padding: 20px; text-align: center;">No previous file imports recorded for this website.</div>';
                 return;
             }
 
-            const rows = history.map(item => `
+            const paginated = Pagination.paginateArray(history, this.historyPage, this.pageSize);
+            this.historyPage = paginated.currentPage;
+
+            const rows = paginated.items.map(item => `
                 <tr style="border-bottom: 1px solid var(--border);">
-                    <td style="padding: 8px 12px; font-weight: 600;">${this.escapeHtml(item.filename || 'data.csv')}</td>
-                    <td style="padding: 8px 12px;">${this.escapeHtml(item.data_type || 'Data')}</td>
-                    <td style="padding: 8px 12px;">${item.rows_imported || 0} rows</td>
-                    <td style="padding: 8px 12px; color: var(--text-tertiary);">${item.timestamp ? item.timestamp.split('T')[0] : 'Recently'}</td>
+                    <td style="padding: 10px 16px; font-weight: 600;">${this.escapeHtml(item.filename || 'data.csv')}</td>
+                    <td style="padding: 10px 16px;">${this.escapeHtml(item.data_type || 'Data')}</td>
+                    <td style="padding: 10px 16px;">${item.rows_imported || 0} rows</td>
+                    <td style="padding: 10px 16px; color: var(--text-tertiary);">${item.timestamp ? item.timestamp.split('T')[0] : 'Recently'}</td>
                 </tr>
             `).join('');
 
             historyContainer.innerHTML = `
-                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 12.5px;">
-                    <thead>
-                        <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary);">
-                            <th style="padding: 8px 12px;">File Name</th>
-                            <th style="padding: 8px 12px;">Type</th>
-                            <th style="padding: 8px 12px;">Rows</th>
-                            <th style="padding: 8px 12px;">Date</th>
-                        </tr>
-                    </thead>
-                    <tbody>${rows}</tbody>
-                </table>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 12.5px;">
+                        <thead>
+                            <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary);">
+                                <th style="padding: 10px 16px;">File Name</th>
+                                <th style="padding: 10px 16px;">Type</th>
+                                <th style="padding: 10px 16px;">Rows</th>
+                                <th style="padding: 10px 16px;">Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+                <div id="import-pagination-slot"></div>
             `;
+
+            const pageSlot = historyContainer.querySelector('#import-pagination-slot');
+            if (pageSlot && history.length > 0) {
+                const pag = new Pagination({
+                    totalItems: history.length,
+                    currentPage: this.historyPage,
+                    pageSize: this.pageSize,
+                    onPageChange: (newPage) => {
+                        this.historyPage = newPage;
+                        this.loadImportHistory(element, projectId);
+                    }
+                });
+                pageSlot.appendChild(pag.render());
+            }
+
         } catch (e) {
-            historyContainer.innerHTML = 'Import history records available upon next file upload.';
+            historyContainer.innerHTML = '<div style="padding: 20px;">Import history records available upon next file upload.</div>';
         }
     }
 

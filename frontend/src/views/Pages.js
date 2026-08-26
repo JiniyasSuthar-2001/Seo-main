@@ -4,13 +4,14 @@ import { renderBackendOfflineState, renderFeatureErrorState } from '../component
 import { renderAIBadge, renderSourceBadge, renderViewEvidenceButton } from '../components/AIBadge.js';
 import { apiClient } from '../services/apiClient.js';
 import { renderTooltip } from '../components/Tooltip.js';
+import { Pagination } from '../components/Pagination.js';
 
 export class Pages {
     constructor() {
         this.element = document.createElement('div');
         this.element.className = 'pages-view';
         this.currentPage = 1;
-        this.pageSize = 20;
+        this.pageSize = 20; // PLATFORM STANDARD: 20 rows per page
         this.activeStatus = 'all';
         this.projectId = null;
     }
@@ -159,8 +160,6 @@ export class Pages {
             const total = data.total || 0;
             const totalAll = data.total_all || total;
 
-            const totalPages = Math.ceil(total / this.pageSize) || 1;
-
             if (totalAll === 0) {
                 container.innerHTML = `
                     <div class="empty-state" style="padding: 40px; text-align: center;">
@@ -233,8 +232,22 @@ export class Pages {
                             <tbody>${rowsHTML}</tbody>
                         </table>
                     </div>
+                    <div id="pages-pagination-slot"></div>
                 </div>
             `;
+
+            // Append Pagination Controls
+            const pageSlot = container.querySelector('#pages-pagination-slot');
+            if (pageSlot) {
+                const pag = new Pagination({
+                    totalItems: total,
+                    currentPage: this.currentPage,
+                    pageSize: this.pageSize,
+                    onPageChange: (newPage) => this.loadPageInventory(newPage)
+                });
+                pageSlot.appendChild(pag.render());
+            }
+
         } catch (err) {
             renderBackendOfflineState(container, `We couldn't load this information right now. Please try again.`, () => this.mounted());
         }

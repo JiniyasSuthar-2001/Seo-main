@@ -3,6 +3,7 @@ import { API_BASE_URL } from '../config/api.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
 import { apiClient } from '../services/apiClient.js';
 import { renderTooltip } from '../components/Tooltip.js';
+import { Pagination } from '../components/Pagination.js';
 
 export class Backlinks {
     constructor() {
@@ -17,15 +18,10 @@ export class Backlinks {
         this.provenance = {};
         this.inboundBacklinks = [];
         
-        // Filtering & pagination state
-        this.searchQuery = '';
-        this.domainFilter = 'all';
-        this.typeFilter = 'all';
-        this.statusFilter = 'all';
-        this.currentPage = 1;
-        this.pageSize = 25;
-        this.sortBy = 'source';
-        this.sortOrder = 'asc';
+        // Pagination state
+        this.outboundPage = 1;
+        this.inboundPage = 1;
+        this.pageSize = 20; // MANDATORY PLATFORM STANDARD: 20 rows per page
     }
 
     render() {
@@ -59,8 +55,8 @@ export class Backlinks {
         const actionsContainer = document.getElementById('backlinks-actions');
         if (!container) return;
 
-        document.getElementById('tab-outbound-btn')?.addEventListener('click', () => { this.activeTab = 'outbound'; this.mounted(); });
-        document.getElementById('tab-inbound-btn')?.addEventListener('click', () => { this.activeTab = 'inbound'; this.mounted(); });
+        document.getElementById('tab-outbound-btn')?.addEventListener('click', () => { this.activeTab = 'outbound'; this.outboundPage = 1; this.mounted(); });
+        document.getElementById('tab-inbound-btn')?.addEventListener('click', () => { this.activeTab = 'inbound'; this.inboundPage = 1; this.mounted(); });
         document.getElementById('tab-gap-btn')?.addEventListener('click', () => { this.activeTab = 'gap'; this.mounted(); });
 
         try {
@@ -131,7 +127,10 @@ export class Backlinks {
             return;
         }
 
-        let rows = backlinks.map(b => `
+        const paginated = Pagination.paginateArray(backlinks, this.inboundPage, this.pageSize);
+        this.inboundPage = paginated.currentPage;
+
+        let rows = paginated.items.map(b => `
             <tr style="border-bottom: 1px solid var(--border);">
                 <td style="padding: 12px 18px; font-family: monospace; font-size: 12px; color: var(--primary);">${this.escapeHtml(b.source_url)}</td>
                 <td style="padding: 12px; font-family: monospace; font-size: 12px;">${this.escapeHtml(b.target_url)}</td>
@@ -158,13 +157,31 @@ export class Backlinks {
                         <tbody>${rows}</tbody>
                     </table>
                 </div>
+                <div id="inbound-pagination-slot"></div>
             </div>
         `;
+
+        const pageSlot = container.querySelector('#inbound-pagination-slot');
+        if (pageSlot) {
+            const pag = new Pagination({
+                totalItems: backlinks.length,
+                currentPage: this.inboundPage,
+                pageSize: this.pageSize,
+                onPageChange: (newPage) => {
+                    this.inboundPage = newPage;
+                    this.renderInboundTab(container);
+                }
+            });
+            pageSlot.appendChild(pag.render());
+        }
     }
 
     renderOutboundTab(container) {
         const links = this.outboundLinks || [];
-        let rows = links.map(l => `
+        const paginated = Pagination.paginateArray(links, this.outboundPage, this.pageSize);
+        this.outboundPage = paginated.currentPage;
+
+        let rows = paginated.items.map(l => `
             <tr style="border-bottom: 1px solid var(--border);">
                 <td style="padding: 12px 18px; font-family: monospace; font-size: 12px; color: var(--primary);">${this.escapeHtml(l.source_page || l.source)}</td>
                 <td style="padding: 12px; font-family: monospace; font-size: 12px;">${this.escapeHtml(l.target_url || l.target)}</td>
@@ -196,8 +213,25 @@ export class Backlinks {
                         </tbody>
                     </table>
                 </div>
+                <div id="outbound-pagination-slot"></div>
             </div>
         `;
+
+        if (links.length > 0) {
+            const pageSlot = container.querySelector('#outbound-pagination-slot');
+            if (pageSlot) {
+                const pag = new Pagination({
+                    totalItems: links.length,
+                    currentPage: this.outboundPage,
+                    pageSize: this.pageSize,
+                    onPageChange: (newPage) => {
+                        this.outboundPage = newPage;
+                        this.renderOutboundTab(container);
+                    }
+                });
+                pageSlot.appendChild(pag.render());
+            }
+        }
     }
 
     renderGapTab(container, gapData) {

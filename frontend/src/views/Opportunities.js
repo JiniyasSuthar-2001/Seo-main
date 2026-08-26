@@ -5,12 +5,15 @@ import { apiClient } from '../services/apiClient.js';
 import { renderAIBadge, renderSourceBadge } from '../components/AIBadge.js';
 import { AuditEvidenceModal } from '../components/AuditEvidenceModal.js';
 import { renderTooltip } from '../components/Tooltip.js';
+import { Pagination } from '../components/Pagination.js';
 
 export class Opportunities {
     constructor() {
         this.element = document.createElement('div');
         this.element.className = 'opportunities-view';
         this.activeCategory = 'all';
+        this.oppsPage = 1;
+        this.pageSize = 20; // MANDATORY PLATFORM STANDARD: 20 rows/items per page
     }
 
     render() {
@@ -82,6 +85,7 @@ export class Opportunities {
                     tabs.forEach(t => t.classList.remove('active'));
                     e.target.classList.add('active');
                     this.activeCategory = e.target.dataset.cat;
+                    this.oppsPage = 1;
                     this.mounted();
                 });
             });
@@ -153,19 +157,23 @@ export class Opportunities {
                 return;
             }
 
-            // STATE B: Recommended Actions List
+            // STATE B: Recommended Actions List (Paginated at 20 items per page)
             const criticalCount = opps.filter(o => o.priority_level === 'CRITICAL').length;
             const highCount = opps.filter(o => o.priority_level === 'HIGH').length;
             const mediumCount = opps.filter(o => o.priority_level === 'MEDIUM').length;
             const lowCount = opps.filter(o => o.priority_level === 'LOW').length;
 
-            let cards = opps.map((opp, idx) => {
+            const paginated = Pagination.paginateArray(opps, this.oppsPage, this.pageSize);
+            this.oppsPage = paginated.currentPage;
+
+            let cards = paginated.items.map((opp, idx) => {
                 let badgeStyle = 'background: rgba(239,68,68,0.1); color: var(--critical);';
                 if (opp.priority_level === 'HIGH') badgeStyle = 'background: rgba(245,158,11,0.1); color: var(--warning);';
                 else if (opp.priority_level === 'MEDIUM') badgeStyle = 'background: rgba(59,130,246,0.1); color: var(--primary);';
                 else if (opp.priority_level === 'LOW') badgeStyle = 'background: rgba(16,185,129,0.1); color: #10b981;';
 
                 const urls = opp.affected_urls || [];
+                const globalIdx = (paginated.currentPage - 1) * paginated.pageSize + idx;
 
                 return `
                     <div class="card" style="padding: 20px; margin-bottom: 14px; border-left: 4px solid ${opp.priority_level === 'CRITICAL' ? 'var(--critical)' : (opp.priority_level === 'HIGH' ? 'var(--warning)' : 'var(--primary)')}; border-radius: 12px;">
@@ -185,7 +193,7 @@ export class Opportunities {
                                 <div style="font-size: 13px; color: var(--primary); font-weight: 600; margin-bottom: 12px;">
                                     <strong>Recommended Action:</strong> ${this.escapeHtml(opp.recommendation)}
                                 </div>
-                                <button class="btn btn-secondary btn-sm btn-see-action-pages" data-idx="${idx}" style="font-size: 12px; font-weight: 600;">
+                                <button class="btn btn-secondary btn-sm btn-see-action-pages" data-idx="${globalIdx}" style="font-size: 12px; font-weight: 600;">
                                     See Pages (${urls.length || opp.affected_count || 1} affected)
                                 </button>
                             </div>
@@ -218,13 +226,29 @@ export class Opportunities {
                 </div>
 
                 ${cards}
+                <div id="opps-pagination-slot" style="background: var(--bg-card); border-radius: 12px; margin-top: 8px; border: 1px solid var(--border);"></div>
             `;
+
+            // Append Pagination Controls
+            const pageSlot = container.querySelector('#opps-pagination-slot');
+            if (pageSlot && opps.length > 0) {
+                const pag = new Pagination({
+                    totalItems: opps.length,
+                    currentPage: this.oppsPage,
+                    pageSize: this.pageSize,
+                    onPageChange: (newPage) => {
+                        this.oppsPage = newPage;
+                        this.mounted();
+                    }
+                });
+                pageSlot.appendChild(pag.render());
+            }
 
             // Bind See Pages button triggers
             container.querySelectorAll('.btn-see-action-pages').forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    const idx = parseInt(e.currentTarget.getAttribute('data-idx'), 10);
-                    const opp = opps[idx];
+                    const globalIdx = parseInt(e.currentTarget.getAttribute('data-idx'), 10);
+                    const opp = opps[globalIdx];
                     if (opp) {
                         AuditEvidenceModal.open({
                             title: opp.title,

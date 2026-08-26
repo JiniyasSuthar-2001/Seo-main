@@ -3,6 +3,7 @@ import { apiClient } from '../services/apiClient.js';
 import { resolveProjectId } from '../utils/projectResolver.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
 import { renderTooltip } from '../components/Tooltip.js';
+import { Pagination } from '../components/Pagination.js';
 
 export class Keywords {
     constructor() {
@@ -11,6 +12,9 @@ export class Keywords {
         this.activeTab = 'overview';
         this.researchResults = [];
         this.isSearching = false;
+        this.overviewPage = 1;
+        this.researchPage = 1;
+        this.pageSize = 20; // MANDATORY PLATFORM STANDARD: 20 rows per page
     }
 
     render() {
@@ -77,6 +81,8 @@ export class Keywords {
                     tabs.forEach(t => t.classList.remove('active'));
                     e.target.classList.add('active');
                     this.activeTab = e.target.dataset.tab;
+                    this.overviewPage = 1;
+                    this.researchPage = 1;
                     this.mounted();
                 });
             });
@@ -130,7 +136,11 @@ export class Keywords {
                 return;
             }
 
-            let rows = keywords.map(k => `
+            // Paginate keywords dataset at 20 rows per page
+            const paginated = Pagination.paginateArray(keywords, this.overviewPage, this.pageSize);
+            this.overviewPage = paginated.currentPage;
+
+            let rows = paginated.items.map(k => `
                 <tr style="border-bottom: 1px solid var(--border);">
                     <td style="padding: 12px 18px; font-weight: 700; color: var(--text-primary);">${this.escapeHtml(k.keyword)}</td>
                     <td style="padding: 12px;">${this.escapeHtml(k.category || k.type || 'Content Keyword')}</td>
@@ -165,8 +175,25 @@ export class Keywords {
                             </tbody>
                         </table>
                     </div>
+                    <div id="kw-pagination-slot"></div>
                 </div>
             `;
+
+            // Append Pagination Controls
+            const pageSlot = contentContainer.querySelector('#kw-pagination-slot');
+            if (pageSlot) {
+                const pag = new Pagination({
+                    totalItems: keywords.length,
+                    currentPage: this.overviewPage,
+                    pageSize: this.pageSize,
+                    onPageChange: (newPage) => {
+                        this.overviewPage = newPage;
+                        this.mounted();
+                    }
+                });
+                pageSlot.appendChild(pag.render());
+            }
+
         } catch (e) {
             renderBackendOfflineState(contentContainer, `We couldn't load this information right now. Please try again.`, () => this.mounted());
         }
@@ -189,38 +216,62 @@ export class Keywords {
         const input = container.querySelector('#input-seed-kw');
         const resultsBox = container.querySelector('#research-results-box');
 
+        const renderResearchTable = (suggestions, seed) => {
+            const paginated = Pagination.paginateArray(suggestions, this.researchPage, this.pageSize);
+            this.researchPage = paginated.currentPage;
+
+            let resRows = paginated.items.map(s => `
+                <tr style="border-bottom: 1px solid var(--border);">
+                    <td style="padding: 10px 16px; font-weight: 600; color: var(--text-primary);">${this.escapeHtml(typeof s === 'string' ? s : s.keyword)}</td>
+                    <td style="padding: 10px 16px; font-size: 12px; color: var(--text-secondary);">Google Search Suggestion</td>
+                </tr>
+            `).join('');
+
+            resultsBox.innerHTML = `
+                <div class="card" style="padding: 0; overflow: hidden; border-radius: 12px;">
+                    <div style="padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--bg-subtle);">
+                        <h4 style="margin: 0; font-size: 14px; font-weight: 700; color: var(--text-primary);">${suggestions.length} Google Search Suggestions Found</h4>
+                    </div>
+                    <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                        <thead>
+                            <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
+                                <th style="padding: 10px 16px;">Suggested Search Term</th>
+                                <th style="padding: 10px 16px;">Source</th>
+                            </tr>
+                        </thead>
+                        <tbody>${resRows.length > 0 ? resRows : `<tr><td colspan="2" style="padding: 24px; text-align: center; color: var(--text-secondary);">No suggestions found for '${this.escapeHtml(seed)}'.</td></tr>`}</tbody>
+                    </table>
+                    <div id="research-pagination-slot"></div>
+                </div>
+            `;
+
+            const resSlot = resultsBox.querySelector('#research-pagination-slot');
+            if (resSlot) {
+                const pag = new Pagination({
+                    totalItems: suggestions.length,
+                    currentPage: this.researchPage,
+                    pageSize: this.pageSize,
+                    onPageChange: (newPage) => {
+                        this.researchPage = newPage;
+                        renderResearchTable(suggestions, seed);
+                    }
+                });
+                resSlot.appendChild(pag.render());
+            }
+        };
+
         if (btn) {
             btn.onclick = async () => {
                 const seed = input.value.trim();
                 if (!seed) return;
                 btn.disabled = true;
                 btn.innerText = 'Searching Google Suggestions...';
+                this.researchPage = 1;
                 try {
                     const res = await apiClient.get(`/api/projects/${projectId}/keywords/research?seed=${encodeURIComponent(seed)}`);
                     const suggestions = res.suggestions || res.keywords || [];
-                    let resRows = suggestions.map(s => `
-                        <tr style="border-bottom: 1px solid var(--border);">
-                            <td style="padding: 10px 16px; font-weight: 600; color: var(--text-primary);">${this.escapeHtml(typeof s === 'string' ? s : s.keyword)}</td>
-                            <td style="padding: 10px 16px; font-size: 12px; color: var(--text-secondary);">Google Search Suggestion</td>
-                        </tr>
-                    `).join('');
-
-                    resultsBox.innerHTML = `
-                        <div class="card" style="padding: 0; overflow: hidden; border-radius: 12px;">
-                            <div style="padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--bg-subtle);">
-                                <h4 style="margin: 0; font-size: 14px; font-weight: 700; color: var(--text-primary);">${suggestions.length} Google Search Suggestions Found</h4>
-                            </div>
-                            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
-                                <thead>
-                                    <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
-                                        <th style="padding: 10px 16px;">Suggested Search Term</th>
-                                        <th style="padding: 10px 16px;">Source</th>
-                                    </tr>
-                                </thead>
-                                <tbody>${resRows.length > 0 ? resRows : `<tr><td colspan="2" style="padding: 24px; text-align: center; color: var(--text-secondary);">No suggestions found for '${this.escapeHtml(seed)}'.</td></tr>`}</tbody>
-                            </table>
-                        </div>
-                    `;
+                    this.researchResults = suggestions;
+                    renderResearchTable(suggestions, seed);
                 } catch (err) {
                     resultsBox.innerHTML = `<div class="card" style="padding: 20px; color: var(--critical);">Failed to get search suggestions: ${this.escapeHtml(err.message)}</div>`;
                 } finally {

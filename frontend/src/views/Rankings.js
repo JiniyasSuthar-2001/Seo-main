@@ -3,12 +3,15 @@ import { apiClient } from '../services/apiClient.js';
 import { resolveProjectId } from '../utils/projectResolver.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
 import { renderTooltip } from '../components/Tooltip.js';
+import { Pagination } from '../components/Pagination.js';
 
 export class Rankings {
     constructor() {
         this.element = document.createElement('div');
         this.element.className = 'rankings-view';
         this.activeTab = 'tracking';
+        this.rankingsPage = 1;
+        this.pageSize = 20; // MANDATORY PLATFORM STANDARD: 20 rows per page
     }
 
     render() {
@@ -68,6 +71,7 @@ export class Rankings {
                     tabs.forEach(t => t.classList.remove('active'));
                     e.target.classList.add('active');
                     this.activeTab = e.target.dataset.tab;
+                    this.rankingsPage = 1;
                     this.mounted();
                 });
             });
@@ -110,8 +114,11 @@ export class Rankings {
         const ov = trackingRes.overview || {};
         const config = trackingRes.campaign_config || {};
 
-        const rankRes = await apiClient.get(`/api/projects/${projectId}/rankings?limit=100`);
+        const rankRes = await apiClient.get(`/api/projects/${projectId}/rankings?limit=500`);
         const rankings = rankRes.rankings || [];
+
+        const paginated = Pagination.paginateArray(rankings, this.rankingsPage, this.pageSize);
+        this.rankingsPage = paginated.currentPage;
 
         container.innerHTML = `
             <!-- SUMMARY HEADER -->
@@ -159,9 +166,9 @@ export class Rankings {
             </div>
 
             <!-- RANKINGS DATA TABLE -->
-            <div class="card" style="padding: 24px; border-radius: 14px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                    <h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0;">Search Rankings</h3>
+            <div class="card" style="padding: 0; overflow: hidden; border-radius: 14px;">
+                <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0;">Search Rankings (${rankings.length})</h3>
                 </div>
 
                 ${rankings.length === 0 ? `
@@ -190,7 +197,7 @@ export class Rankings {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${rankings.map(r => `
+                                ${paginated.items.map(r => `
                                     <tr style="border-bottom: 1px solid var(--border);">
                                         <td style="padding: 12px 18px; font-weight: 700; color: var(--text-primary);">${this.escapeHtml(r.keyword)}</td>
                                         <td style="padding: 12px; font-family: monospace; font-size: 12px;">${this.escapeHtml(r.url || '-')}</td>
@@ -203,9 +210,26 @@ export class Rankings {
                             </tbody>
                         </table>
                     </div>
+                    <div id="rankings-pagination-slot"></div>
                 `}
             </div>
         `;
+
+        if (rankings.length > 0) {
+            const pageSlot = container.querySelector('#rankings-pagination-slot');
+            if (pageSlot) {
+                const pag = new Pagination({
+                    totalItems: rankings.length,
+                    currentPage: this.rankingsPage,
+                    pageSize: this.pageSize,
+                    onPageChange: (newPage) => {
+                        this.rankingsPage = newPage;
+                        this.mounted();
+                    }
+                });
+                pageSlot.appendChild(pag.render());
+            }
+        }
     }
 
     async renderWinnersTab(container, projectId) {

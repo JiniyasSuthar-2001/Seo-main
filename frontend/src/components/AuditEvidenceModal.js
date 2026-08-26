@@ -2,7 +2,9 @@
  * Audit Evidence Modal Component
  * Renders a clean, responsive modal titled "Why We Flagged This" for inspecting detailed
  * audit evidence, affected URLs, observed values, and rule descriptions.
+ * Enforces global 20 rows per page pagination standard.
  */
+import { Pagination } from './Pagination.js';
 
 export class AuditEvidenceModal {
     static open({ title, ruleId, category, severity, description, recommendation, affectedUrls, evidenceText, provenance, scanDate }) {
@@ -14,7 +16,7 @@ export class AuditEvidenceModal {
         const totalCount = urls.length;
 
         let currentPage = 1;
-        const pageSize = 10;
+        const pageSize = 20; // MANDATORY PLATFORM STANDARD: 20 rows per page
         let searchQuery = '';
 
         const modalRoot = document.createElement('div');
@@ -30,12 +32,8 @@ export class AuditEvidenceModal {
                 return !searchQuery || url.toLowerCase().includes(searchQuery.toLowerCase());
             });
 
-            const totalFiltered = filteredUrls.length;
-            const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
-            if (currentPage > totalPages) currentPage = totalPages;
-
-            const startIndex = (currentPage - 1) * pageSize;
-            const pageUrls = filteredUrls.slice(startIndex, startIndex + pageSize);
+            const paginated = Pagination.paginateArray(filteredUrls, currentPage, pageSize);
+            currentPage = paginated.currentPage;
 
             let sevBadgeStyle = 'background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3);';
             const sevLower = (severity || '').toLowerCase();
@@ -53,11 +51,11 @@ export class AuditEvidenceModal {
                                 <span class="badge" style="${sevBadgeStyle} font-size: 11px; font-weight: 800; text-transform: uppercase;">
                                     ${(severity || 'HIGH').toUpperCase()}
                                 </span>
-                                <span class="badge badge-info" style="font-size: 11px;">${category || 'Website Check'}</span>
-                                <span class="badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 10.5px;">Data Source: ${provenance || 'Website Scan'}</span>
+                                <span class="badge badge-info" style="font-size: 11px;">${escapeHtml(category || 'Website Check')}</span>
+                                <span class="badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 10.5px;">Data Source: ${escapeHtml(provenance || 'Website Scan')}</span>
                             </div>
                             <h2 style="font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">${escapeHtml(title)}</h2>
-                            <div style="font-size: 12.5px; color: var(--text-secondary);">${totalCount} affected page${totalCount === 1 ? '' : 's'} detected • Scan Date: ${scanDate || '26 Aug 2026'}</div>
+                            <div style="font-size: 12.5px; color: var(--text-secondary);">${totalCount} affected page${totalCount === 1 ? '' : 's'} detected • Scan Date: ${escapeHtml(scanDate || '26 Aug 2026')}</div>
                         </div>
                         <button id="btn-close-evidence-modal" style="background: none; border: none; font-size: 24px; line-height: 1; color: var(--text-tertiary); cursor: pointer; padding: 4px;">&times;</button>
                     </div>
@@ -74,9 +72,6 @@ export class AuditEvidenceModal {
                             <input type="text" id="modal-search-input" value="${escapeHtml(searchQuery)}" placeholder="Search affected pages..." style="width: 100%; padding: 8px 12px 8px 32px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: var(--bg-card); color: var(--text-primary); outline: none;" />
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary);"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                         </div>
-                        <div style="font-size: 12px; color: var(--text-secondary);">
-                            Showing <strong>${totalFiltered === 0 ? 0 : startIndex + 1}–${Math.min(startIndex + pageSize, totalFiltered)}</strong> of <strong>${totalFiltered}</strong> pages
-                        </div>
                     </div>
 
                     <!-- EVIDENCE TABLE -->
@@ -89,7 +84,7 @@ export class AuditEvidenceModal {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${pageUrls.length > 0 ? pageUrls.map(url => `
+                                ${paginated.items.length > 0 ? paginated.items.map(url => `
                                     <tr style="border-bottom: 1px solid var(--border);">
                                         <td style="padding: 10px 24px; font-family: monospace; font-size: 12px; word-break: break-all;">
                                             <a href="${escapeHtml(url)}" target="_blank" style="color: var(--primary); text-decoration: none; font-weight: 600;">${escapeHtml(url)}</a>
@@ -109,47 +104,41 @@ export class AuditEvidenceModal {
                         </table>
                     </div>
 
-                    <!-- FOOTER -->
-                    <div style="padding: 14px 24px; border-top: 1px solid var(--border); background: var(--bg-subtle); display: flex; justify-content: space-between; align-items: center;">
-                        <div style="font-size: 12px; color: var(--text-tertiary);">
-                            Page ${currentPage} of ${totalPages}
-                        </div>
-                        <div style="display: flex; gap: 8px;">
-                            <button id="modal-btn-prev" class="btn btn-secondary btn-sm" ${currentPage <= 1 ? 'disabled' : ''}>Previous</button>
-                            <button id="modal-btn-next" class="btn btn-secondary btn-sm" ${currentPage >= totalPages ? 'disabled' : ''}>Next</button>
-                            <button id="modal-btn-close-footer" class="btn btn-primary btn-sm" style="margin-left: 8px;">Close</button>
-                        </div>
-                    </div>
+                    <!-- FOOTER WITH GLOBAL PAGINATION CONTROLS -->
+                    <div id="modal-pagination-footer"></div>
 
                 </div>
             `;
 
+            // Append Pagination Controls
+            const footerSlot = modalRoot.querySelector('#modal-pagination-footer');
+            if (footerSlot) {
+                const pag = new Pagination({
+                    totalItems: paginated.totalItems,
+                    currentPage: paginated.currentPage,
+                    pageSize: pageSize,
+                    onPageChange: (newPage) => {
+                        currentPage = newPage;
+                        renderModalContent();
+                    }
+                });
+                footerSlot.appendChild(pag.render());
+            }
+
             // Bind handlers
             modalRoot.querySelector('#btn-close-evidence-modal')?.addEventListener('click', () => modalRoot.remove());
-            modalRoot.querySelector('#modal-btn-close-footer')?.addEventListener('click', () => modalRoot.remove());
 
             const searchInput = modalRoot.querySelector('#modal-search-input');
             if (searchInput) {
+                searchInput.focus();
+                // move cursor to end
+                searchInput.setSelectionRange(searchQuery.length, searchQuery.length);
                 searchInput.addEventListener('input', (e) => {
                     searchQuery = e.target.value;
                     currentPage = 1;
                     renderModalContent();
                 });
             }
-
-            modalRoot.querySelector('#modal-btn-prev')?.addEventListener('click', () => {
-                if (currentPage > 1) {
-                    currentPage--;
-                    renderModalContent();
-                }
-            });
-
-            modalRoot.querySelector('#modal-btn-next')?.addEventListener('click', () => {
-                if (currentPage < totalPages) {
-                    currentPage++;
-                    renderModalContent();
-                }
-            });
         };
 
         renderModalContent();

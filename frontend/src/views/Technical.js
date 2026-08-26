@@ -5,6 +5,7 @@ import { apiClient } from '../services/apiClient.js';
 import { renderAIBadge, renderSourceBadge } from '../components/AIBadge.js';
 import { AuditEvidenceModal } from '../components/AuditEvidenceModal.js';
 import { renderTooltip } from '../components/Tooltip.js';
+import { Pagination } from '../components/Pagination.js';
 
 export class Technical {
     constructor() {
@@ -12,6 +13,8 @@ export class Technical {
         this.element.className = 'technical-view';
         this.activeTab = 'audit'; // audit, history
         this.selectedCategoryFilter = 'all';
+        this.issuesPage = 1;
+        this.pageSize = 20; // MANDATORY PLATFORM STANDARD: 20 rows per page
     }
 
     render() {
@@ -50,11 +53,13 @@ export class Technical {
 
         document.getElementById('tab-audit-btn')?.addEventListener('click', () => {
             this.activeTab = 'audit';
+            this.issuesPage = 1;
             this.mounted();
         });
 
         document.getElementById('tab-history-btn')?.addEventListener('click', () => {
             this.activeTab = 'history';
+            this.issuesPage = 1;
             this.mounted();
         });
 
@@ -108,7 +113,7 @@ export class Technical {
                 return;
             }
 
-            const auditData = await apiClient.get(`/api/projects/${projectId}/technical?limit=200&offset=0`);
+            const auditData = await apiClient.get(`/api/projects/${projectId}/technical?limit=500&offset=0`);
 
             const health = auditData.health_score || 100;
             const allIssues = auditData.issues || [];
@@ -151,6 +156,10 @@ export class Technical {
                 });
             }
 
+            // Paginate filtered issues using 20 rows per page standard
+            const paginated = Pagination.paginateArray(filteredIssues, this.issuesPage, this.pageSize);
+            this.issuesPage = paginated.currentPage;
+
             // Render Category Cards (RESTORED CARD-BASED UI WITH RIGHT COLORED STATUS LINE)
             const categoryCardsHtml = categoryTable.map(c => {
                 const plainCatName = catTranslations[c.category] || c.category;
@@ -188,14 +197,15 @@ export class Technical {
                 `;
             }).join('');
 
-            // Table Rows for Findings (Problems We Found) - UNTOUCHED DATA STRUCTURE & STYLING
-            let tableRows = filteredIssues.map((iss, idx) => {
+            // Table Rows for Findings (Problems We Found) - PAGINATED TO MAXIMUM 20 ROWS PER PAGE
+            let tableRows = paginated.items.map((iss, idx) => {
                 let badgeClass = 'badge-info';
                 const sev = (iss.severity || '').toLowerCase();
                 if (sev === 'critical') badgeClass = 'badge-critical';
                 else if (sev === 'warning') badgeClass = 'badge-warning';
 
                 const urlsList = iss.affected_urls || [];
+                const globalIdx = (paginated.currentPage - 1) * paginated.pageSize + idx;
 
                 return `
                     <tr style="border-bottom: 1px solid var(--border);">
@@ -207,7 +217,7 @@ export class Technical {
                             <div style="font-weight: 700; color: var(--text-primary); margin-bottom: 2px;">${this.escapeHtml(iss.title)}</div>
                             <div style="font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 6px;">${this.escapeHtml(iss.description || '')}</div>
                             <button class="btn btn-secondary btn-sm btn-open-evidence-modal" 
-                                    data-idx="${idx}"
+                                    data-idx="${globalIdx}"
                                     style="font-size: 11.5px; font-weight: 600; padding: 4px 12px;">
                                 See What We Found (${urlsList.length} affected page${urlsList.length === 1 ? '' : 's'})
                             </button>
@@ -271,7 +281,7 @@ export class Technical {
                     </div>
                 </div>
 
-                <!-- PROBLEMS WE FOUND TABLE (UNTOUCHED STRUCTURE & EVIDENCE SYSTEM) -->
+                <!-- PROBLEMS WE FOUND TABLE (UNTOUCHED STRUCTURE & EVIDENCE SYSTEM, PAGINATED AT 20 ROWS) -->
                 <div class="card" style="padding: 0; overflow: hidden; border-radius: 14px;">
                     <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
                         <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">
@@ -295,8 +305,24 @@ export class Technical {
                             </tbody>
                         </table>
                     </div>
+                    <div id="technical-pagination-slot"></div>
                 </div>
             `;
+
+            // Append Pagination Controls
+            const pageSlot = container.querySelector('#technical-pagination-slot');
+            if (pageSlot) {
+                const pag = new Pagination({
+                    totalItems: filteredIssues.length,
+                    currentPage: this.issuesPage,
+                    pageSize: this.pageSize,
+                    onPageChange: (newPage) => {
+                        this.issuesPage = newPage;
+                        this.mounted();
+                    }
+                });
+                pageSlot.appendChild(pag.render());
+            }
 
             // Bind Category Card Click Events (FILTER / REVEAL INTERACTION)
             container.querySelectorAll('.category-card-item').forEach(card => {
@@ -307,6 +333,7 @@ export class Technical {
                     } else {
                         this.selectedCategoryFilter = cat;
                     }
+                    this.issuesPage = 1; // Reset to page 1 on category filter change
                     this.mounted();
                 });
             });
@@ -314,14 +341,15 @@ export class Technical {
             // Bind Filter Reset Badge Click Event
             document.getElementById('btn-reset-category-filter')?.addEventListener('click', () => {
                 this.selectedCategoryFilter = 'all';
+                this.issuesPage = 1; // Reset to page 1
                 this.mounted();
             });
 
             // Bind Evidence Modal Triggers (UNTOUCHED EVIDENCE MODAL)
             container.querySelectorAll('.btn-open-evidence-modal').forEach(btn => {
                 btn.addEventListener('click', (e) => {
-                    const idx = parseInt(e.currentTarget.getAttribute('data-idx'), 10);
-                    const iss = filteredIssues[idx];
+                    const globalIdx = parseInt(e.currentTarget.getAttribute('data-idx'), 10);
+                    const iss = filteredIssues[globalIdx];
                     if (iss) {
                         AuditEvidenceModal.open({
                             title: iss.title,

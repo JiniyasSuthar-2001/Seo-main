@@ -1,5 +1,7 @@
 import { projectStore } from '../core/projectStore.js';
 import { API_BASE_URL } from '../config/api.js';
+import { apiClient } from '../services/apiClient.js';
+import { Pagination } from '../components/Pagination.js';
 
 export class Projects {
     constructor() {
@@ -8,6 +10,8 @@ export class Projects {
         this.searchQuery = '';
         this.statusFilter = 'all';
         this.sortBy = 'updated';
+        this.currentPage = 1;
+        this.pageSize = 20; // MANDATORY PLATFORM STANDARD: 20 rows per page
     }
 
     render() {
@@ -258,7 +262,10 @@ export class Projects {
                 return;
             }
 
-            let cards = result.map(p => {
+            const paginated = Pagination.paginateArray(result, this.currentPage, this.pageSize);
+            this.currentPage = paginated.currentPage;
+
+            let cards = paginated.items.map(p => {
                 const isSelected = String(p.id) === String(selectedId);
                 const createdDate = p.created_at ? new Date(p.created_at).toLocaleDateString() : 'N/A';
                 const lastCrawlDate = p.last_crawl ? new Date(p.last_crawl).toLocaleDateString() : 'No Crawls';
@@ -328,10 +335,25 @@ export class Projects {
             }).join('');
 
             container.innerHTML = `
-                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 20px;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 20px; margin-bottom: 16px;">
                     ${cards}
                 </div>
+                <div id="projects-pagination-slot" style="background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border);"></div>
             `;
+
+            const pageSlot = container.querySelector('#projects-pagination-slot');
+            if (pageSlot && result.length > 0) {
+                const pag = new Pagination({
+                    totalItems: result.length,
+                    currentPage: this.currentPage,
+                    pageSize: this.pageSize,
+                    onPageChange: (newPage) => {
+                        this.currentPage = newPage;
+                        renderProjectsList(projectStore.projects);
+                    }
+                });
+                pageSlot.appendChild(pag.render());
+            }
         };
 
         try {
@@ -346,18 +368,21 @@ export class Projects {
             if (searchInput) {
                 searchInput.addEventListener('input', (e) => {
                     this.searchQuery = e.target.value;
+                    this.currentPage = 1;
                     renderProjectsList(projectStore.projects);
                 });
             }
             if (filterSelect) {
                 filterSelect.addEventListener('change', (e) => {
                     this.statusFilter = e.target.value;
+                    this.currentPage = 1;
                     renderProjectsList(projectStore.projects);
                 });
             }
             if (sortSelect) {
                 sortSelect.addEventListener('change', (e) => {
                     this.sortBy = e.target.value;
+                    this.currentPage = 1;
                     renderProjectsList(projectStore.projects);
                 });
             }

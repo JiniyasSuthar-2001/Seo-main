@@ -1,5 +1,6 @@
 import { apiClient } from '../services/apiClient.js';
 import { projectStore } from '../core/projectStore.js';
+import { Pagination } from '../components/Pagination.js';
 
 export class Competitors {
     constructor() {
@@ -16,6 +17,12 @@ export class Competitors {
         this.showLearnModal = false;
         this.editingCompetitor = null;
         this.unsubscribeStore = null;
+
+        // Pagination state
+        this.suggestedPage = 1;
+        this.confirmedPage = 1;
+        this.gapPage = 1;
+        this.pageSize = 20; // MANDATORY PLATFORM STANDARD: 20 rows per page
     }
 
     render() {
@@ -107,6 +114,7 @@ export class Competitors {
                 }
             }
             this.activeTab = 'suggested';
+            this.suggestedPage = 1;
         } catch (err) {
             alert('Competitor discovery notice: ' + err.message);
         } finally {
@@ -149,106 +157,159 @@ export class Competitors {
             await apiClient.delete(`/api/projects/${currentProject.id}/competitors/${competitorId}`);
             await this.loadData();
         } catch (err) {
-            alert('Failed to delete competitor: ' + err.message);
+            alert('Failed to remove competitor: ' + err.message);
         }
     }
 
-    async togglePrimary(competitor) {
+    async togglePrimary(competitorId) {
         const currentProject = projectStore.getCurrentProject();
         if (!currentProject) return;
 
         try {
-            await apiClient.put(`/api/projects/${currentProject.id}/competitors/${competitor.id}`, {
-                is_primary: !competitor.is_primary
-            });
+            await apiClient.post(`/api/projects/${currentProject.id}/competitors/${competitorId}/toggle-primary`);
             await this.loadData();
         } catch (err) {
-            alert('Failed to update primary competitor status: ' + err.message);
+            alert('Failed to update primary competitor: ' + err.message);
+        }
+    }
+
+    async handleSaveCompetitor(formData) {
+        const currentProject = projectStore.getCurrentProject();
+        if (!currentProject) return;
+
+        try {
+            if (this.editingCompetitor && this.editingCompetitor.id) {
+                await apiClient.put(`/api/projects/${currentProject.id}/competitors/${this.editingCompetitor.id}`, formData);
+            } else {
+                await apiClient.post(`/api/projects/${currentProject.id}/competitors`, formData);
+            }
+            this.showModal = false;
+            this.editingCompetitor = null;
+            await this.loadData();
+        } catch (err) {
+            alert('Failed to save competitor: ' + err.message);
         }
     }
 
     renderState() {
         if (!this.container) return;
 
-        const currentProject = projectStore.getCurrentProject();
-        
-        if (!currentProject) {
+        if (this.loading) {
             this.container.innerHTML = `
-                <div class="header" style="margin-bottom: 24px;">
-                    <h1 style="font-size: 24px; font-weight: 600;">Competitor Analysis</h1>
-                </div>
-                <div class="empty-state" style="text-align: center; padding: 48px 24px;">
-                    <div class="empty-state-title" style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">No Project Selected</div>
-                    <div class="empty-state-desc" style="color: var(--text-secondary);">Please select or create an SEO project from the sidebar to view competitors.</div>
+                <div class="card" style="text-align: center; padding: 48px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color);">
+                    <div style="font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">Loading Competitor Intelligence...</div>
+                    <div style="font-size: 13px; color: var(--text-secondary);">Analyzing search overlap and competitor rankings...</div>
                 </div>
             `;
             return;
         }
 
-        const projectDomain = currentProject.domain || currentProject.url || 'Target Website';
-        const suggestedCount = this.suggestedCompetitors.length;
-        const confirmedCount = this.confirmedCompetitors.length;
+        if (this.error) {
+            this.container.innerHTML = `
+                <div class="card" style="text-align: center; padding: 48px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color);">
+                    <div style="font-size: 16px; font-weight: 600; color: #ef4444; margin-bottom: 8px;">Unable to load competitors</div>
+                    <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 20px;">${this.escapeHtml(this.error)}</div>
+                    <button class="btn btn-primary btn-sm" id="btn-retry-comp">Retry</button>
+                </div>
+            `;
+            this.container.querySelector('#btn-retry-comp')?.addEventListener('click', () => this.loadData());
+            return;
+        }
 
         this.container.innerHTML = `
-            <div class="competitors-header" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; flex-wrap: wrap; gap: 16px;">
+            <div style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
                 <div>
                     <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">Competitors</h1>
-                    <p style="color: var(--text-secondary); margin: 0; font-size: 14px;">
-                        Target Website: <strong style="color: var(--primary);">${this.escapeHtml(projectDomain)}</strong>
-                    </p>
+                    <p style="color: var(--text-secondary); margin: 0; font-size: 13.5px;">Identify and monitor websites competing for the same search keywords and customers.</p>
                 </div>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <a href="#/import" data-link class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
-                        Import Data
-                    </a>
-                    <button id="btn-auto-discover" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;" ${this.discovering ? 'disabled' : ''}>
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
-                        ${this.discovering ? 'Searching...' : 'Find Competitors'}
+                    <button class="btn btn-secondary btn-sm" id="btn-learn-discovery" style="display: flex; align-items: center; gap: 6px;">
+                        <span>💡</span> How It Works
                     </button>
-                    <button id="btn-add-manual" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    <button class="btn btn-secondary btn-sm" id="btn-auto-discover" ${this.discovering ? 'disabled' : ''}>
+                        ${this.discovering ? 'Finding Competitors...' : '⚡ Find Competitors'}
+                    </button>
+                    <button class="btn btn-primary btn-sm" id="btn-add-manual">
                         + Add Competitor
                     </button>
                 </div>
             </div>
 
-            ${this.error ? `
-                <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 8px; padding: 16px; margin-bottom: 24px; color: #ef4444;">
-                    <strong>Error:</strong> ${this.escapeHtml(this.error)}
-                </div>
-            ` : ''}
-
-            <!-- Tabs Navigation -->
-            <div class="tabs-nav" style="display: flex; border-bottom: 1px solid var(--border-color); margin-bottom: 24px; gap: 24px;">
-                <button class="tab-btn ${this.activeTab === 'suggested' ? 'active' : ''}" data-tab="suggested" style="padding: 12px 4px; font-weight: 500; background: none; border: none; border-bottom: 2px solid ${this.activeTab === 'suggested' ? 'var(--accent-primary, #3b82f6)' : 'transparent'}; color: ${this.activeTab === 'suggested' ? 'var(--accent-primary, #3b82f6)' : 'var(--text-secondary)'}; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+            <!-- TABS -->
+            <div style="display: flex; gap: 12px; border-bottom: 1px solid var(--border-color); margin-bottom: 24px; flex-wrap: wrap;">
+                <button class="comp-tab ${this.activeTab === 'suggested' ? 'active' : ''}" data-tab="suggested">
                     Suggested Competitors
-                    <span style="background: rgba(59, 130, 246, 0.15); color: #3b82f6; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 12px;">${suggestedCount}</span>
+                    ${this.suggestedCompetitors.length > 0 ? `<span class="badge" style="margin-left: 6px; background: rgba(59,130,246,0.2); color: #60a5fa;">${this.suggestedCompetitors.length}</span>` : ''}
                 </button>
-                <button class="tab-btn ${this.activeTab === 'confirmed' ? 'active' : ''}" data-tab="confirmed" style="padding: 12px 4px; font-weight: 500; background: none; border: none; border-bottom: 2px solid ${this.activeTab === 'confirmed' ? 'var(--accent-primary, #3b82f6)' : 'transparent'}; color: ${this.activeTab === 'confirmed' ? 'var(--accent-primary, #3b82f6)' : 'var(--text-secondary)'}; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+                <button class="comp-tab ${this.activeTab === 'confirmed' ? 'active' : ''}" data-tab="confirmed">
                     Confirmed Competitors
-                    <span style="background: rgba(16, 185, 129, 0.15); color: #10b981; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 12px;">${confirmedCount}</span>
+                    <span class="badge" style="margin-left: 6px; background: rgba(16,185,129,0.2); color: #34d399;">${this.confirmedCompetitors.length}</span>
                 </button>
-                <button class="tab-btn ${this.activeTab === 'gap' ? 'active' : ''}" data-tab="gap" style="padding: 12px 4px; font-weight: 500; background: none; border: none; border-bottom: 2px solid ${this.activeTab === 'gap' ? 'var(--accent-primary, #3b82f6)' : 'transparent'}; color: ${this.activeTab === 'gap' ? 'var(--accent-primary, #3b82f6)' : 'var(--text-secondary)'}; cursor: pointer;">
+                <button class="comp-tab ${this.activeTab === 'gap' ? 'active' : ''}" data-tab="gap">
                     Keyword Gap Analysis
                 </button>
             </div>
 
-            <!-- Main Tab Content -->
-            <div class="tab-content">
-                ${this.loading ? `
-                    <div style="text-align: center; padding: 48px;">
-                        <div class="spinner" style="width: 32px; height: 32px; border: 3px solid rgba(255,255,255,0.1); border-top-color: var(--accent-primary); border-radius: 50%; animation: spin 1s infinite linear; margin: 0 auto 16px;"></div>
-                        <p style="color: var(--text-secondary);">Analyzing search competitors and market signals...</p>
-                    </div>
-                ` : this.renderTabContent()}
+            ${this.serpProviderMessage ? `
+                <div style="margin-bottom: 20px; padding: 12px 16px; background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 8px; font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; justify-content: space-between;">
+                    <span>ℹ️ ${this.escapeHtml(this.serpProviderMessage)}</span>
+                    <a href="/integrations" data-link style="color: var(--accent-primary, #3b82f6); text-decoration: none; font-weight: 600;">Manage Integrations &rarr;</a>
+                </div>
+            ` : ''}
+
+            <!-- TAB CONTENT -->
+            <div id="competitor-tab-content">
+                ${this.renderTabContent()}
             </div>
 
-            <!-- Modal for Manual Add / Edit -->
+            <!-- MODALS -->
             ${this.showModal ? this.renderModal() : ''}
-
-            <!-- Modal for Learning Competitor Discovery Pipeline Architecture -->
             ${this.showLearnModal ? this.renderLearnModal() : ''}
         `;
+
+        // Append Pagination Controls if slot exists
+        const sugSlot = this.container.querySelector('#suggested-pagination-slot');
+        if (sugSlot && this.suggestedCompetitors.length > 0) {
+            const pag = new Pagination({
+                totalItems: this.suggestedCompetitors.length,
+                currentPage: this.suggestedPage,
+                pageSize: this.pageSize,
+                onPageChange: (newPage) => {
+                    this.suggestedPage = newPage;
+                    this.renderState();
+                }
+            });
+            sugSlot.appendChild(pag.render());
+        }
+
+        const confSlot = this.container.querySelector('#confirmed-pagination-slot');
+        if (confSlot && this.confirmedCompetitors.length > 0) {
+            const pag = new Pagination({
+                totalItems: this.confirmedCompetitors.length,
+                currentPage: this.confirmedPage,
+                pageSize: this.pageSize,
+                onPageChange: (newPage) => {
+                    this.confirmedPage = newPage;
+                    this.renderState();
+                }
+            });
+            confSlot.appendChild(pag.render());
+        }
+
+        const gapSlot = this.container.querySelector('#gap-pagination-slot');
+        if (gapSlot && this.gapAnalysis && this.gapAnalysis.keyword_gap) {
+            const items = this.gapAnalysis.keyword_gap;
+            const pag = new Pagination({
+                totalItems: items.length,
+                currentPage: this.gapPage,
+                pageSize: this.pageSize,
+                onPageChange: (newPage) => {
+                    this.gapPage = newPage;
+                    this.renderState();
+                }
+            });
+            gapSlot.appendChild(pag.render());
+        }
 
         this.bindEvents();
     }
@@ -296,61 +357,67 @@ export class Competitors {
             `;
         }
 
+        const paginated = Pagination.paginateArray(this.suggestedCompetitors, this.suggestedPage, this.pageSize);
+        this.suggestedPage = paginated.currentPage;
+
         return `
-            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 20px;">
-                ${this.suggestedCompetitors.map(c => `
-                    <div class="card competitor-card" style="background: var(--bg-card, #1e293b); border: 1px solid var(--border-color, #334155); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; justify-content: space-between;">
-                        <div>
-                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-                                <div>
-                                    <h3 style="font-size: 16px; font-weight: 600; margin: 0 0 4px 0;">${this.escapeHtml(c.name)}</h3>
-                                    <a href="${this.escapeHtml(c.url)}" target="_blank" style="color: var(--accent-primary, #3b82f6); font-size: 13px; text-decoration: none;">${this.escapeHtml(c.domain)} &rarr;</a>
-                                </div>
-                                <span style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 20px;">
-                                    ${c.relevance_score}% Match
-                                </span>
-                            </div>
-
-                            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
-                                <span style="background: rgba(255, 255, 255, 0.06); font-size: 12px; color: var(--text-secondary); padding: 4px 8px; border-radius: 6px;">
-                                    📍 ${this.escapeHtml(c.location)}
-                                </span>
-                                <span style="background: rgba(59, 130, 246, 0.1); color: #60a5fa; font-size: 12px; padding: 4px 8px; border-radius: 6px;">
-                                    Level: ${this.escapeHtml(c.geographic_level)}
-                                </span>
-                            </div>
-
-                            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
-                                <div><strong style="color: var(--text-primary);">${c.keyword_overlap}</strong> Overlapping Keywords</div>
-                                <div><strong style="color: var(--text-primary);">${c.search_appearances}</strong> SERP Appearances</div>
-                            </div>
-
-                            ${c.competing_services && c.competing_services.length > 0 ? `
-                                <div style="margin-bottom: 16px;">
-                                    <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">Competing Services:</div>
-                                    <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-                                        ${c.competing_services.map(svc => `
-                                            <span style="font-size: 11px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px;">${this.escapeHtml(svc)}</span>
-                                        `).join('')}
+            <div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 20px; margin-bottom: 16px;">
+                    ${paginated.items.map(c => `
+                        <div class="card competitor-card" style="background: var(--bg-card, #1e293b); border: 1px solid var(--border-color, #334155); border-radius: 12px; padding: 20px; display: flex; flex-direction: column; justify-content: space-between;">
+                            <div>
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                                    <div>
+                                        <h3 style="font-size: 16px; font-weight: 600; margin: 0 0 4px 0;">${this.escapeHtml(c.name)}</h3>
+                                        <a href="${this.escapeHtml(c.url)}" target="_blank" style="color: var(--accent-primary, #3b82f6); font-size: 13px; text-decoration: none;">${this.escapeHtml(c.domain)} &rarr;</a>
                                     </div>
+                                    <span style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 20px;">
+                                        ${c.relevance_score}% Match
+                                    </span>
                                 </div>
-                            ` : ''}
 
-                            <div style="font-size: 12px; color: var(--text-tertiary, #94a3b8); margin-bottom: 16px;">
-                                Source: ${this.escapeHtml(c.discovery_source)}
+                                <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
+                                    <span style="background: rgba(255, 255, 255, 0.06); font-size: 12px; color: var(--text-secondary); padding: 4px 8px; border-radius: 6px;">
+                                        📍 ${this.escapeHtml(c.location)}
+                                    </span>
+                                    <span style="background: rgba(59, 130, 246, 0.1); color: #60a5fa; font-size: 12px; padding: 4px 8px; border-radius: 6px;">
+                                        Level: ${this.escapeHtml(c.geographic_level)}
+                                    </span>
+                                </div>
+
+                                <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
+                                    <div><strong style="color: var(--text-primary);">${c.keyword_overlap}</strong> Overlapping Keywords</div>
+                                    <div><strong style="color: var(--text-primary);">${c.search_appearances}</strong> SERP Appearances</div>
+                                </div>
+
+                                ${c.competing_services && c.competing_services.length > 0 ? `
+                                    <div style="margin-bottom: 16px;">
+                                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">Competing Services:</div>
+                                        <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                                            ${c.competing_services.map(svc => `
+                                                <span style="font-size: 11px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px;">${this.escapeHtml(svc)}</span>
+                                            `).join('')}
+                                        </div>
+                                    </div>
+                                ` : ''}
+
+                                <div style="font-size: 12px; color: var(--text-tertiary, #94a3b8); margin-bottom: 16px;">
+                                    Source: ${this.escapeHtml(c.discovery_source)}
+                                </div>
+                            </div>
+
+                            <div style="display: flex; gap: 10px; margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 14px;">
+                                <button class="btn btn-primary btn-approve" data-id="${c.id}" style="flex: 1; padding: 8px; font-size: 13px;">
+                                    + Add Competitor
+                                </button>
+                                <button class="btn btn-secondary btn-ignore" data-id="${c.id}" style="padding: 8px 12px; font-size: 13px; color: var(--text-secondary);">
+                                    Ignore
+                                </button>
                             </div>
                         </div>
-
-                        <div style="display: flex; gap: 10px; margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 14px;">
-                            <button class="btn btn-primary btn-approve" data-id="${c.id}" style="flex: 1; padding: 8px; font-size: 13px;">
-                                + Add Competitor
-                            </button>
-                            <button class="btn btn-secondary btn-ignore" data-id="${c.id}" style="padding: 8px 12px; font-size: 13px; color: var(--text-secondary);">
-                                Ignore
-                            </button>
-                        </div>
-                    </div>
-                `).join('')}
+                    `).join('')}
+                </div>
+                <div id="suggested-pagination-slot" style="background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border-color);"></div>
             </div>
         `;
     }
@@ -368,49 +435,55 @@ export class Competitors {
             `;
         }
 
+        const paginated = Pagination.paginateArray(this.confirmedCompetitors, this.confirmedPage, this.pageSize);
+        this.confirmedPage = paginated.currentPage;
+
         return `
-            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 20px;">
-                ${this.confirmedCompetitors.map(c => `
-                    <div class="card competitor-card" style="background: var(--bg-card, #1e293b); border: 1px solid ${c.is_primary ? 'var(--accent-primary, #3b82f6)' : 'var(--border-color, #334155)'}; border-radius: 12px; padding: 20px; position: relative;">
-                        ${c.is_primary ? `
-                            <span style="position: absolute; top: -10px; right: 16px; background: var(--accent-primary, #3b82f6); color: #fff; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 10px;">PRIMARY COMPETITOR</span>
-                        ` : ''}
+            <div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 20px; margin-bottom: 16px;">
+                    ${paginated.items.map(c => `
+                        <div class="card competitor-card" style="background: var(--bg-card, #1e293b); border: 1px solid ${c.is_primary ? 'var(--accent-primary, #3b82f6)' : 'var(--border-color, #334155)'}; border-radius: 12px; padding: 20px; position: relative;">
+                            ${c.is_primary ? `
+                                <span style="position: absolute; top: -10px; right: 16px; background: var(--accent-primary, #3b82f6); color: #fff; font-size: 11px; font-weight: 700; padding: 2px 10px; border-radius: 10px;">PRIMARY COMPETITOR</span>
+                            ` : ''}
 
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
-                            <div>
-                                <h3 style="font-size: 16px; font-weight: 600; margin: 0 0 4px 0;">${this.escapeHtml(c.name)}</h3>
-                                <a href="${this.escapeHtml(c.url)}" target="_blank" style="color: var(--accent-primary, #3b82f6); font-size: 13px; text-decoration: none;">${this.escapeHtml(c.domain)} &rarr;</a>
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                                <div>
+                                    <h3 style="font-size: 16px; font-weight: 600; margin: 0 0 4px 0;">${this.escapeHtml(c.name)}</h3>
+                                    <a href="${this.escapeHtml(c.url)}" target="_blank" style="color: var(--accent-primary, #3b82f6); font-size: 13px; text-decoration: none;">${this.escapeHtml(c.domain)} &rarr;</a>
+                                </div>
+                                <span style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 20px;">
+                                    ${c.relevance_score}% Relevance
+                                </span>
                             </div>
-                            <span style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 20px;">
-                                ${c.relevance_score}% Relevance
-                            </span>
-                        </div>
 
-                        <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
-                            <span style="background: rgba(255, 255, 255, 0.06); font-size: 12px; color: var(--text-secondary); padding: 4px 8px; border-radius: 6px;">
-                                📍 ${this.escapeHtml(c.location)}
-                            </span>
-                            <span style="background: rgba(16, 185, 129, 0.1); color: #10b981; font-size: 12px; padding: 4px 8px; border-radius: 6px;">
-                                Active Competitor
-                            </span>
-                        </div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
+                                <span style="background: rgba(255, 255, 255, 0.06); font-size: 12px; color: var(--text-secondary); padding: 4px 8px; border-radius: 6px;">
+                                    📍 ${this.escapeHtml(c.location)}
+                                </span>
+                                <span style="background: rgba(16, 185, 129, 0.1); color: #10b981; font-size: 12px; padding: 4px 8px; border-radius: 6px;">
+                                    Active Competitor
+                                </span>
+                            </div>
 
-                        <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
-                            <div><strong style="color: var(--text-primary);">${c.keyword_overlap}</strong> Keyword Overlap</div>
-                            <div><strong style="color: var(--text-primary);">${c.search_appearances}</strong> SERP Appearances</div>
-                        </div>
+                            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
+                                <div><strong style="color: var(--text-primary);">${c.keyword_overlap}</strong> Keyword Overlap</div>
+                                <div><strong style="color: var(--text-primary);">${c.search_appearances}</strong> SERP Appearances</div>
+                            </div>
 
-                        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 14px; gap: 8px;">
-                            <button class="btn btn-secondary btn-toggle-primary" data-id="${c.id}" style="font-size: 12px; padding: 6px 10px;">
-                                ${c.is_primary ? '★ Primary' : '☆ Set Primary'}
-                            </button>
-                            <div style="display: flex; gap: 6px;">
-                                <button class="btn btn-secondary btn-edit-comp" data-id="${c.id}" style="font-size: 12px; padding: 6px 10px;">Edit</button>
-                                <button class="btn btn-secondary btn-delete-comp" data-id="${c.id}" style="font-size: 12px; padding: 6px 10px; color: #ef4444;">Remove</button>
+                            <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 14px; gap: 8px;">
+                                <button class="btn btn-secondary btn-toggle-primary" data-id="${c.id}" style="font-size: 12px; padding: 6px 10px;">
+                                    ${c.is_primary ? '★ Primary' : '☆ Set Primary'}
+                                </button>
+                                <div style="display: flex; gap: 6px;">
+                                    <button class="btn btn-secondary btn-edit-comp" data-id="${c.id}" style="font-size: 12px; padding: 6px 10px;">Edit</button>
+                                    <button class="btn btn-secondary btn-delete-comp" data-id="${c.id}" style="font-size: 12px; padding: 6px 10px; color: #ef4444;">Remove</button>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                `).join('')}
+                    `).join('')}
+                </div>
+                <div id="confirmed-pagination-slot" style="background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border-color);"></div>
             </div>
         `;
     }
@@ -429,58 +502,65 @@ export class Competitors {
 
         const items = this.gapAnalysis.keyword_gap;
         const summary = this.gapAnalysis.summary || {};
+        const paginated = Pagination.paginateArray(items, this.gapPage, this.pageSize);
+        this.gapPage = paginated.currentPage;
 
         return `
-            <div style="display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap;">
-                <div style="flex: 1; min-width: 200px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 16px; border-radius: 8px;">
-                    <div style="font-size: 12px; color: var(--text-secondary);">Target Domain</div>
-                    <div style="font-size: 18px; font-weight: 700; color: var(--accent-primary);">${this.escapeHtml(this.gapAnalysis.target_domain)}</div>
+            <div>
+                <div style="display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap;">
+                    <div style="flex: 1; min-width: 200px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 16px; border-radius: 8px;">
+                        <div style="font-size: 12px; color: var(--text-secondary);">Target Domain</div>
+                        <div style="font-size: 18px; font-weight: 700; color: var(--accent-primary);">${this.escapeHtml(this.gapAnalysis.target_domain)}</div>
+                    </div>
+                    <div style="flex: 1; min-width: 200px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 16px; border-radius: 8px;">
+                        <div style="font-size: 12px; color: var(--text-secondary);">High-Impact Opportunities</div>
+                        <div style="font-size: 18px; font-weight: 700; color: #ef4444;">${summary.high_opportunity_keywords || 0} Keywords</div>
+                    </div>
+                    <div style="flex: 1; min-width: 200px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 16px; border-radius: 8px;">
+                        <div style="font-size: 12px; color: var(--text-secondary);">Shared Keywords</div>
+                        <div style="font-size: 18px; font-weight: 700; color: #10b981;">${summary.shared_keywords || 0} Keywords</div>
+                    </div>
                 </div>
-                <div style="flex: 1; min-width: 200px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 16px; border-radius: 8px;">
-                    <div style="font-size: 12px; color: var(--text-secondary);">High-Impact Opportunities</div>
-                    <div style="font-size: 18px; font-weight: 700; color: #ef4444;">${summary.high_opportunity_keywords || 0} Keywords</div>
-                </div>
-                <div style="flex: 1; min-width: 200px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 16px; border-radius: 8px;">
-                    <div style="font-size: 12px; color: var(--text-secondary);">Shared Keywords</div>
-                    <div style="font-size: 18px; font-weight: 700; color: #10b981;">${summary.shared_keywords || 0} Keywords</div>
-                </div>
-            </div>
 
-            <div class="table-container" style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; overflow-x: auto;">
-                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
-                    <thead>
-                        <tr style="border-bottom: 1px solid var(--border-color); background: rgba(0,0,0,0.2);">
-                            <th style="padding: 12px 16px;">Target Keyword</th>
-                            <th style="padding: 12px 16px;">Target Pos</th>
-                            <th style="padding: 12px 16px;">Competitor Pos</th>
-                            <th style="padding: 12px 16px;">Search Vol</th>
-                            <th style="padding: 12px 16px;">Difficulty</th>
-                            <th style="padding: 12px 16px;">Opportunity</th>
-                            <th style="padding: 12px 16px;">Recommended Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${items.map(row => `
-                            <tr style="border-bottom: 1px solid var(--border-color);">
-                                <td style="padding: 12px 16px; font-weight: 600; color: var(--text-primary);">${this.escapeHtml(row.keyword)}</td>
-                                <td style="padding: 12px 16px;">
-                                    ${row.target_position === 'Not Ranking' ? 
-                                        `<span style="color: #ef4444; font-weight: 600;">Not Ranking</span>` : 
-                                        `<strong style="color: #3b82f6;">#${row.target_position}</strong>`}
-                                </td>
-                                <td style="padding: 12px 16px;"><strong style="color: #10b981;">#${row.competitor_position}</strong></td>
-                                <td style="padding: 12px 16px;">${row.search_volume} / mo</td>
-                                <td style="padding: 12px 16px;">${row.keyword_difficulty}%</td>
-                                <td style="padding: 12px 16px;">
-                                    <span style="font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px; background: ${row.opportunity_level === 'HIGH' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)'}; color: ${row.opportunity_level === 'HIGH' ? '#ef4444' : '#f59e0b'};">
-                                        ${row.opportunity_level}
-                                    </span>
-                                </td>
-                                <td style="padding: 12px 16px; color: var(--text-secondary); font-size: 13px;">${this.escapeHtml(row.recommended_action)}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
+                <div class="table-container" style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden;">
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
+                            <thead>
+                                <tr style="border-bottom: 1px solid var(--border-color); background: rgba(0,0,0,0.2);">
+                                    <th style="padding: 12px 16px;">Target Keyword</th>
+                                    <th style="padding: 12px 16px;">Target Pos</th>
+                                    <th style="padding: 12px 16px;">Competitor Pos</th>
+                                    <th style="padding: 12px 16px;">Search Vol</th>
+                                    <th style="padding: 12px 16px;">Difficulty</th>
+                                    <th style="padding: 12px 16px;">Opportunity</th>
+                                    <th style="padding: 12px 16px;">Recommended Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${paginated.items.map(row => `
+                                    <tr style="border-bottom: 1px solid var(--border-color);">
+                                        <td style="padding: 12px 16px; font-weight: 600; color: var(--text-primary);">${this.escapeHtml(row.keyword)}</td>
+                                        <td style="padding: 12px 16px;">
+                                            ${row.target_position === 'Not Ranking' ? 
+                                                `<span style="color: #ef4444; font-weight: 600;">Not Ranking</span>` : 
+                                                `<strong style="color: #3b82f6;">#${row.target_position}</strong>`}
+                                        </td>
+                                        <td style="padding: 12px 16px;"><strong style="color: #10b981;">#${row.competitor_position}</strong></td>
+                                        <td style="padding: 12px 16px;">${row.search_volume} / mo</td>
+                                        <td style="padding: 12px 16px;">${row.keyword_difficulty}%</td>
+                                        <td style="padding: 12px 16px;">
+                                            <span style="font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px; background: ${row.opportunity_level === 'HIGH' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)'}; color: ${row.opportunity_level === 'HIGH' ? '#ef4444' : '#f59e0b'};">
+                                                ${row.opportunity_level}
+                                            </span>
+                                        </td>
+                                        <td style="padding: 12px 16px; color: var(--text-secondary); font-size: 13px;">${this.escapeHtml(row.recommended_action)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="gap-pagination-slot"></div>
+                </div>
             </div>
         `;
     }
@@ -558,23 +638,12 @@ export class Competitors {
 
                     <div style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 20px;">
                         <p style="margin-bottom: 12px;">
-                            Our platform strictly enforces <strong>Real Data Only</strong>. AI reasoning (such as Groq or Gemini) is used to classify and analyze real evidence, but it cannot manufacture fake Google rankings or fake competitor domains out of thin air.
+                            Our platform analyzes search engine results pages (SERPs) and website content overlap to discover businesses competing for the exact same target keywords in your market.
                         </p>
-                        
-                        <div style="background: rgba(0,0,0,0.25); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
-                            <strong style="color: var(--text-primary); font-size: 14px; display: block; margin-bottom: 8px;">Competitor Discovery Pipeline:</strong>
-                            <ol style="margin: 0; padding-left: 20px; space-y: 6px;">
-                                <li><strong>Real Website Crawl:</strong> Extracts your page titles, H1 headings, content topics, and keywords.</li>
-                                <li><strong>Market Signal Extraction:</strong> Identifies target keywords and service themes.</li>
-                                <li><strong>SERP Data Provider:</strong> Queries real Google/search engine result rankings for those target keywords.</li>
-                                <li><strong>Candidate Domain Extraction:</strong> Filters your own domain, deduplicates ranking sites, and calculates SERP overlap frequency.</li>
-                                <li><strong>AI Classification (Groq):</strong> Evaluates real candidate domains against your topics to label Direct vs. Indirect competitors, Directories, or Marketplaces.</li>
-                            </ol>
-                        </div>
                     </div>
 
-                    <div style="display: flex; justify-content: flex-end; gap: 12px;">
-                        <button type="button" id="btn-dismiss-learn-modal" class="btn btn-primary btn-sm">Got It</button>
+                    <div style="text-align: right;">
+                        <button id="btn-dismiss-learn-modal" class="btn btn-primary btn-sm">Got It</button>
                     </div>
                 </div>
             </div>
@@ -584,90 +653,93 @@ export class Competitors {
     bindEvents() {
         if (!this.container) return;
 
-        const btnAuto = this.container.querySelector('#btn-auto-discover');
-        if (btnAuto) {
-            btnAuto.addEventListener('click', () => this.runAutoDiscovery());
-        }
-
-        const btnScan = this.container.querySelector('#btn-scan-serps');
-        if (btnScan) {
-            btnScan.addEventListener('click', () => this.runAutoDiscovery());
-        }
-
-        const btnAdd = this.container.querySelector('#btn-add-manual');
-        if (btnAdd) {
-            btnAdd.addEventListener('click', () => {
-                this.editingCompetitor = null;
-                this.showModal = true;
-                this.renderState();
-            });
-        }
-
-        const btnLearn = this.container.querySelector('#btn-learn-discovery');
-        if (btnLearn) {
-            btnLearn.addEventListener('click', () => {
-                this.showLearnModal = true;
-                this.renderState();
-            });
-        }
-
-        const btnCloseLearn = this.container.querySelector('#btn-close-learn-modal');
-        if (btnCloseLearn) {
-            btnCloseLearn.addEventListener('click', () => {
-                this.showLearnModal = false;
-                this.renderState();
-            });
-        }
-
-        const btnDismissLearn = this.container.querySelector('#btn-dismiss-learn-modal');
-        if (btnDismissLearn) {
-            btnDismissLearn.addEventListener('click', () => {
-                this.showLearnModal = false;
-                this.renderState();
-            });
-        }
-
-        const tabBtns = this.container.querySelectorAll('.tab-btn');
-        tabBtns.forEach(btn => {
-            btn.addEventListener('click', (e) => {
+        this.container.querySelectorAll('.comp-tab').forEach(tab => {
+            tab.addEventListener('click', (e) => {
                 const targetTab = e.currentTarget.getAttribute('data-tab');
-                if (targetTab) {
+                if (targetTab && targetTab !== this.activeTab) {
                     this.activeTab = targetTab;
                     this.renderState();
                 }
             });
         });
 
-        const approveBtns = this.container.querySelectorAll('.btn-approve');
-        approveBtns.forEach(btn => {
+        this.container.querySelector('#btn-learn-discovery')?.addEventListener('click', () => {
+            this.showLearnModal = true;
+            this.renderState();
+        });
+
+        this.container.querySelector('#btn-close-learn-modal')?.addEventListener('click', () => {
+            this.showLearnModal = false;
+            this.renderState();
+        });
+
+        this.container.querySelector('#btn-dismiss-learn-modal')?.addEventListener('click', () => {
+            this.showLearnModal = false;
+            this.renderState();
+        });
+
+        this.container.querySelector('#btn-auto-discover')?.addEventListener('click', () => this.runAutoDiscovery());
+        this.container.querySelector('#btn-scan-serps')?.addEventListener('click', () => this.runAutoDiscovery());
+
+        this.container.querySelector('#btn-add-manual')?.addEventListener('click', () => {
+            this.editingCompetitor = null;
+            this.showModal = true;
+            this.renderState();
+        });
+
+        this.container.querySelector('#btn-close-modal')?.addEventListener('click', () => {
+            this.showModal = false;
+            this.editingCompetitor = null;
+            this.renderState();
+        });
+
+        this.container.querySelector('#btn-cancel-modal')?.addEventListener('click', () => {
+            this.showModal = false;
+            this.editingCompetitor = null;
+            this.renderState();
+        });
+
+        const form = this.container.querySelector('#form-competitor');
+        if (form) {
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const formData = {
+                    name: form.name.value.trim(),
+                    url: form.url.value.trim(),
+                    location: form.location.value.trim() || 'Local Market',
+                    geographic_level: form.geographic_level.value,
+                    is_primary: form.is_primary.checked,
+                    notes: form.notes.value.trim()
+                };
+                this.handleSaveCompetitor(formData);
+            });
+        }
+
+        this.container.querySelectorAll('.btn-approve').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const id = e.currentTarget.getAttribute('data-id');
                 if (id) this.approveCompetitor(id);
             });
         });
 
-        const ignoreBtns = this.container.querySelectorAll('.btn-ignore');
-        ignoreBtns.forEach(btn => {
+        this.container.querySelectorAll('.btn-ignore').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const id = e.currentTarget.getAttribute('data-id');
                 if (id) this.ignoreCompetitor(id);
             });
         });
 
-        const primaryBtns = this.container.querySelectorAll('.btn-toggle-primary');
-        primaryBtns.forEach(btn => {
+        this.container.querySelectorAll('.btn-toggle-primary').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const id = e.currentTarget.getAttribute('data-id');
-                const comp = this.confirmedCompetitors.find(c => c.id === id);
-                if (comp) this.togglePrimary(comp);
+                if (id) this.togglePrimary(id);
             });
         });
 
-        const editBtns = this.container.querySelectorAll('.btn-edit-comp');
-        editBtns.forEach(btn => {
+        this.container.querySelectorAll('.btn-edit-comp').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const id = e.currentTarget.getAttribute('data-id');
-                const comp = this.confirmedCompetitors.find(c => c.id === id);
+                const comp = this.confirmedCompetitors.find(c => String(c.id) === String(id));
                 if (comp) {
                     this.editingCompetitor = comp;
                     this.showModal = true;
@@ -676,69 +748,16 @@ export class Competitors {
             });
         });
 
-        const deleteBtns = this.container.querySelectorAll('.btn-delete-comp');
-        deleteBtns.forEach(btn => {
+        this.container.querySelectorAll('.btn-delete-comp').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const id = e.currentTarget.getAttribute('data-id');
                 if (id) this.deleteCompetitor(id);
             });
         });
-
-        const btnClose = this.container.querySelector('#btn-close-modal');
-        if (btnClose) {
-            btnClose.addEventListener('click', () => {
-                this.showModal = false;
-                this.renderState();
-            });
-        }
-        const btnCancel = this.container.querySelector('#btn-cancel-modal');
-        if (btnCancel) {
-            btnCancel.addEventListener('click', () => {
-                this.showModal = false;
-                this.renderState();
-            });
-        }
-
-        const formComp = this.container.querySelector('#form-competitor');
-        if (formComp) {
-            formComp.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const formData = new FormData(formComp);
-                const payload = {
-                    name: formData.get('name'),
-                    url: formData.get('url'),
-                    location: formData.get('location'),
-                    geographic_level: formData.get('geographic_level'),
-                    is_primary: formData.get('is_primary') === 'on',
-                    notes: formData.get('notes')
-                };
-
-                const currentProject = projectStore.getCurrentProject();
-                if (!currentProject) return;
-
-                try {
-                    if (this.editingCompetitor && this.editingCompetitor.id) {
-                        await apiClient.put(`/api/projects/${currentProject.id}/competitors/${this.editingCompetitor.id}`, payload);
-                    } else {
-                        await apiClient.post(`/api/projects/${currentProject.id}/competitors`, payload);
-                    }
-                    this.showModal = false;
-                    this.activeTab = 'confirmed';
-                    await this.loadData();
-                } catch (err) {
-                    alert('Error saving competitor: ' + err.message);
-                }
-            });
-        }
     }
 
     escapeHtml(str) {
         if (!str) return '';
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 }

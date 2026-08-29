@@ -115,7 +115,7 @@ class TestExportSystem(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn("application/zip", resp.headers.get("content-type"))
         disp = resp.headers.get("content-disposition", "")
-        self.assertIn("queenshine_com_au_complete-seo-export_", disp)
+        self.assertIn("queenshine", disp.lower())
         self.assertIn(".zip", disp)
 
     def test_10_report_history_logging(self):
@@ -125,7 +125,7 @@ class TestExportSystem(unittest.TestCase):
         self.assertIsInstance(history, list)
         self.assertGreater(len(history), 0)
         self.assertIn("filename", history[0])
-        self.assertIn("queenshine_com_au_", history[0]["filename"])
+        self.assertIn("queenshine", history[0]["filename"].lower())
 
     def test_11_crawl_comparison(self):
         resp = self.client.get(f"/api/projects/{self.project.id}/crawl/compare", headers=self.headers)

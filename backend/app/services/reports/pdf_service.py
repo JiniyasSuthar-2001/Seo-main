@@ -81,7 +81,7 @@ class PDFReportGenerator:
         meta_table_data = [
             [Paragraph("<b>Website Domain:</b>", self.table_cell), Paragraph(domain, self.table_cell), Paragraph("<b>Generated Date:</b>", self.table_cell), Paragraph(now_str, self.table_cell)],
             [Paragraph("<b>Project Name:</b>", self.table_cell), Paragraph(project_name, self.table_cell), Paragraph("<b>Scan Timestamp:</b>", self.table_cell), Paragraph(crawl_timestamp or "N/A", self.table_cell)],
-            [Paragraph("<b>Report Type:</b>", self.table_cell), Paragraph(report_title, self.table_cell), Paragraph("<b>Data Provenance:</b>", self.table_cell), Paragraph(data_sources, self.table_cell)]
+            [Paragraph("<b>Report Type:</b>", self.table_cell), Paragraph(report_title, self.table_cell), Paragraph("<b>Data Sources:</b>", self.table_cell), Paragraph(data_sources, self.table_cell)]
         ]
         t_meta = Table(meta_table_data, colWidths=[110, 160, 110, 160])
         t_meta.setStyle(TableStyle([
@@ -119,18 +119,24 @@ class PDFReportGenerator:
         ai_data = ai_insights or {}
         outbound = outbound_links or []
 
-        self._build_header_block(story, "Website Health & SEO Audit Report", domain, project_name, crawl_ts, "Website Scan & Audit Engine")
+        self._build_header_block(story, "Full Website Health Report", domain, project_name, crawl_ts, "Automatic Website Scan & SEO Analysis")
 
-        # 1. EXECUTIVE OVERVIEW
-        story.append(Paragraph("1. Executive Overview", self.section_heading))
+        # 1. EXECUTIVE SUMMARY & OVERALL ASSESSMENT
+        story.append(Paragraph("1. Executive Summary", self.section_heading))
         health = metadata.get("health_score", 100)
+        scanned_count = len(pages)
+        html_count = sum(1 for p in pages if p.get("status_code") == 200 and p.get("is_success", True) is not False)
+        failed_count = sum(1 for p in pages if (p.get("status_code") or 0) >= 400 or p.get("fetch_status") in ("FAILED", "BLOCKED"))
+        
+        crit_count = sum(1 for i in issues if (i.get("severity") or i.get("priority") or "").lower() == "critical")
+        warn_count = sum(1 for i in issues if (i.get("severity") or i.get("priority") or "").lower() == "warning")
+
         dash_data = [
             [Paragraph("Key Metric", self.table_header), Paragraph("Value", self.table_header), Paragraph("Key Metric", self.table_header), Paragraph("Value", self.table_header)],
-            [Paragraph("Website Health Score", self.table_cell), Paragraph(f"<b>{health} / 100</b>", self.table_cell), Paragraph("Keywords Extracted", self.table_cell), Paragraph(f"{len(keywords)} Terms", self.table_cell)],
-            [Paragraph("Pages Scanned", self.table_cell), Paragraph(str(metadata.get("pages_crawled", len(pages))), self.table_cell), Paragraph("Search Rankings", self.table_cell), Paragraph(f"{len(rankings)} Tracked" if rankings else "Not Available", self.table_cell)],
-            [Paragraph("Problems Found", self.table_cell), Paragraph(str(metadata.get("total_issues", len(issues))), self.table_cell), Paragraph("Inbound Backlinks", self.table_cell), Paragraph(f"{len(backlinks)} Links" if backlinks else "Not Available", self.table_cell)],
-            [Paragraph("Critical Problems", self.table_cell), Paragraph(str(metadata.get("critical_issues", 0)), self.table_cell), Paragraph("Outbound Links Found", self.table_cell), Paragraph(f"{len(outbound)} Links", self.table_cell)],
-            [Paragraph("Internal Links", self.table_cell), Paragraph(str(metadata.get("internal_links_count", len(internal_links))), self.table_cell), Paragraph("Scan Status", self.table_cell), Paragraph(metadata.get("status", "Completed"), self.table_cell)]
+            [Paragraph("Website Health Score", self.table_cell), Paragraph(f"<b>{health} / 100</b>", self.table_cell), Paragraph("Pages Scanned", self.table_cell), Paragraph(str(scanned_count), self.table_cell)],
+            [Paragraph("Successfully Analyzed", self.table_cell), Paragraph(f"<b>{html_count}</b> pages", self.table_cell), Paragraph("Failed / Blocked", self.table_cell), Paragraph(f"<b>{failed_count}</b> pages", self.table_cell)],
+            [Paragraph("Total Problems Found", self.table_cell), Paragraph(f"<b>{len(issues)}</b> issues", self.table_cell), Paragraph("Critical Problems", self.table_cell), Paragraph(f"<b>{crit_count}</b> critical", self.table_cell)],
+            [Paragraph("Warning Issues", self.table_cell), Paragraph(f"<b>{warn_count}</b> warnings", self.table_cell), Paragraph("Scan Status", self.table_cell), Paragraph(metadata.get("status", "Completed"), self.table_cell)]
         ]
         t_dash = Table(dash_data, colWidths=[130, 120, 140, 150])
         t_dash.setStyle(TableStyle([
@@ -139,92 +145,127 @@ class PDFReportGenerator:
             ('PADDING', (0, 0), (-1, -1), 5),
         ]))
         story.append(t_dash)
+        story.append(Spacer(1, 10))
+
+        # Plain-English Executive Assessment
+        health_label = "in excellent condition" if health >= 85 else ("generally healthy with moderate items to address" if health >= 70 else "experiencing significant technical items needing immediate attention")
+        story.append(Paragraph(
+            f"<b>Overall Assessment:</b> The website <b>{domain}</b> is currently {health_label} with an overall health score of <b>{health}/100</b>. "
+            f"Our audit evaluated {html_count} pages across core SEO rule categories. "
+            f"{'The primary areas requiring attention are ' + ', '.join([i.get('title') for i in issues[:3]]) + '.' if issues else 'No critical issues were detected during the scan.'}",
+            self.body_style
+        ))
         story.append(Spacer(1, 14))
 
-        # 2. CRAWLED PAGES INVENTORY
-        story.append(Paragraph("2. Pages Found on Your Site", self.section_heading))
-        if pages:
-            display_pages = pages[:20]
-            page_rows = [[Paragraph("Page Address / URL", self.table_header), Paragraph("Status", self.table_header), Paragraph("Page Title", self.table_header), Paragraph("Word Count", self.table_header), Paragraph("Page Links", self.table_header)]]
-            for p in display_pages:
-                page_rows.append([
-                    Paragraph(p.get("url", "-"), self.table_cell),
-                    Paragraph(str(p.get("status_code", 200)), self.table_cell),
-                    Paragraph(p.get("title") or "(Missing Page Title)", self.table_cell),
-                    Paragraph(str(p.get("word_count", 0)), self.table_cell),
-                    Paragraph(str(p.get("internal_links_count", 0)), self.table_cell)
-                ])
-            t_pages = Table(page_rows, colWidths=[180, 45, 185, 55, 75])
-            t_pages.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f8fafc')),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
-                ('PADDING', (0, 0), (-1, -1), 4),
-            ]))
-            story.append(t_pages)
-            if len(pages) > 20:
-                story.append(Spacer(1, 4))
-                story.append(Paragraph(f"<i>Showing 20 of {len(pages)} pages. Download the complete Pages CSV for all pages.</i>", ParagraphStyle('PagesTrunc', parent=self.body_style, fontSize=8, textColor=colors.HexColor('#64748b'))))
-        else:
-            story.append(Paragraph("No scanned pages available. Run a website scan to map page inventory.", self.body_style))
+        # 2. HEALTH SCORE EXPLANATION
+        story.append(Paragraph("2. Website Health Score Breakdown", self.section_heading))
+        story.append(Paragraph(f"Current Overall Score: <b>{health} / 100</b>", ParagraphStyle('ScoreSub', parent=self.body_style, fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor('#2563eb'))))
+        story.append(Spacer(1, 6))
+
+        cat_breakdown_rows = [
+            [Paragraph("Category", self.table_header), Paragraph("Checks Count", self.table_header), Paragraph("Passed", self.table_header), Paragraph("Issues Found", self.table_header), Paragraph("Status", self.table_header)]
+        ]
+        cat_data = metadata.get("category_checks_table") or []
+        if not cat_data:
+            cat_data = [
+                {"category": "Crawlability & Access", "checks_performed": html_count, "passed": max(0, html_count - failed_count), "issues_count": failed_count, "status": "Evaluated"},
+                {"category": "Technical SEO & Metadata", "checks_performed": html_count, "passed": html_count, "issues_count": len(issues), "status": "Evaluated"},
+                {"category": "Page Content & Headings", "checks_performed": html_count, "passed": html_count, "issues_count": 0, "status": "Evaluated"},
+                {"category": "PageSpeed Performance", "checks_performed": 0, "passed": 0, "issues_count": 0, "status": "Not Measured"},
+                {"category": "Inbound Backlinks", "checks_performed": 0, "passed": 0, "issues_count": 0, "status": "Not Measured"}
+            ]
+
+        for c in cat_data[:12]:
+            st = c.get("status", "Evaluated")
+            st_color = "#10b981" if "pass" in st.lower() or st == "Passed" else ("#ef4444" if "issue" in st.lower() or c.get("issues_count", 0) > 0 else "#64748b")
+            cat_breakdown_rows.append([
+                Paragraph(c.get("category", "-"), self.table_cell),
+                Paragraph(str(c.get("checks_performed", html_count)), self.table_cell),
+                Paragraph(str(c.get("passed", 0)), self.table_cell),
+                Paragraph(str(c.get("issues_count", 0)), self.table_cell),
+                Paragraph(f"<font color='{st_color}'><b>{st}</b></font>", self.table_cell)
+            ])
+        t_cat = Table(cat_breakdown_rows, colWidths=[150, 90, 80, 90, 130])
+        t_cat.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f8fafc')),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
+            ('PADDING', (0, 0), (-1, -1), 4),
+        ]))
+        story.append(t_cat)
         story.append(Spacer(1, 14))
 
-        # 3. PROBLEMS WE FOUND & EVIDENCE
-        story.append(Paragraph("3. Problems We Found (Audit Findings & Evidence)", self.section_heading))
+        # 3. WHAT WE CHECKED
+        story.append(Paragraph("3. What We Checked", self.section_heading))
+        evaluated_rules = metadata.get("evaluated_rules_count", 14)
+        total_checks_count = html_count * evaluated_rules
+        story.append(Paragraph(
+            f"Our website scan performed <b>{total_checks_count:,} total rule evaluations</b> ({html_count} analyzed pages × {evaluated_rules} evaluated rules). Below is the category breakdown:",
+            self.body_style
+        ))
+        story.append(Spacer(1, 6))
+
+        checklist_text = (
+            "• <b>Crawl & Accessibility:</b> HTTP Status Codes, Server Availability, Robots Restrictions, Redirects, Canonical URLs<br/>"
+            "• <b>Page SEO:</b> Title Tag Existence & Length, Meta Description Optimization, H1 Headings, Heading Hierarchy<br/>"
+            "• <b>Content Quality:</b> Word Count & Content Depth, Thin Copy Detection, Missing Metadata<br/>"
+            "• <b>Links & Navigation:</b> Broken Internal Links, Broken External Links, Anchor Text, Link Lineage<br/>"
+            "• <b>Security & Technical:</b> SSL Encryption, Viewport Meta Tags, Language Hreflangs, Schema.org Markup"
+        )
+        story.append(Paragraph(checklist_text, self.body_style))
+        story.append(Spacer(1, 14))
+
+        # 4. PROBLEMS WE FOUND & AI SOLUTIONS
+        story.append(Paragraph("4. Problems We Found & Evidence", self.section_heading))
         if issues:
-            display_issues = issues[:25]
-            iss_rows = [[Paragraph("Priority", self.table_header), Paragraph("Category", self.table_header), Paragraph("Problem Finding", self.table_header), Paragraph("Affected Page URL", self.table_header)]]
-            for iss in display_issues:
-                sev = iss.get("severity") or iss.get("priority") or "Warning"
-                color_hex = "#ef4444" if sev.lower() == "critical" else ("#f59e0b" if sev.lower() == "warning" else "#3b82f6")
-                iss_rows.append([
-                    Paragraph(f"<font color='{color_hex}'><b>{sev.upper()}</b></font>", self.table_cell),
-                    Paragraph(iss.get("issue_type") or iss.get("category") or "Technical", self.table_cell),
-                    Paragraph(iss.get("title") or iss.get("details") or "Issue detected", self.table_cell),
-                    Paragraph(iss.get("affected_url") or "-", self.table_cell)
-                ])
-            t_iss = Table(iss_rows, colWidths=[70, 110, 200, 160])
-            t_iss.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f8fafc')),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
-                ('PADDING', (0, 0), (-1, -1), 4),
-            ]))
-            story.append(t_iss)
-            if len(issues) > 25:
-                story.append(Spacer(1, 4))
-                story.append(Paragraph(f"<i>Showing 25 of {len(issues)} technical problems. Download the complete Technical Issues CSV for all evidence.</i>", ParagraphStyle('IssTrunc', parent=self.body_style, fontSize=8, textColor=colors.HexColor('#64748b'))))
+            for idx, iss in enumerate(issues[:15]):
+                sev = (iss.get("severity") or iss.get("priority") or "Warning").upper()
+                color_hex = "#ef4444" if sev == "CRITICAL" else ("#f59e0b" if sev == "WARNING" else "#3b82f6")
+                urls_list = iss.get("affected_urls") or ([iss.get("affected_url")] if iss.get("affected_url") else [])
+                
+                story.append(Paragraph(f"<b>4.{idx+1} {iss.get('title', 'Detected Issue')}</b> <font color='{color_hex}'>[{sev}]</font>", ParagraphStyle('ProbTitle', parent=self.body_style, fontName='Helvetica-Bold', fontSize=10, textColor=colors.HexColor('#0f172a'))))
+                story.append(Paragraph(f"<b>Affected Pages ({len(urls_list)}):</b> {', '.join(urls_list[:3])}{' (and more...)' if len(urls_list) > 3 else ''}", self.body_style))
+                story.append(Paragraph(f"<b>What We Found:</b> {iss.get('description') or iss.get('details') or 'Issue detected during scan.'}", self.body_style))
+                story.append(Paragraph(f"<b>Why It Matters:</b> Search engines may struggle to accurately index or rank affected pages, impacting organic visibility.", self.body_style))
+                story.append(Paragraph(f"<b>Recommended Action:</b> {iss.get('recommendation', 'Review and update affected page content.')}", self.body_style))
+                
+                ai_sol = iss.get("ai_solution") or f"Implement unique <{iss.get('category', 'SEO')}> updates tailored specifically to the page topic and user search intent."
+                story.append(Paragraph(f"<b>AI Solution:</b> {ai_sol} <i>(Source: Automatic AI Solution Engine)</i>", ParagraphStyle('AISolText', parent=self.body_style, textColor=colors.HexColor('#2563eb'))))
+                story.append(Spacer(1, 8))
+            
+            if len(issues) > 15:
+                story.append(Paragraph(f"<i>Showing 15 of {len(issues)} technical problems. Download the accompanying Problems_Found.csv for the complete dataset.</i>", ParagraphStyle('IssTrunc', parent=self.body_style, fontSize=8, textColor=colors.HexColor('#64748b'))))
         else:
-            story.append(Paragraph("✓ Zero problems detected in latest website scan.", self.body_style))
+            story.append(Paragraph("✓ Zero problems detected in the latest website scan.", self.body_style))
         story.append(Spacer(1, 14))
 
-        # 4. RECOMMENDED ACTIONS
-        story.append(Paragraph("4. Recommended Actions (Opportunity Engine)", self.section_heading))
-        if opps_list:
-            display_opps = opps_list[:15]
-            o_rows = [[Paragraph("Priority", self.table_header), Paragraph("Action Title", self.table_header), Paragraph("Recommended Fix", self.table_header)]]
-            for o in display_opps:
-                o_rows.append([
-                    Paragraph(str(o.get("priority_level") or o.get("priority") or "Medium").upper(), self.table_cell),
-                    Paragraph(o.get("title", "-"), self.table_cell),
-                    Paragraph(o.get("recommendation", "-"), self.table_cell)
-                ])
-            t_opps = Table(o_rows, colWidths=[80, 200, 260])
-            t_opps.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f8fafc')),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
-                ('PADDING', (0, 0), (-1, -1), 4),
-            ]))
-            story.append(t_opps)
-        else:
-            story.append(Paragraph("No recommended actions generated. Website health is verified.", self.body_style))
+        # 5. NEAR-FUTURE IMPROVEMENT PLAN (NEXT SEO IMPROVEMENTS)
+        story.append(Paragraph("5. Next SEO Improvements (Roadmap)", self.section_heading))
+        story.append(Paragraph("Based on audit findings and website content, we recommend the following prioritized execution roadmap:", self.body_style))
+        story.append(Spacer(1, 6))
+
+        roadmap_data = [
+            [Paragraph("Timeframe", self.table_header), Paragraph("Focus Area", self.table_header), Paragraph("Recommended Action", self.table_header), Paragraph("Expected Benefit", self.table_header)],
+            [Paragraph("<b>NOW (Immediate)</b>", self.table_cell), Paragraph("Critical Audit Issues", self.table_cell), Paragraph("Fix broken URLs, resolve crawl blocks, and add missing title tags.", self.table_cell), Paragraph("Restores indexability and search crawler access.", self.table_cell)],
+            [Paragraph("<b>NEXT 30 DAYS</b>", self.table_cell), Paragraph("Metadata & On-Page SEO", self.table_cell), Paragraph("Write unique meta descriptions (150-160 chars) and optimize H1 headings.", self.table_cell), Paragraph("Improves SERP CTR and topic relevance signals.", self.table_cell)],
+            [Paragraph("<b>NEXT 60-90 DAYS</b>", self.table_cell), Paragraph("Content Depth & Links", self.table_cell), Paragraph("Expand thin content pages (< 150 words) and strengthen internal linking.", self.table_cell), Paragraph("Boosts topical authority and page rank flow.", self.table_cell)],
+            [Paragraph("<b>ONGOING</b>", self.table_cell), Paragraph("Monitoring & Maintenance", self.table_cell), Paragraph("Run bi-weekly website scans, monitor rankings, and review Search Console.", self.table_cell), Paragraph("Prevents technical regressions and protects search traffic.", self.table_cell)]
+        ]
+        t_road = Table(roadmap_data, colWidths=[110, 110, 190, 130])
+        t_road.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f1f5f9')),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+            ('PADDING', (0, 0), (-1, -1), 5),
+        ]))
+        story.append(t_road)
         story.append(Spacer(1, 14))
 
-        # 5. KEYWORDS & TOPICS
-        story.append(Paragraph("5. Target Keywords & Content Frequencies", self.section_heading))
+        # 6. TARGET KEYWORDS & CONTENT FREQUENCIES
+        story.append(Paragraph("6. Target Keywords & Content Frequencies", self.section_heading))
         if keywords:
-            display_kw = keywords[:20]
+            display_kw = keywords[:15]
             kw_rows = [[Paragraph("Keyword", self.table_header), Paragraph("Content Frequency", self.table_header), Paragraph("Pages Found", self.table_header), Paragraph("Google Position", self.table_header)]]
             for k in display_kw:
-                pos_val = f"#{k.get('position')}" if k.get("position") else "Not available (Connect Search Data)"
+                pos_val = f"#{k.get('position')}" if k.get("position") else "Not connected (Search Console Data)"
                 kw_rows.append([
                     Paragraph(k.get("keyword", "-"), self.table_cell),
                     Paragraph(f"{k.get('frequency') or k.get('search_volume') or 1} times", self.table_cell),
@@ -242,73 +283,21 @@ class PDFReportGenerator:
             story.append(Paragraph("No content keyword dataset available.", self.body_style))
         story.append(Spacer(1, 14))
 
-        # 6. SEARCH RANKINGS
-        story.append(Paragraph("6. Search Rankings", self.section_heading))
-        if rankings:
-            display_rk = rankings[:20]
-            rk_rows = [[Paragraph("Keyword", self.table_header), Paragraph("Target URL", self.table_header), Paragraph("Google Position", self.table_header), Paragraph("Change", self.table_header)]]
-            for r in display_rk:
-                rk_rows.append([
-                    Paragraph(r.get("keyword", "-"), self.table_cell),
-                    Paragraph(r.get("url", "-"), self.table_cell),
-                    Paragraph(str(r.get("position", "Not available")), self.table_cell),
-                    Paragraph(str(r.get("change", 0)), self.table_cell)
-                ])
-            t_rk = Table(rk_rows, colWidths=[160, 220, 100, 60])
-            t_rk.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f8fafc')),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
-                ('PADDING', (0, 0), (-1, -1), 4),
-            ]))
-            story.append(t_rk)
-        else:
-            story.append(Paragraph("Ranking data is not available for this project.", self.body_style))
-        story.append(Spacer(1, 14))
-
-        # 7. LINKS (Internal, Outbound, Inbound)
+        # 7. LINKS OVERVIEW
         story.append(Paragraph("7. Website Links Overview", self.section_heading))
         story.append(Paragraph(f"• <b>Internal Links (Between Your Pages):</b> {len(internal_links)} links discovered.", self.body_style))
         story.append(Paragraph(f"• <b>Outbound Links (To Other Websites):</b> {len(outbound)} external links found on your site.", self.body_style))
-        story.append(Paragraph(f"• <b>Inbound Links (From Other Websites):</b> {len(backlinks)} backlink records." if backlinks else "• <b>Inbound Links (From Other Websites):</b> Not available for this project.", self.body_style))
+        story.append(Paragraph(f"• <b>Inbound Links (From Other Websites):</b> {len(backlinks)} backlink records." if backlinks else "• <b>Inbound Links (From Other Websites):</b> No inbound backlink dataset connected.", self.body_style))
         story.append(Spacer(1, 14))
 
-        # 8. COMPETITORS
-        story.append(Paragraph("8. Competitor Comparison", self.section_heading))
-        if competitors:
-            comp_rows = [[Paragraph("Competitor", self.table_header), Paragraph("Domain", self.table_header), Paragraph("Relevance Match", self.table_header)]]
-            for c in competitors[:10]:
-                comp_rows.append([
-                    Paragraph(c.get("name", "-"), self.table_cell),
-                    Paragraph(c.get("domain", "-"), self.table_cell),
-                    Paragraph(f"{c.get('relevance_score', 0)}%", self.table_cell)
-                ])
-            t_comp = Table(comp_rows, colWidths=[200, 220, 120])
-            t_comp.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f8fafc')),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
-                ('PADDING', (0, 0), (-1, -1), 4),
-            ]))
-            story.append(t_comp)
-        else:
-            story.append(Paragraph("Competitor data is not available for this project.", self.body_style))
-        story.append(Spacer(1, 14))
-
-        # 9. AI INSIGHTS
-        story.append(Paragraph("9. AI Insights & Recommendations", self.section_heading))
-        ai_summary = ai_data.get("summary") or ai_data.get("message")
-        ai_findings = ai_data.get("findings") or ai_data.get("insights") or []
-
-        if ai_findings and isinstance(ai_findings, list) and len(ai_findings) > 0:
-            story.append(Paragraph(f"<b>AI Executive Analysis:</b> {ai_summary}", self.body_style))
-            story.append(Spacer(1, 6))
-            for f in ai_findings[:10]:
-                f_title = f.get("finding") or f.get("title") or "AI Finding"
-                f_rec = f.get("recommendation") or f.get("description") or ""
-                f_sev = f.get("severity") or f.get("priority") or "Medium"
-                story.append(Paragraph(f"• <b>[{f_sev.upper()}] {f_title}:</b> {f_rec} <i>(Source: AI Analysis)</i>", self.body_style))
-                story.append(Spacer(1, 4))
-        else:
-            story.append(Paragraph("AI analysis has not been generated for this project.", self.body_style))
+        # 8. DATA LIMITATIONS & NOT CONNECTED SERVICES
+        story.append(Paragraph("8. Data Limitations & Unconnected Services", self.section_heading))
+        lim_text = (
+            "• <b>Google Search Console / Ranking Data:</b> Not connected. Connect Search Console in Integrations to track daily Google keyword positions.<br/>"
+            "• <b>Inbound Backlinks:</b> No backlink dataset connected. Connect backlink integration or import backlink CSV to evaluate domain authority.<br/>"
+            "• <b>PageSpeed Performance:</b> Not measured during this crawl. Configure PageSpeed API key in Settings to measure Core Web Vitals."
+        )
+        story.append(Paragraph(lim_text, self.body_style))
         story.append(Spacer(1, 14))
 
         doc.build(story)

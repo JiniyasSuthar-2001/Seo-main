@@ -255,8 +255,8 @@ def get_crawl_pdf_report(
         outbound_links=report_data["outbound_links"]
     )
     
-    filename = build_export_filename(project.domain, "seo-audit", "pdf")
-    record_report_generation(db, project, "Website Health PDF Report", "pdf", filename, report_data.get("crawl_id"), "Website Scan Engine")
+    filename = build_export_filename(project.name or project.domain, "Full_Website_Health_Report", "pdf")
+    record_report_generation(db, project, "Full Website Health Report PDF", "pdf", filename, report_data.get("crawl_id"), "Website Scan Engine")
     return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
 
 
@@ -624,8 +624,8 @@ def export_complete_project_zip(
         ai_insights=report_data["ai_insights"]
     )
 
-    filename = build_export_filename(project.domain, "complete-seo-export", "zip")
-    record_report_generation(db, project, "Complete SEO ZIP Export", "zip", filename, report_data.get("crawl_id"), "Full Crawl & Audit Package")
+    filename = build_export_filename(project.name or project.domain, "SEO_Master_Export", "zip")
+    record_report_generation(db, project, "Master SEO ZIP Package", "zip", filename, report_data.get("crawl_id"), "Full Crawl & Audit Package")
     return Response(content=zip_bytes, media_type="application/zip", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
 
 

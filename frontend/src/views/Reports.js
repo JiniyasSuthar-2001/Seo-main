@@ -132,10 +132,10 @@ export class Reports {
                 };
             }
 
-            if (btnZip) btnZip.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/reports/complete-export.zip`, `${safeProjName}-SEO-Data-${todayStr}.zip`, e.currentTarget);
-            if (btnQuickAudit) btnQuickAudit.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/report.pdf`, `${safeProjName}-SEO-Audit-${todayStr}.pdf`, e.currentTarget);
-            if (btnQuickTech) btnQuickTech.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/technical/report.pdf`, `${safeProjName}-Health-Check-${todayStr}.pdf`, e.currentTarget);
-            if (btnQuickPages) btnQuickPages.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/pages/export.csv`, `${safeProjName}-Crawled-Pages-${todayStr}.csv`, e.currentTarget);
+            if (btnZip) btnZip.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/reports/complete-export.zip`, `${safeProjName}_SEO_Master_Export_${todayStr}.zip`, e.currentTarget);
+            if (btnQuickAudit) btnQuickAudit.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/report.pdf`, `${safeProjName}_Full_Website_Health_Report_${todayStr}.pdf`, e.currentTarget);
+            if (btnQuickTech) btnQuickTech.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/technical/report.pdf`, `${safeProjName}_Technical_Issues_${todayStr}.pdf`, e.currentTarget);
+            if (btnQuickPages) btnQuickPages.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/pages/export.csv`, `${safeProjName}_Pages_Inventory_${todayStr}.csv`, e.currentTarget);
 
         } catch (e) {
             renderFeatureErrorState(container, "Failed to load reports", e.message || "Unable to load report generator.", () => this.mounted());

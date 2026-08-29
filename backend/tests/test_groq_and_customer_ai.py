@@ -98,7 +98,13 @@ class TestGroqAndCustomerAI(unittest.TestCase):
             self.assertNotIn("sk-proj-test1234567890abcdef", get_res.text)
 
     def test_05_customer_key_toggle_and_groq_fallback(self):
-        # When customer has active connected key, resolution returns OpenAIProviderAdapter
+        with patch("app.llm.llm_provider.OpenAIProviderAdapter.test_connection") as mock_test:
+            mock_test.return_value = {"status": "connected", "provider": "openai", "model": "gpt-4o-mini"}
+            self.client.post(
+                "/api/integrations/openai/key",
+                json={"api_key": "sk-proj-test1234567890abcdef"},
+                headers=self.headers_a
+            )
         provider = get_llm_provider_for_user(self.user_a.id, self.db)
         self.assertIsInstance(provider, OpenAIProviderAdapter)
 

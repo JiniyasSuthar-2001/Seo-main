@@ -1,28 +1,20 @@
 import os
 import json
 from typing import Dict, Any, List, Optional
-from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 from app.config.settings import settings
 
 class LLMContextBuilder:
     def __init__(self, base_dir: Optional[str] = None):
         self.base_dir = base_dir or settings.CRAWL_DATA_DIR
 
-    def get_website_folder(self, key: str, domain: Optional[str] = None) -> str:
-        if not key:
-            safe_domain = get_sanitized_domain(domain)
-            return os.path.join(self.base_dir, safe_domain)
-        proj_dir = os.path.join(self.base_dir, key)
-        if os.path.exists(proj_dir) or not domain:
-            return proj_dir
-        safe_domain = get_sanitized_domain(domain)
-        domain_dir = os.path.join(self.base_dir, safe_domain)
-        if os.path.exists(domain_dir):
-            return domain_dir
-        return proj_dir
+    def get_website_folder(self, key: str, domain: Optional[str] = None, project_id: Optional[str] = None) -> str:
+        pid = project_id or (key if key and key != domain else None)
+        dom = domain or key
+        return get_project_storage_dir(self.base_dir, dom, pid)
 
-    def build_project_context(self, key: str, domain: Optional[str] = None) -> Dict[str, Any]:
-        website_dir = self.get_website_folder(key, domain)
+    def build_project_context(self, key: str, domain: Optional[str] = None, project_id: Optional[str] = None) -> Dict[str, Any]:
+        website_dir = self.get_website_folder(key, domain, project_id)
         latest_path = os.path.join(website_dir, "latest.json")
 
         if not os.path.exists(latest_path):

@@ -94,7 +94,8 @@ export class Opportunities {
 
     async updateStatus(oppId, newStatus) {
         try {
-            await apiClient.put(`/api/projects/opportunities/${oppId}/status`, { status: newStatus });
+            const projectId = projectStore.getSelectedProjectId();
+            await apiClient.put(`/api/projects/${projectId}/opportunities/${oppId}/status`, { status: newStatus });
             this.mounted();
         } catch (e) {
             alert("Failed to update status: " + e.message);
@@ -251,6 +252,7 @@ export class Opportunities {
                     const opp = opps[globalIdx];
                     if (opp) {
                         AuditEvidenceModal.open({
+                            projectId: projectStore.getSelectedProjectId(),
                             title: opp.title,
                             ruleId: 'ACTION_ITEM',
                             category: opp.category,

@@ -397,6 +397,7 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     return {
         "health_score": health_score,
+        "score_available": total_pages > 0,
         "total_audited_pages": total_pages,
         "successful_html_pages_count": html_count,
         "blocked_pages_count": len(blocked_pages),

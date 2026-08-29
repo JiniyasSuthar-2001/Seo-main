@@ -12,7 +12,7 @@ from app.models.project import Project
 from app.models.report import ReportRecord
 from app.models.competitor import Competitor
 from app.models.keyword import Keyword
-from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 from app.services.reports.pdf_service import PDFReportGenerator
 from app.services.reports.export_service import CSVExportService, ZIPExportService
 from app.services.report_builder_service import generate_custom_pdf_report
@@ -83,10 +83,8 @@ def get_shared_project_report_data(project: Project, db: Session, user_id: str) 
             "inbound_backlinks": [], "outbound_links": [], "crawl_id": None
         }
 
-    safe_domain = get_sanitized_domain(domain)
-    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
-    if not os.path.exists(latest_path):
-        latest_path = os.path.join(settings.CRAWL_DATA_DIR, project.id, "latest.json")
+    proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, project.id)
+    latest_path = os.path.join(proj_dir, "latest.json")
 
     metadata = {}
     pages = []

@@ -3,6 +3,7 @@ import asyncio
 import time
 import re
 import ssl
+import json
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
 from typing import Set, Dict, Any, List, Optional, Callable
@@ -28,7 +29,9 @@ class SEOCrawler:
         exclude_patterns: Optional[List[str]] = None,
         ignore_utm_params: bool = True,
         follow_redirects: bool = True,
-        progress_callback: Optional[Callable[[int, int], None]] = None
+        target_countries: Optional[List[str]] = None,
+        progress_callback: Optional[Callable[[int, int]], None] = None,
+        cancellation_checker: Optional[Callable[[], bool]] = None
     ):
         if not start_url or not start_url.startswith(("http://", "https://")):
             raise ValueError("Crawler requires a valid HTTP or HTTPS start URL.")
@@ -36,7 +39,24 @@ class SEOCrawler:
         self.raw_start_url = start_url
         self.ignore_utm_params = ignore_utm_params
         self.start_url = self.normalize_url(start_url, start_url)
-        self.max_pages = max_pages
+        
+        # Handle 5000+ Large-Site Mode (unlimited pages within scope)
+        if max_pages == "5000+" or max_pages == 0 or max_pages is None or str(max_pages).strip() == "5000+":
+            self.max_pages = 0
+            self.is_unlimited_scope = True
+        else:
+            try:
+                val = int(max_pages)
+                if val <= 0:
+                    self.max_pages = 0
+                    self.is_unlimited_scope = True
+                else:
+                    self.max_pages = val
+                    self.is_unlimited_scope = False
+            except (ValueError, TypeError):
+                self.max_pages = 5000
+                self.is_unlimited_scope = False
+
         self.request_timeout = request_timeout
         self.scope_type = scope_type
         self.max_depth = max_depth
@@ -46,7 +66,10 @@ class SEOCrawler:
         self.include_patterns = include_patterns or []
         self.exclude_patterns = exclude_patterns or []
         self.follow_redirects = follow_redirects
+        self.target_countries = target_countries or []
         self.progress_callback = progress_callback
+        self.cancellation_checker = cancellation_checker
+        self.is_cancelled = False
 
         parsed_url = urlparse(self.start_url)
         self.domain = parsed_url.netloc.lower()
@@ -596,7 +619,12 @@ class SEOCrawler:
             await self.fetch_robots_txt(client)
             await self.fetch_sitemap_xml(client)
 
-            while self.to_visit and len(self.visited) < self.max_pages:
+            while self.to_visit and (self.is_unlimited_scope or len(self.visited) < self.max_pages):
+                if self.cancellation_checker and self.cancellation_checker():
+                    print(f"[CRAWL CANCELLED] Session cancellation requested by user. Halting crawler loop.", flush=True)
+                    self.is_cancelled = True
+                    break
+
                 batch = self.to_visit[:5] 
                 self.to_visit = self.to_visit[5:]
                 
@@ -611,7 +639,9 @@ class SEOCrawler:
         
         is_access_denied = (self.seed_status_code in (403, 401))
         
-        if is_access_denied:
+        if self.is_cancelled:
+            overall_status = "cancelled"
+        elif is_access_denied:
             overall_status = "access_denied"
         elif len(successful_pages) > 0 and len(failed_pages) > 0:
             overall_status = "completed_with_errors"
@@ -626,6 +656,7 @@ class SEOCrawler:
         
         return {
             "status": overall_status,
+            "max_pages": "5000+" if self.is_unlimited_scope else self.max_pages,
             "seed_status_code": self.seed_status_code,
             "successful_pages_count": len(successful_pages),
             "failed_pages_count": len(failed_pages),

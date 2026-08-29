@@ -128,28 +128,194 @@ export class Keywords {
             if (pdfBtn) pdfBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/keywords/report.pdf`, `${safeProjName}-Keywords-${todayStr}.pdf`, e.currentTarget);
             if (csvBtn) csvBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/keywords/export.csv`, `${safeProjName}-Keywords-${todayStr}.csv`, e.currentTarget);
 
-            const data = await apiClient.get(`/api/projects/${projectId}/keywords`);
-            const keywords = data.keywords || [];
-
             if (this.activeTab === 'research') {
                 this.renderResearchView(contentContainer, projectId);
                 return;
             }
 
-            // Paginate keywords dataset at 20 rows per page
+            if (this.activeTab === 'groups') {
+                const groupRes = await apiClient.get(`/api/projects/${projectId}/keywords/groups`);
+                const groups = groupRes.groups || [];
+                let groupRows = groups.map(g => `
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 12px 18px; font-weight: 700; color: var(--text-primary);">${this.escapeHtml(g.name)}</td>
+                        <td style="padding: 12px; color: var(--text-secondary);">${this.escapeHtml(g.description || 'Topic cluster')}</td>
+                        <td style="padding: 12px; font-weight: 600;">${g.keyword_count || 0} keywords</td>
+                        <td style="padding: 12px 18px; font-size: 12px; color: var(--text-secondary);">${g.created_at ? new Date(g.created_at).toLocaleDateString() : 'Auto-clustered'}</td>
+                    </tr>
+                `).join('');
+
+                contentContainer.innerHTML = `
+                    <div class="card" style="padding: 0; overflow: hidden; border-radius: 14px;">
+                        <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                            <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Keyword Topic Groups (${groups.length})</h3>
+                        </div>
+                        <div style="overflow-x: auto;">
+                            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                                <thead>
+                                    <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
+                                        <th style="padding: 12px 18px;">Topic Group</th>
+                                        <th style="padding: 12px;">Description</th>
+                                        <th style="padding: 12px;">Keywords Count</th>
+                                        <th style="padding: 12px 18px;">Created Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${groupRows.length > 0 ? groupRows : `<tr><td colspan="4" style="padding: 32px; text-align: center; color: var(--text-secondary);">No topic groups created yet. Click "⚡ Group Keyword Topics" above to auto-cluster terms.</td></tr>`}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            if (this.activeTab === 'opportunities') {
+                const oppRes = await apiClient.get(`/api/projects/${projectId}/keywords/opportunities`);
+                const opps = oppRes.opportunities || [];
+                let oppRows = opps.map(o => `
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 12px 18px; font-weight: 700; color: var(--text-primary);">${this.escapeHtml(o.keyword)}</td>
+                        <td style="padding: 12px;">
+                            <span class="badge badge-info" style="font-size: 11px;">${this.escapeHtml(o.category)}</span>
+                        </td>
+                        <td style="padding: 12px; font-weight: 600;">${this.escapeHtml(String(o.current_position || 'Unranked'))}</td>
+                        <td style="padding: 12px; font-size: 12.5px; color: var(--text-secondary);">${this.escapeHtml(o.evidence)}</td>
+                        <td style="padding: 12px 18px; font-size: 12.5px; color: var(--primary); font-weight: 600;">${this.escapeHtml(o.recommendation)}</td>
+                    </tr>
+                `).join('');
+
+                contentContainer.innerHTML = `
+                    <div class="card" style="padding: 0; overflow: hidden; border-radius: 14px;">
+                        <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--bg-subtle);">
+                            <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Keyword Opportunities (${opps.length})</h3>
+                        </div>
+                        <div style="overflow-x: auto;">
+                            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                                <thead>
+                                    <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
+                                        <th style="padding: 12px 18px;">Target Keyword</th>
+                                        <th style="padding: 12px;">Opportunity Type</th>
+                                        <th style="padding: 12px;">Current Rank</th>
+                                        <th style="padding: 12px;">Evidence</th>
+                                        <th style="padding: 12px 18px;">Action Recommendation</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${oppRows.length > 0 ? oppRows : `<tr><td colspan="5" style="padding: 32px; text-align: center; color: var(--text-secondary);">No keyword opportunities detected yet. Run a website scan or add target keywords.</td></tr>`}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            if (this.activeTab === 'gap') {
+                const gapRes = await apiClient.get(`/api/projects/${projectId}/keywords/competitor-gap`);
+                const gaps = gapRes.gaps || [];
+                const hasComp = gapRes.has_competitors !== false;
+
+                let gapRows = gaps.map(g => `
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 12px 18px; font-weight: 700; color: var(--text-primary);">${this.escapeHtml(g.keyword)}</td>
+                        <td style="padding: 12px;">${this.escapeHtml(g.competitor_domain)}</td>
+                        <td style="padding: 12px; color: var(--text-secondary);">${this.escapeHtml(g.our_position)}</td>
+                        <td style="padding: 12px; font-weight: 600; color: var(--primary);">${this.escapeHtml(g.competitor_position)}</td>
+                        <td style="padding: 12px 18px; font-size: 12.5px; color: var(--text-secondary);">${this.escapeHtml(g.recommendation)}</td>
+                    </tr>
+                `).join('');
+
+                contentContainer.innerHTML = `
+                    <div class="card" style="padding: 24px; border-radius: 14px; margin-bottom: 20px;">
+                        <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 6px; color: var(--text-primary);">Competitor Keyword Gap</h3>
+                        <p style="font-size: 13px; color: var(--text-secondary); margin: 0;">
+                            ${this.escapeHtml(gapRes.message || "Compare keywords targeted by competitor websites against your domain.")}
+                        </p>
+                    </div>
+                    ${hasComp ? `
+                        <div class="card" style="padding: 0; overflow: hidden; border-radius: 14px;">
+                            <div style="overflow-x: auto;">
+                                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                                    <thead>
+                                        <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
+                                            <th style="padding: 12px 18px;">Keyword</th>
+                                            <th style="padding: 12px;">Competitor Domain</th>
+                                            <th style="padding: 12px;">Our Rank</th>
+                                            <th style="padding: 12px;">Competitor Rank</th>
+                                            <th style="padding: 12px 18px;">Action Strategy</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${gapRows.length > 0 ? gapRows : `<tr><td colspan="5" style="padding: 32px; text-align: center; color: var(--text-secondary);">No competitor keyword gaps detected.</td></tr>`}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    ` : ''}
+                `;
+                return;
+            }
+
+            const data = await apiClient.get(`/api/projects/${projectId}/keywords`);
+            const keywords = data.keywords || [];
+
+            if (this.activeTab === 'ranking') {
+                const targetKws = keywords.filter(k => k.target_url || k.position || (k.source && k.source.includes('Import')));
+                const displayKws = targetKws.length > 0 ? targetKws : keywords;
+
+                let targetRows = displayKws.map(k => `
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 12px 18px; font-weight: 700; color: var(--text-primary);">${this.escapeHtml(k.keyword)}</td>
+                        <td style="padding: 12px; font-family: monospace; font-size: 12px; color: var(--primary);">${this.escapeHtml(k.target_url || selectedProj.domain || 'Homepage')}</td>
+                        <td style="padding: 12px;">${this.escapeHtml(String(k.search_volume || 'Unavailable'))}</td>
+                        <td style="padding: 12px;">${this.escapeHtml(String(k.difficulty || 'Unavailable'))}</td>
+                        <td style="padding: 12px; font-weight: 600;">${this.escapeHtml(k.position_display || (k.position ? `#${k.position}` : 'Not available (Connect Search Data)'))}</td>
+                        <td style="padding: 12px 18px; font-size: 11.5px; color: var(--text-secondary);">${this.escapeHtml(k.intent || 'Informational')}</td>
+                    </tr>
+                `).join('');
+
+                contentContainer.innerHTML = `
+                    <div class="card" style="padding: 0; overflow: hidden; border-radius: 14px;">
+                        <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--bg-subtle);">
+                            <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Target Keywords (${displayKws.length})</h3>
+                        </div>
+                        <div style="overflow-x: auto;">
+                            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                                <thead>
+                                    <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
+                                        <th style="padding: 12px 18px;">Target Keyword</th>
+                                        <th style="padding: 12px;">Target Page URL</th>
+                                        <th style="padding: 12px;">Search Volume</th>
+                                        <th style="padding: 12px;">Difficulty</th>
+                                        <th style="padding: 12px;">Google Position</th>
+                                        <th style="padding: 12px 18px;">Search Intent</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${targetRows.length > 0 ? targetRows : `<tr><td colspan="6" style="padding: 32px; text-align: center; color: var(--text-secondary);">No target keywords available.</td></tr>`}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            // Overview tab (Default)
             const paginated = Pagination.paginateArray(keywords, this.overviewPage, this.pageSize);
             this.overviewPage = paginated.currentPage;
 
             let rows = paginated.items.map(k => `
                 <tr style="border-bottom: 1px solid var(--border);">
                     <td style="padding: 12px 18px; font-weight: 700; color: var(--text-primary);">${this.escapeHtml(k.keyword)}</td>
-                    <td style="padding: 12px;">${this.escapeHtml(k.category || k.type || 'Content Keyword')}</td>
+                    <td style="padding: 12px;">${this.escapeHtml(k.group_name || k.category || k.type || 'Content Keyword')}</td>
                     <td style="padding: 12px; font-weight: 600;">${k.frequency || k.search_volume || 1} times ${renderTooltip('Content Frequency: How often this keyword appears in your scanned website content.')}</td>
                     <td style="padding: 12px;">${k.pages_found || 1} pages</td>
                     <td style="padding: 12px; font-size: 12px; color: var(--text-secondary);">
-                        ${k.position ? `#${k.position}` : '<span style="color: var(--text-tertiary);">Not available (Connect Search Data)</span>'}
+                        ${k.position_display || (k.position ? `#${k.position}` : '<span style="color: var(--text-tertiary);">Not available (Connect Search Data)</span>')}
                     </td>
-                    <td style="padding: 12px 18px; font-size: 11.5px; color: var(--text-secondary);">${this.escapeHtml(k.provenance || 'Website Scan')}</td>
+                    <td style="padding: 12px 18px; font-size: 11.5px; color: var(--text-secondary);">${this.escapeHtml(k.source || k.provenance || 'Website Scan')}</td>
                 </tr>
             `).join('');
 

@@ -1,24 +1,16 @@
 import os
 import json
 from typing import Dict, Any
-from app.config.utils import get_sanitized_domain
+from app.config.utils import get_sanitized_domain, get_project_storage_dir
 
 class DataSourceManager:
     def __init__(self, base_dir: str = "data/websites"):
         self.base_dir = base_dir
 
     def _get_project_dir(self, key: str, domain: str = None) -> str:
-        if not key:
-            safe_domain = get_sanitized_domain(domain)
-            return os.path.join(self.base_dir, safe_domain)
-        proj_dir = os.path.join(self.base_dir, key)
-        if os.path.exists(proj_dir) or not domain:
-            return proj_dir
-        safe_domain = get_sanitized_domain(domain)
-        domain_dir = os.path.join(self.base_dir, safe_domain)
-        if os.path.exists(domain_dir):
-            return domain_dir
-        return proj_dir
+        pid = key if key and key != domain else None
+        dom = domain or key
+        return get_project_storage_dir(self.base_dir, dom, pid)
 
     def get_project_datasources(self, key: str, domain: str = None) -> Dict[str, Any]:
         proj_dir = self._get_project_dir(key, domain)

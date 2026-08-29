@@ -144,6 +144,9 @@ export class TopBar {
             <span id="health-text">Backend Online</span>
           </div>
 
+          <!-- TEAM INVITATIONS BUTTON -->
+          <div id="team-invites-badge-container"></div>
+
           <!-- AI ASSISTANT BUTTON -->
           <button class="btn btn-secondary btn-sm" onclick="window.openAIChatAssistant ? window.openAIChatAssistant() : null" style="display: flex; align-items: center; gap: 6px; border-color: rgba(139, 92, 246, 0.4); color: #8b5cf6;" title="Open Evidence-Grounded AI SEO Assistant">
             <span>🤖 AI Assistant</span>
@@ -181,6 +184,7 @@ export class TopBar {
     this.initThemeToggle();
     this.initKeyboardShortcuts();
     this.initLogout();
+    this.initPendingInvitations();
     return this.element;
   }
 
@@ -348,6 +352,179 @@ export class TopBar {
           }
         });
       }
-    }, 50);
+    }, 100);
+  }
+
+  async initPendingInvitations() {
+    try {
+      const [notifRes, invRes] = await Promise.all([
+        apiClient.get('/api/notifications').catch(() => ({ unread_count: 0, notifications: [] })),
+        apiClient.get('/api/auth/my-invitations').catch(() => ({ invitations: [] }))
+      ]);
+
+      const notifications = notifRes.notifications || [];
+      const invitations = invRes.invitations || [];
+      const unreadCount = notifRes.unread_count || 0;
+
+      const container = document.getElementById('team-invites-badge-container');
+      if (!container) return;
+
+      if (unreadCount > 0 || invitations.length > 0) {
+        container.innerHTML = `
+          <button class="btn btn-secondary btn-sm" onclick="window.openTeamInvitationsModal()" style="display: flex; align-items: center; gap: 6px; border-color: rgba(59, 130, 246, 0.4); color: #3b82f6; background: rgba(59, 130, 246, 0.1);" title="View Team Notifications & Invitations">
+            <span>🔔</span>
+            <span style="font-weight: 600;">Notifications</span>
+            ${unreadCount > 0 ? `<span style="background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 10px;">${unreadCount}</span>` : ''}
+          </button>
+        `;
+      } else {
+        container.innerHTML = '';
+      }
+
+      window.openTeamInvitationsModal = () => {
+        this.renderInvitationsModal(notifications, invitations);
+      };
+    } catch (e) {
+      console.warn('[TOPBAR] Failed to fetch notifications/invitations:', e);
+    }
+  }
+
+  renderInvitationsModal(notifications, invitations) {
+    let existingModal = document.getElementById('team-invitations-modal');
+    if (existingModal) existingModal.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'team-invitations-modal';
+    modal.style.cssText = `
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(8, 12, 20, 0.7); backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center; z-index: 9999;
+    `;
+
+    const notifCards = notifications.map(n => {
+      const isUnread = n.status === 'UNREAD';
+      const data = n.data || {};
+      const invId = data.invitation_id || n.invitation_id;
+
+      return `
+        <div class="notification-item-card" data-notif-id="${n.id}" style="background: ${isUnread ? 'rgba(59, 130, 246, 0.06)' : 'var(--bg-subtle)'}; border: 1px solid ${isUnread ? 'rgba(59, 130, 246, 0.3)' : 'var(--border)'}; border-radius: 10px; padding: 16px; margin-bottom: 12px; position: relative;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 14px;">📩</span>
+              <strong style="font-size: 14px; color: var(--text-primary);">${n.title || 'Project Team Invitation'}</strong>
+            </div>
+            ${isUnread ? '<span class="badge badge-warning" style="font-size: 10px;">UNREAD</span>' : '<span style="font-size: 11px; color: var(--text-tertiary);">READ</span>'}
+          </div>
+          <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 12px;">${n.message}</p>
+          
+          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border); padding-top: 10px; margin-top: 6px;">
+            <span style="font-size: 11px; color: var(--text-tertiary);">${n.created_at ? new Date(n.created_at).toLocaleString() : ''}</span>
+            <div style="display: flex; gap: 8px;">
+              ${invId ? `
+                <button class="btn btn-primary btn-sm btn-view-invitation" data-notif-id="${n.id}" data-inv-id="${invId}">View Invitation</button>
+              ` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const inviteCards = invitations.map(inv => `
+      <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 10px; padding: 18px; margin-bottom: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+          <div>
+            <h4 style="font-size: 15px; font-weight: 700; color: var(--text-primary); margin: 0;">${inv.project_name}</h4>
+            <span style="font-size: 12px; color: var(--text-secondary); display: block; margin-top: 2px;">Invited by: <strong>${inv.inviter_name}</strong> (${inv.inviter_email})</span>
+          </div>
+          <span class="badge badge-info" style="font-size: 11px;">Role: ${inv.role}</span>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px;">
+          <button class="btn btn-secondary btn-sm btn-decline-inv" data-id="${inv.id}">Decline</button>
+          <button class="btn btn-primary btn-sm btn-accept-inv" data-id="${inv.id}">Accept & Join</button>
+        </div>
+      </div>
+    `).join('');
+
+    modal.innerHTML = `
+      <div style="background: var(--bg-card); width: 100%; max-width: 560px; padding: 28px; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow-lg);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 style="font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 0;">Notifications & Team Invitations</h3>
+          <button onclick="document.getElementById('team-invitations-modal').remove()" style="background: none; border: none; font-size: 20px; color: var(--text-tertiary); cursor: pointer;">&times;</button>
+        </div>
+
+        <div style="max-height: 420px; overflow-y: auto;">
+          ${notifications.length > 0 ? `
+            <div style="margin-bottom: 20px;">
+              <h4 style="font-size: 13px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin: 0 0 10px; letter-spacing: 0.05em;">Notifications</h4>
+              ${notifCards}
+            </div>
+          ` : ''}
+
+          ${invitations.length > 0 ? `
+            <div>
+              <h4 style="font-size: 13px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin: 0 0 10px; letter-spacing: 0.05em;">Pending Invitations</h4>
+              ${inviteCards}
+            </div>
+          ` : ''}
+
+          ${notifications.length === 0 && invitations.length === 0 ? `
+            <p style="text-align: center; color: var(--text-secondary); font-size: 13px; padding: 24px 0;">No notifications or pending invitations.</p>
+          ` : ''}
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // View Invitation action -> Marks notification READ & highlights invitation
+    modal.querySelectorAll('.btn-view-invitation').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const notifId = e.currentTarget.dataset.notifId;
+        const invId = e.currentTarget.dataset.invId;
+        if (notifId) {
+          try {
+            await apiClient.post(`/api/notifications/${notifId}/read`);
+          } catch (err) {}
+        }
+        modal.remove();
+        // Open team invitations view or settings
+        this.initPendingInvitations();
+        const pendingModal = document.createElement('div');
+        this.renderInvitationsModal([], invitations.filter(i => i.id === invId || invitations.length > 0));
+      });
+    });
+
+    modal.querySelectorAll('.btn-accept-inv').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const invId = e.currentTarget.dataset.id;
+        try {
+          const res = await apiClient.post(`/api/auth/invitations/${invId}/accept`);
+          alert(res.message || 'Invitation accepted!');
+          modal.remove();
+          await projectStore.ensureInitialized(true);
+          if (res.project_id) {
+            projectStore.setSelectedProjectId(res.project_id);
+            window.dispatchEvent(new CustomEvent('project:selected', { detail: { projectId: res.project_id } }));
+          }
+          this.initPendingInvitations();
+        } catch (err) {
+          alert(`Failed to accept invitation: ${err.message || err}`);
+        }
+      });
+    });
+
+    modal.querySelectorAll('.btn-decline-inv').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const invId = e.currentTarget.dataset.id;
+        try {
+          await apiClient.post(`/api/auth/invitations/${invId}/decline`);
+          alert('Invitation declined.');
+          modal.remove();
+          this.initPendingInvitations();
+        } catch (err) {
+          alert(`Failed to decline invitation: ${err.message || err}`);
+        }
+      });
+    });
   }
 }

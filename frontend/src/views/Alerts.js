@@ -155,6 +155,7 @@ export class Alerts {
                 const item = data.alerts[globalIdx];
                 if (item) {
                     AuditEvidenceModal.open({
+                        projectId: projectStore.getSelectedProjectId(),
                         title: item.title,
                         ruleId: item.id || 'ALERT_ITEM',
                         category: item.category,

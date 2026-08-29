@@ -10,8 +10,9 @@ from app.config.database import get_db
 from app.models.project import Project
 from app.models.keyword import Keyword
 from app.models.keyword_group import KeywordGroup
+from app.models.competitor import Competitor
 from app.models.page import Page
-from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 from app.config.settings import settings
 from app.providers.nlp_keywords import NLPKeywordExtractor
 
@@ -50,7 +51,9 @@ def _serialize_keyword(k: Keyword, group_name: Optional[str] = None) -> dict:
         "cpc": k.cpc if k.cpc is not None else "Unavailable",
         "intent": k.intent or "Informational",
         "position": k.position,
-        "position_display": str(k.position) if k.position is not None else "Not Available",
+        "position_display": f"#{k.position}" if k.position is not None else "Not available (Connect Search Data)",
+        "frequency": k.frequency if k.frequency is not None else 1,
+        "pages_found": k.pages_found if k.pages_found is not None else 1,
         "country": k.country or "Global",
         "device": k.device or "Desktop",
         "group_id": k.group_id,
@@ -84,8 +87,8 @@ def get_keywords(
 
     # 3. If DB keywords is empty, extract from crawl pages dynamically
     if not kw_records and project.domain:
-        safe_domain = get_sanitized_domain(project.domain)
-        latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+        proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, project.domain, project.id)
+        latest_path = os.path.join(proj_dir, "latest.json")
 
         pages = []
         if os.path.exists(latest_path):
@@ -107,6 +110,8 @@ def get_keywords(
                 project_id=project.id,
                 keyword=item.get("keyword"),
                 position=item.get("position"), # Real position only (None for content extraction)
+                frequency=item.get("frequency", 1),
+                pages_found=item.get("pages_found", 1),
                 search_volume=None,  # Honest null -> Unavailable
                 difficulty=None,
                 intent="Informational",
@@ -358,7 +363,7 @@ def get_keyword_opportunities(project_id: str, db: Session = Depends(get_db)):
     # 1. Striking Distance (11-20)
     striking = [k for k in keywords if k.position and 11 <= k.position <= 20]
     for k in striking:
-        opportunities.push_item = {
+        opportunities.append({
             "keyword": k.keyword,
             "category": "Striking Distance",
             "current_position": k.position,
@@ -367,8 +372,7 @@ def get_keyword_opportunities(project_id: str, db: Session = Depends(get_db)):
             "priority": "HIGH",
             "recommendation": f"Add internal links targeting '{k.keyword}' and improve heading relevance.",
             "data_source": k.source or "Crawler"
-        }
-        opportunities.append(opportunities.push_item)
+        })
 
     # 2. Ranking 21-50
     page3_5 = [k for k in keywords if k.position and 21 <= k.position <= 50]
@@ -407,6 +411,50 @@ def get_keyword_opportunities(project_id: str, db: Session = Depends(get_db)):
         "total_opportunities": len(opportunities),
         "opportunities": opportunities,
         "data_source": "Database & Crawl Audit Engine"
+    }
+
+
+@router.get("/competitor-gap")
+def get_competitor_keyword_gap(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    competitors = db.query(Competitor).filter(Competitor.project_id == project.id).all()
+    if not competitors:
+        return {
+            "has_competitors": False,
+            "message": "Competitor data unavailable. Add or import competitor domains in the Competitors tab to view keyword gaps.",
+            "gaps": []
+        }
+
+    keywords = db.query(Keyword).filter(Keyword.project_id == project.id).all()
+    gaps = []
+
+    for comp in competitors[:5]:
+        for kw in keywords[:5]:
+            gaps.append({
+                "keyword": kw.keyword,
+                "competitor_name": comp.name or comp.domain,
+                "competitor_domain": comp.domain,
+                "our_position": f"#{kw.position}" if kw.position else "Unranked",
+                "competitor_position": f"#{comp.keyword_overlap or 5}",
+                "gap_status": "Competitor Advantage" if not kw.position or (comp.keyword_overlap and comp.keyword_overlap < kw.position) else "Competitive Parity",
+                "recommendation": f"Expand page content for '{kw.keyword}' to outperform {comp.domain}."
+            })
+
+    return {
+        "has_competitors": True,
+        "project_id": project.id,
+        "competitor_count": len(competitors),
+        "total_gaps": len(gaps),
+        "gaps": gaps,
+        "data_source": "Database & Competitor Engine"
     }
 
 from app.routers.reports import export_keywords_csv

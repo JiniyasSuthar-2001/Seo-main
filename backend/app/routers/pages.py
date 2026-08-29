@@ -7,17 +7,15 @@ from sqlalchemy.orm import Session
 from app.config.database import get_db
 from app.config.auth import get_current_user_id
 from app.config.permissions import get_user_membership
-from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 from app.config.settings import settings
 from app.models.project import Project
 
 router = APIRouter()
 
 def get_latest_pages_from_storage(project_id: str, domain: Optional[str] = None) -> list:
-    latest_path = os.path.join(settings.CRAWL_DATA_DIR, project_id, "latest.json")
-    if not os.path.exists(latest_path) and domain:
-        safe_domain = get_sanitized_domain(domain)
-        latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+    proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, project_id)
+    latest_path = os.path.join(proj_dir, "latest.json")
 
     if not os.path.exists(latest_path):
         return []

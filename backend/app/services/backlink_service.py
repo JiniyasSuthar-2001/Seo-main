@@ -4,7 +4,7 @@ from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 
 from app.models.project import Project
-from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 from app.config.settings import settings
 
 
@@ -54,10 +54,10 @@ class BacklinkDataService:
             }
 
         domain = project.domain
-        safe_domain = get_sanitized_domain(domain)
+        proj_storage_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, project.id)
 
         # 1. Fetch imported / provider inbound backlink JSON dataset if present
-        backlinks_file = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "backlinks.json")
+        backlinks_file = os.path.join(proj_storage_dir, "backlinks.json")
         inbound_backlinks: List[Dict[str, Any]] = []
         is_imported = False
 
@@ -70,7 +70,7 @@ class BacklinkDataService:
                 print(f"[BACKLINK SERVICE] Error reading backlinks file for {domain}: {e}", flush=True)
 
         # 2. Fetch outbound external links discovered by the crawler
-        latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+        latest_path = os.path.join(proj_storage_dir, "latest.json")
         raw_outbound: List[Dict[str, Any]] = []
         crawl_timestamp = "Not collected"
         if os.path.exists(latest_path):

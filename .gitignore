@@ -13,6 +13,8 @@ backend/seo.db
 seo.db
 
 # Crawl Artifacts Data Storage
+data/
+backend/data/
 backend/data/websites/*
 !backend/data/websites/.gitkeep
 

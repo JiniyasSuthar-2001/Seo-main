@@ -6,7 +6,7 @@ from app.importers.base import BaseImporter
 from app.importers.keyword_importer import parse_optional_int, parse_optional_float
 from app.models.keyword import Keyword
 from app.models.project import Project
-from app.config.utils import get_sanitized_domain
+from app.config.utils import get_sanitized_domain, get_project_storage_dir
 from app.config.settings import settings
 from app.config.logger import get_logger
 
@@ -138,8 +138,8 @@ class RankingImporter(BaseImporter):
             self.db.commit()
 
             # Save to rankings.json for project
-            if safe_domain and rankings_file_records:
-                proj_dir = os.path.join(settings.CRAWL_DATA_DIR, safe_domain)
+            if rankings_file_records:
+                proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, self.project_id)
                 os.makedirs(proj_dir, exist_ok=True)
                 rankings_file = os.path.join(proj_dir, "rankings.json")
                 existing_json = []

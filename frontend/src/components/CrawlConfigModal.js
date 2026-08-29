@@ -2,15 +2,17 @@ import { crawlService } from '../services/crawlService.js';
 import { crawlProgressOverlay } from './CrawlProgressOverlay.js';
 import { projectStore } from '../core/projectStore.js';
 import { apiClient } from '../services/apiClient.js';
+import { COUNTRY_DATASET, findCountry, detectUserDefaultCountry } from '../constants/countries.js';
 
 class CrawlConfigModalManager {
     constructor() {
         this.currentStep = 1;
-        this.totalSteps = 6;
+        this.totalSteps = 7;
         this.projectId = null;
         this.targetUrl = '';
         this.modalElement = null;
         this.saveTimeout = null;
+        this.countrySearchQuery = '';
         
         // Default Crawl Config State
         this.config = {
@@ -28,6 +30,7 @@ class CrawlConfigModalManager {
             follow_redirects: true,
             include_patterns: [],
             exclude_patterns: ['/admin/*', '/login/*', '/cart/*'],
+            target_countries: [],
             ignore_tracking_parameters: true,
             audit_modules: {
                 technical_http: true,
@@ -49,6 +52,7 @@ class CrawlConfigModalManager {
         const selectedProj = projectStore.getSelectedProject();
         this.targetUrl = targetUrl || (selectedProj ? selectedProj.domain || selectedProj.url : '') || 'https://example.com';
         this.currentStep = 1;
+        this.countrySearchQuery = '';
 
         this.renderModalShell();
         await this.loadRemoteConfig();
@@ -65,6 +69,7 @@ class CrawlConfigModalManager {
                 this.config = {
                     ...this.config,
                     ...remote,
+                    target_countries: Array.isArray(remote.target_countries) ? remote.target_countries : [],
                     audit_modules: {
                         ...this.config.audit_modules,
                         ...(remote.audit_modules || {})
@@ -86,7 +91,7 @@ class CrawlConfigModalManager {
         const backdrop = document.createElement('div');
         backdrop.id = 'crawl-config-modal-backdrop';
         backdrop.style.cssText = `
-            position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(6px);
+            position: fixed; inset: 0; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(6px);
             display: flex; align-items: center; justify-content: center; z-index: 99999; padding: 16px;
             font-family: 'Inter', system-ui, -apple-system, sans-serif; animation: fadeIn 0.15s ease-out;
         `;
@@ -95,7 +100,7 @@ class CrawlConfigModalManager {
             <style>
                 @keyframes fadeIn { from { opacity: 0; transform: scale(0.99); } to { opacity: 1; transform: scale(1); } }
                 .wizard-step-pill {
-                    padding: 5px 12px; border-radius: 16px; font-size: 11.5px; font-weight: 600;
+                    padding: 5px 11px; border-radius: 16px; font-size: 11px; font-weight: 600;
                     color: var(--text-tertiary, #94a3b8); background: var(--bg-subtle, #1e293b); transition: all 0.15s ease;
                     display: flex; align-items: center; gap: 4px; cursor: pointer; border: 1px solid transparent; white-space: nowrap;
                 }
@@ -144,11 +149,12 @@ class CrawlConfigModalManager {
                 }
             </style>
 
-            <div class="card" style="width: 100%; max-width: 620px; background: var(--bg-card, #0f172a); border-radius: 14px; box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5); overflow: hidden; display: flex; flex-direction: column; max-height: 85vh; border: 1px solid var(--border, #334155);">
+            <!-- MANDATORY CONSISTENT MODAL SIZE: 680px WIDTH × 600px HEIGHT FIXED DIMENSIONS -->
+            <div class="card" style="width: 680px; max-width: 92vw; height: 600px; max-height: 88vh; background: var(--bg-card, #0f172a); border-radius: 14px; box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5); overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--border, #334155);">
                 
-                <!-- COMPACT MODAL HEADER -->
-                <div style="padding: 20px 24px 14px; border-bottom: 1px solid var(--border, #334155); background: var(--bg-card, #0f172a);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <!-- FIXED MODAL HEADER -->
+                <div style="flex-shrink: 0; padding: 18px 24px 12px; border-bottom: 1px solid var(--border, #334155); background: var(--bg-card, #0f172a);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                         <div style="display: flex; align-items: center; gap: 10px;">
                             <h2 style="font-size: 18px; font-weight: 700; margin: 0; color: var(--text-primary, #f8fafc);">SEO Crawl Settings</h2>
                             <span class="badge badge-primary" style="font-size: 10px; font-weight: 700; padding: 2px 8px;">${this.escapeHtml(this.targetUrl)}</span>
@@ -157,22 +163,23 @@ class CrawlConfigModalManager {
                         <button type="button" id="btn-close-config-modal" style="background: none; border: none; font-size: 22px; color: var(--text-secondary, #94a3b8); cursor: pointer; padding: 0 4px; line-height: 1;">&times;</button>
                     </div>
 
-                    <!-- WIZARD STEP PILLS -->
+                    <!-- WIZARD STEP PILLS (7 STEPS) -->
                     <div id="wizard-pills-container" style="display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px;">
                         <button type="button" class="wizard-step-pill active" data-step="1">① Scope</button>
                         <button type="button" class="wizard-step-pill" data-step="2">② Limits & Depth</button>
                         <button type="button" class="wizard-step-pill" data-step="3">③ Discovery</button>
-                        <button type="button" class="wizard-step-pill" data-step="4">④ Behavior</button>
-                        <button type="button" class="wizard-step-pill" data-step="5">⑤ Audit Modules</button>
-                        <button type="button" class="wizard-step-pill" data-step="6">⑥ Review</button>
+                        <button type="button" class="wizard-step-pill" data-step="4">④ Country Targeting</button>
+                        <button type="button" class="wizard-step-pill" data-step="5">⑤ Behavior</button>
+                        <button type="button" class="wizard-step-pill" data-step="6">⑥ Audit Modules</button>
+                        <button type="button" class="wizard-step-pill" data-step="7">⑦ Review</button>
                     </div>
                 </div>
 
-                <!-- STEP CONTENT CONTAINER -->
-                <div id="modal-step-body" style="padding: 22px 28px; overflow-y: auto; flex: 1;"></div>
+                <!-- SCROLLABLE STEP CONTENT CONTAINER -->
+                <div id="modal-step-body" style="flex: 1; padding: 22px 28px; overflow-y: auto;"></div>
 
-                <!-- COMPACT MODAL FOOTER -->
-                <div style="padding: 14px 24px; border-top: 1px solid var(--border, #334155); background: var(--bg-subtle, #1e293b); display: flex; justify-content: space-between; align-items: center;">
+                <!-- FIXED MODAL FOOTER -->
+                <div style="flex-shrink: 0; padding: 14px 24px; border-top: 1px solid var(--border, #334155); background: var(--bg-subtle, #1e293b); display: flex; justify-content: space-between; align-items: center;">
                     <button type="button" id="btn-reset-defaults" style="background: none; border: none; font-size: 12px; color: var(--text-secondary, #94a3b8); cursor: pointer; text-decoration: underline;">Reset Defaults</button>
                     
                     <div style="display: flex; gap: 10px;" id="modal-footer-buttons"></div>
@@ -369,13 +376,28 @@ class CrawlConfigModalManager {
                     <div style="margin-bottom: 18px; background: var(--bg-card, #0f172a); border: 1px solid var(--border, #334155); padding: 16px 18px; border-radius: 10px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                             <label style="font-size: 13px; font-weight: 700; color: var(--text-primary, #f8fafc);">Maximum Pages Ceiling</label>
-                            <span style="font-size: 13.5px; font-weight: 800; color: #3b82f6; font-family: monospace;" id="val-max-pages">${this.config.max_pages.toLocaleString()} pages</span>
+                            <span style="font-size: 13.5px; font-weight: 800; color: #3b82f6; font-family: monospace;" id="val-max-pages">
+                                ${this.formatMaxPagesLabel(this.config.max_pages)}
+                            </span>
                         </div>
-                        <input type="range" id="range-max-pages" min="100" max="25000" step="500" value="${this.config.max_pages}" style="width: 100%; accent-color: #2563eb; cursor: pointer; height: 5px;"/>
+                        
+                        <input type="range" id="range-max-pages" min="100" max="5001" step="100" value="${this.getMaxPagesSliderValue(this.config.max_pages)}" style="width: 100%; accent-color: #2563eb; cursor: pointer; height: 5px; margin-bottom: 10px;"/>
+
+                        <div style="display: flex; gap: 6px; margin-bottom: 6px;" id="pages-quick-pills">
+                            <button type="button" class="depth-pill-btn ${this.config.max_pages === 500 ? 'active' : ''}" data-pages="500">500</button>
+                            <button type="button" class="depth-pill-btn ${this.config.max_pages === 1000 ? 'active' : ''}" data-pages="1000">1,000</button>
+                            <button type="button" class="depth-pill-btn ${this.config.max_pages === 2500 ? 'active' : ''}" data-pages="2500">2,500</button>
+                            <button type="button" class="depth-pill-btn ${this.config.max_pages === 5000 ? 'active' : ''}" data-pages="5000">5,000</button>
+                            <button type="button" class="depth-pill-btn ${this.is5000PlusMode(this.config.max_pages) ? 'active' : ''}" data-pages="5000+">5000+</button>
+                        </div>
+
+                        <div id="max-pages-info-note" style="font-size: 11.5px; color: #60a5fa; line-height: 1.4; display: ${this.is5000PlusMode(this.config.max_pages) ? 'block' : 'none'};">
+                            ⚡ <strong>Large-Site Mode (5000+):</strong> Crawler will continue scanning until all eligible URLs within the configured crawl scope are exhausted.
+                        </div>
                     </div>
                 `;
 
-                bodyContainer.querySelectorAll('.depth-pill-btn').forEach(btn => {
+                bodyContainer.querySelectorAll('.depth-pill-btn[data-depth]').forEach(btn => {
                     btn.addEventListener('click', (e) => {
                         e.preventDefault();
                         const depthVal = parseInt(btn.getAttribute('data-depth'), 10);
@@ -383,7 +405,7 @@ class CrawlConfigModalManager {
                             const oldVal = this.config.max_depth;
                             this.config.max_depth = depthVal;
 
-                            bodyContainer.querySelectorAll('.depth-pill-btn').forEach(b => b.classList.remove('active'));
+                            bodyContainer.querySelectorAll('.depth-pill-btn[data-depth]').forEach(b => b.classList.remove('active'));
                             btn.classList.add('active');
 
                             const badge = bodyContainer.querySelector('#depth-pill-active-badge');
@@ -401,18 +423,46 @@ class CrawlConfigModalManager {
                 });
 
                 const rangePages = bodyContainer.querySelector('#range-max-pages');
+                const valEl = bodyContainer.querySelector('#val-max-pages');
+                const infoNoteEl = bodyContainer.querySelector('#max-pages-info-note');
+
+                const updatePagesUI = (valStr) => {
+                    const isPlus = (valStr === '5000+' || parseInt(valStr, 10) >= 5001);
+                    const finalVal = isPlus ? '5000+' : parseInt(valStr, 10);
+                    const oldVal = this.config.max_pages;
+                    this.config.max_pages = finalVal;
+
+                    if (valEl) valEl.innerText = this.formatMaxPagesLabel(finalVal);
+                    if (infoNoteEl) infoNoteEl.style.display = isPlus ? 'block' : 'none';
+                    if (rangePages) rangePages.value = isPlus ? 5001 : finalVal;
+
+                    bodyContainer.querySelectorAll('#pages-quick-pills .depth-pill-btn').forEach(pill => {
+                        const target = pill.getAttribute('data-pages');
+                        if ((target === '5000+' && isPlus) || (parseInt(target, 10) === finalVal)) {
+                            pill.classList.add('active');
+                        } else {
+                            pill.classList.remove('active');
+                        }
+                    });
+
+                    this.debouncePersist({ max_pages: finalVal }, () => {
+                        this.config.max_pages = oldVal;
+                    });
+                };
+
                 if (rangePages) {
                     rangePages.addEventListener('input', (e) => {
-                        const val = parseInt(e.target.value, 10);
-                        const oldVal = this.config.max_pages;
-                        this.config.max_pages = val;
-                        const valEl = bodyContainer.querySelector('#val-max-pages');
-                        if (valEl) valEl.innerText = `${val.toLocaleString()} pages`;
-                        this.debouncePersist({ max_pages: val }, () => {
-                            this.config.max_pages = oldVal;
-                        });
+                        updatePagesUI(e.target.value);
                     });
                 }
+
+                bodyContainer.querySelectorAll('#pages-quick-pills .depth-pill-btn').forEach(pill => {
+                    pill.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        const pVal = pill.getAttribute('data-pages');
+                        updatePagesUI(pVal);
+                    });
+                });
                 break;
 
             case 3:
@@ -492,6 +542,165 @@ class CrawlConfigModalManager {
                 break;
 
             case 4:
+                // STEP 4: COUNTRY TARGETING
+                const selectedProj = projectStore.getSelectedProject();
+                const defaultDetected = detectUserDefaultCountry(selectedProj?.target_country);
+                const selectedCountries = Array.isArray(this.config.target_countries) ? this.config.target_countries : [];
+                const selectedCount = selectedCountries.length;
+                const isLimitReached = selectedCount >= 5;
+
+                const q = (this.countrySearchQuery || '').trim().toLowerCase().replace(/^\+/, '');
+                const filteredCountries = COUNTRY_DATASET.filter(c => {
+                    if (!q) return true;
+                    const cleanDial = c.dialCode.replace(/^\+/, '').toLowerCase();
+                    return c.name.toLowerCase().includes(q) ||
+                           cleanDial.includes(q) ||
+                           c.code.toLowerCase() === q;
+                });
+
+                bodyContainer.innerHTML = `
+                    <div style="margin-bottom: 14px;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 4px;">
+                            <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary, #f8fafc);">Country Targeting</h3>
+                            <span class="badge ${isLimitReached ? 'badge-warning' : 'badge-primary'}" id="country-counter-badge" style="font-size: 11px; font-weight: 700; padding: 4px 10px;">
+                                ${selectedCount} / 5 countries selected
+                            </span>
+                        </div>
+                        <p style="font-size: 12.5px; color: var(--text-secondary, #94a3b8); margin: 0;">
+                            Select up to 5 target countries to consider when collecting and analyzing location-specific SEO information.
+                        </p>
+                    </div>
+
+                    ${isLimitReached ? `
+                        <div style="padding: 8px 12px; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; font-size: 12px; color: var(--warning, #f59e0b); font-weight: 600; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                            <span>⚠️ Maximum of 5 countries selected. Deselect a country to choose another.</span>
+                        </div>
+                    ` : ''}
+
+                    <!-- DEFAULT COUNTRY INDICATOR WHEN NO MANUAL SELECTION EXISTS -->
+                    ${selectedCount === 0 ? `
+                        <div style="padding: 10px 14px; background: var(--bg-workspace, #1e293b); border: 1px solid var(--border, #334155); border-radius: 8px; margin-bottom: 12px; font-size: 12px;">
+                            <div style="font-weight: 700; color: var(--text-tertiary, #94a3b8); text-transform: uppercase; font-size: 10px; margin-bottom: 2px;">Default Target Location</div>
+                            ${defaultDetected ? `
+                                <div style="color: var(--text-primary, #f8fafc); font-weight: 600;">
+                                    Using your current country: <span style="color: var(--primary, #3b82f6);">${this.escapeHtml(defaultDetected.name)} (${this.escapeHtml(defaultDetected.dialCode)})</span>
+                                </div>
+                            ` : `
+                                <div style="color: var(--text-secondary, #94a3b8);">
+                                    No country selected — using global/default targeting.
+                                </div>
+                            `}
+                        </div>
+                    ` : ''}
+
+                    <!-- SELECTED COUNTRY TAG CHIPS WITH REMOVE BUTTON -->
+                    ${selectedCount > 0 ? `
+                        <div style="margin-bottom: 12px;" id="selected-country-chips-wrap">
+                            <div style="font-size: 10.5px; font-weight: 700; color: var(--text-tertiary, #94a3b8); text-transform: uppercase; margin-bottom: 4px;">ACTIVE TARGET COUNTRIES</div>
+                            ${selectedCountries.map(code => {
+                                const item = findCountry(code);
+                                if (!item) return '';
+                                return `
+                                    <span class="rule-tag" style="background: rgba(37, 99, 235, 0.15); border-color: rgba(37, 99, 235, 0.4); color: var(--text-primary, #f8fafc); font-size: 12px; font-weight: 600; padding: 4px 10px; margin: 2px; display: inline-flex; align-items: center; gap: 6px;">
+                                        <span>${this.escapeHtml(item.name)} (${this.escapeHtml(item.dialCode)})</span>
+                                        <button type="button" class="btn-remove-country-chip" data-code="${item.code}" style="background: none; border: none; color: #ef4444; cursor: pointer; font-size: 14px; font-weight: 800; line-height: 1; padding: 0 2px;">&times;</button>
+                                    </span>
+                                `;
+                            }).join('')}
+                        </div>
+                    ` : ''}
+
+                    <!-- SEARCH FIELD -->
+                    <div style="margin-bottom: 10px;">
+                        <input type="text" id="input-country-search" value="${this.escapeHtml(this.countrySearchQuery)}" placeholder="Search countries by name or calling code (e.g. India, +91, 91)..."
+                               style="width: 100%; padding: 8px 12px; font-size: 12.5px; border: 1.5px solid var(--border, #334155); border-radius: 8px; background: var(--bg-workspace, #1e293b); color: var(--text-primary, #f8fafc); outline: none; transition: border-color 0.15s ease;"/>
+                    </div>
+
+                    <!-- SCROLLABLE COUNTRY SELECTION LIST -->
+                    <div style="max-height: 190px; overflow-y: auto; border: 1.5px solid var(--border, #334155); border-radius: 8px; background: var(--bg-card, #0f172a);" id="country-list-scroll-box">
+                        ${filteredCountries.length > 0 ? filteredCountries.map(c => {
+                            const isSelected = selectedCountries.includes(c.code);
+                            const isDisabled = isLimitReached && !isSelected;
+                            return `
+                                <label class="country-row-item ${isSelected ? 'selected' : ''}" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.06)); cursor: ${isDisabled ? 'not-allowed' : 'pointer'}; background: ${isSelected ? 'rgba(37, 99, 235, 0.08)' : 'transparent'}; opacity: ${isDisabled ? '0.5' : '1'}; transition: background 0.15s ease;">
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        <input type="checkbox" class="chk-country-select" data-code="${c.code}" ${isSelected ? 'checked' : ''} ${isDisabled ? 'disabled' : ''} style="accent-color: #2563eb; cursor: ${isDisabled ? 'not-allowed' : 'pointer'};"/>
+                                        <span style="font-size: 13px; font-weight: ${isSelected ? '700' : '500'}; color: ${isSelected ? 'var(--text-primary, #f8fafc)' : 'var(--text-secondary, #cbd5e1)'};">
+                                            ${this.escapeHtml(c.name)}
+                                        </span>
+                                    </div>
+                                    <span style="font-size: 12px; font-weight: 600; color: var(--text-tertiary, #94a3b8); font-family: monospace;">
+                                        ${this.escapeHtml(c.dialCode)}
+                                    </span>
+                                </label>
+                            `;
+                        }).join('') : `
+                            <div style="padding: 24px; text-align: center; color: var(--text-tertiary, #94a3b8); font-size: 13px;">
+                                No countries found
+                            </div>
+                        `}
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-tertiary, #94a3b8); margin-top: 6px; text-align: right;">Select up to 5 countries</div>
+                `;
+
+                // Search event handler
+                const inputSearch = bodyContainer.querySelector('#input-country-search');
+                if (inputSearch) {
+                    inputSearch.focus();
+                    // Set cursor at end of input
+                    inputSearch.selectionStart = inputSearch.selectionEnd = inputSearch.value.length;
+                    inputSearch.addEventListener('input', (e) => {
+                        this.countrySearchQuery = e.target.value;
+                        this.renderStepContent();
+                    });
+                }
+
+                // Checkbox toggle handler
+                bodyContainer.querySelectorAll('.chk-country-select').forEach(chk => {
+                    chk.addEventListener('change', (e) => {
+                        const code = e.target.getAttribute('data-code');
+                        let currentList = Array.isArray(this.config.target_countries) ? [...this.config.target_countries] : [];
+                        const oldList = [...currentList];
+
+                        if (e.target.checked) {
+                            if (!currentList.includes(code) && currentList.length < 5) {
+                                currentList.push(code);
+                            }
+                        } else {
+                            currentList = currentList.filter(c => c !== code);
+                        }
+
+                        this.config.target_countries = currentList;
+                        this.renderStepContent();
+
+                        this.persistControlChange({ target_countries: currentList }, () => {
+                            this.config.target_countries = oldList;
+                            this.renderStepContent();
+                        });
+                    });
+                });
+
+                // Remove Chip tag button handler
+                bodyContainer.querySelectorAll('.btn-remove-country-chip').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        const code = e.currentTarget.getAttribute('data-code');
+                        let currentList = Array.isArray(this.config.target_countries) ? [...this.config.target_countries] : [];
+                        const oldList = [...currentList];
+
+                        currentList = currentList.filter(c => c !== code);
+                        this.config.target_countries = currentList;
+                        this.renderStepContent();
+
+                        this.persistControlChange({ target_countries: currentList }, () => {
+                            this.config.target_countries = oldList;
+                            this.renderStepContent();
+                        });
+                    });
+                });
+                break;
+
+            case 5:
                 bodyContainer.innerHTML = `
                     <div style="margin-bottom: 16px;">
                         <h3 style="font-size: 15px; font-weight: 700; margin: 0 0 4px 0; color: var(--text-primary, #f8fafc);">Crawler Behavior & Exclusion Rules</h3>
@@ -548,7 +757,7 @@ class CrawlConfigModalManager {
                 this.bindRemoveRuleButtons(bodyContainer);
                 break;
 
-            case 5:
+            case 6:
                 bodyContainer.innerHTML = `
                     <div style="margin-bottom: 16px;">
                         <h3 style="font-size: 15px; font-weight: 700; margin: 0 0 4px 0; color: var(--text-primary, #f8fafc);">SEO Audit Modules</h3>
@@ -658,8 +867,22 @@ class CrawlConfigModalManager {
                 });
                 break;
 
-            case 6:
+            case 7:
                 const activeModulesCount = Object.values(this.config.audit_modules).filter(Boolean).length;
+                const revProj = projectStore.getSelectedProject();
+                const revDetectedDefault = detectUserDefaultCountry(revProj?.target_country);
+                const revCountries = Array.isArray(this.config.target_countries) ? this.config.target_countries : [];
+                
+                let countryTargetingSummary = 'Global / Default Targeting';
+                if (revCountries.length > 0) {
+                    countryTargetingSummary = revCountries.map(c => {
+                        const item = findCountry(c);
+                        return item ? `${item.name} (${item.dialCode})` : c;
+                    }).join(', ');
+                } else if (revDetectedDefault) {
+                    countryTargetingSummary = `Current Country: ${revDetectedDefault.name} (${revDetectedDefault.dialCode})`;
+                }
+
                 bodyContainer.innerHTML = `
                     <div style="margin-bottom: 16px;">
                         <h3 style="font-size: 15px; font-weight: 700; margin: 0 0 4px 0; color: var(--text-primary, #f8fafc);">Review Crawl Configuration</h3>
@@ -675,6 +898,10 @@ class CrawlConfigModalManager {
                             <div>
                                 <span style="color: var(--text-tertiary, #94a3b8); display: block; font-size: 10.5px; text-transform: uppercase; font-weight: 700;">CRAWL SCOPE</span>
                                 <strong style="color: var(--text-primary, #f8fafc);">${this.config.scope_type.replace('_', ' ').toUpperCase()}</strong>
+                            </div>
+                            <div>
+                                <span style="color: var(--text-tertiary, #94a3b8); display: block; font-size: 10.5px; text-transform: uppercase; font-weight: 700;">COUNTRY TARGETING</span>
+                                <strong style="color: #3b82f6;">${this.escapeHtml(countryTargetingSummary)}</strong>
                             </div>
                             <div>
                                 <span style="color: var(--text-tertiary, #94a3b8); display: block; font-size: 10.5px; text-transform: uppercase; font-weight: 700;">MAX CRAWL DEPTH</span>
@@ -770,6 +997,7 @@ class CrawlConfigModalManager {
                 this.config = {
                     ...this.config,
                     ...remote,
+                    target_countries: Array.isArray(remote.target_countries) ? remote.target_countries : [],
                     audit_modules: {
                         ...this.config.audit_modules,
                         ...(remote.audit_modules || {})
@@ -827,6 +1055,7 @@ class CrawlConfigModalManager {
             follow_redirects: true,
             include_patterns: [],
             exclude_patterns: ['/admin/*', '/login/*', '/cart/*'],
+            target_countries: [],
             ignore_tracking_parameters: true,
             audit_modules: {
                 technical_http: true,
@@ -844,6 +1073,26 @@ class CrawlConfigModalManager {
 
         this.renderStepContent();
         await this.persistControlChange(this.config);
+    }
+
+    is5000PlusMode(val) {
+        return val === '5000+' || val === 0 || val === '0' || val === null || val === undefined || parseInt(val, 10) >= 5001;
+    }
+
+    formatMaxPagesLabel(val) {
+        if (this.is5000PlusMode(val)) {
+            return '5000+ pages';
+        }
+        const num = parseInt(val, 10);
+        return isNaN(num) ? '5000+ pages' : `${num.toLocaleString()} pages`;
+    }
+
+    getMaxPagesSliderValue(val) {
+        if (this.is5000PlusMode(val)) {
+            return 5001;
+        }
+        const num = parseInt(val, 10);
+        return isNaN(num) ? 5001 : Math.min(5000, Math.max(100, num));
     }
 
     async executeCrawl() {

@@ -96,7 +96,12 @@ export class Projects {
 
         window.openProjectWorkspace = (id) => {
             projectStore.setSelectedProjectId(id);
-            window.location.href = '/';
+            if (window.history && window.history.pushState) {
+                window.history.pushState({}, '', '/technical');
+                window.dispatchEvent(new CustomEvent('routechange', { detail: { path: '/technical' } }));
+            } else {
+                window.location.href = '/technical';
+            }
         };
 
         window.openEditProjectModal = (id) => {

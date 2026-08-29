@@ -7,7 +7,8 @@ import uuid
 import copy
 import zipfile
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, Body, Response
+from typing import Optional, List, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, Body, Response, Query
 from sqlalchemy.orm import Session
 from app.config.database import get_db
 from app.config.auth import get_current_user_id
@@ -16,10 +17,13 @@ from app.models.project import Project
 from app.models.project_membership import ProjectMembership
 from app.models.project_invitation import ProjectInvitation
 from app.models.user import User
-from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.models.notification import Notification
+from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 from app.config.settings import settings
 from app.services.reports.pdf_service import PDFReportGenerator
 from app.services.reports.export_service import CSVExportService
+
+from app.services.audit_rules import evaluate_site_audit_rules
 
 router = APIRouter()
 pdf_gen = PDFReportGenerator()
@@ -34,14 +38,14 @@ def sanitize_filename_part(name: str) -> str:
     result = re.sub(r'[-\s]+', '-', cleaned)
     return result or "SEO-Project"
 
-def get_project_metrics(domain: str) -> dict:
-    safe_domain = get_sanitized_domain(domain)
-    website_dir = os.path.join(settings.CRAWL_DATA_DIR, safe_domain)
+def get_project_metrics(domain: str, project_id: Optional[str] = None) -> dict:
+    website_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, project_id)
     latest_path = os.path.join(website_dir, "latest.json")
     
     metrics = {
         "last_crawl": None,
         "crawl_status": "Not Crawled",
+        "health_score": 100,
         "pages_count": 0,
         "issues_count": 0,
         "critical_issues": 0,
@@ -74,6 +78,16 @@ def get_project_metrics(domain: str) -> dict:
                     metrics["internal_links_count"] = meta.get("internal_links_count", 0)
                     metrics["has_crawled"] = True
 
+            pages_path = os.path.join(crawl_dir, "pages.json")
+            if os.path.exists(pages_path):
+                with open(pages_path, "r") as pf:
+                    pages_data = json.load(pf)
+                eval_res = evaluate_site_audit_rules(pages_data)
+                metrics["health_score"] = eval_res.get("health_score", 100)
+                metrics["issues_count"] = len(eval_res.get("issues", []))
+                metrics["critical_issues"] = eval_res.get("summary", {}).get("critical_errors", 0)
+                metrics["warnings"] = eval_res.get("summary", {}).get("warnings", 0)
+
             keywords_path = os.path.join(crawl_dir, "keywords.json")
             if os.path.exists(keywords_path):
                 with open(keywords_path, "r") as kf:
@@ -90,9 +104,8 @@ def get_project_metrics(domain: str) -> dict:
 
     return metrics
 
-def load_project_full_datasets(domain: str):
-    safe_domain = get_sanitized_domain(domain)
-    website_dir = os.path.join(settings.CRAWL_DATA_DIR, safe_domain)
+def load_project_full_datasets(domain: str, project_id: Optional[str] = None):
+    website_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, project_id)
     latest_path = os.path.join(website_dir, "latest.json")
 
     metadata, pages, keywords, rankings, backlinks, internal_links, competitors, issues, crawls = {}, [], [], [], [], [], [], [], []
@@ -159,7 +172,7 @@ def get_projects(
         if not p:
             continue
         
-        metrics = get_project_metrics(p.domain)
+        metrics = get_project_metrics(p.domain, project_id=p.id)
         p_dict = {
             "id": p.id,
             "name": p.name,
@@ -344,6 +357,36 @@ def get_project_team(
         "pending_invitations": invites
     }
 
+@router.get("/users/search")
+def search_users(
+    q: str = Query(""),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Searches registered platform accounts by name or email.
+    Does NOT search external Google Search Console or third-party identities.
+    """
+    clean_q = (q or "").strip().lower()
+    if len(clean_q) < 2:
+        return {"users": []}
+
+    matching = db.query(User).filter(
+        (User.email.ilike(f"%{clean_q}%")) | (User.name.ilike(f"%{clean_q}%"))
+    ).limit(10).all()
+
+    return {
+        "users": [
+            {
+                "id": u.id,
+                "email": u.email,
+                "name": u.name or u.email.split("@")[0],
+                "picture": u.picture
+            } for u in matching
+        ]
+    }
+
+
 @router.post("/{project_id}/team/invite")
 def invite_teammate(
     project_id: str,
@@ -352,19 +395,44 @@ def invite_teammate(
     db: Session = Depends(get_db)
 ):
     """
-    Invites a teammate by Google Email.
-    OWNER ONLY endpoint. Enforces maximum 2 Team Members limit per project.
+    Invites an existing registered platform account to a project internally.
+    No email is sent.
     """
     require_project_owner(db, user_id, project_id)
 
     invited_email = (payload.get("email") or "").strip().lower()
     if not invited_email or "@" not in invited_email:
-        raise HTTPException(status_code=400, detail="Valid Google account email is required for invitation.")
+        raise HTTPException(status_code=400, detail="A valid platform account email is required.")
 
-    if invited_email == user_id.strip().lower():
-        raise HTTPException(status_code=400, detail="You are already the Lead/Owner of this project.")
+    caller_email = user_id.strip().lower()
+    if invited_email == caller_email:
+        raise HTTPException(status_code=400, detail="You cannot invite yourself.")
 
-    # Check team limit (1 Owner + max 2 Members)
+    # 1. Search target account in registered User database
+    target_user = db.query(User).filter(
+        (User.email.ilike(invited_email)) | (User.id.ilike(invited_email))
+    ).first()
+
+    if not target_user:
+        raise HTTPException(
+            status_code=404,
+            detail="Account not found. The user must create an SEO Intelligence Platform account before they can be invited to a project."
+        )
+
+    if target_user.id.lower() == caller_email or target_user.email.lower() == caller_email:
+        raise HTTPException(status_code=400, detail="You cannot invite yourself.")
+
+    # 2. Check existing active project membership
+    existing_m = db.query(ProjectMembership).filter(
+        ProjectMembership.project_id == project_id,
+        (ProjectMembership.user_id == target_user.email) | (ProjectMembership.user_id == target_user.id),
+        ProjectMembership.status == "ACTIVE"
+    ).first()
+
+    if existing_m:
+        raise HTTPException(status_code=400, detail="This user is already a member of this project.")
+
+    # 3. Check team member limit (1 Lead + max 2 Members)
     current_members = db.query(ProjectMembership).filter(
         ProjectMembership.project_id == project_id,
         ProjectMembership.role == "MEMBER",
@@ -374,45 +442,81 @@ def invite_teammate(
     if current_members >= 2:
         raise HTTPException(
             status_code=400,
-            detail="Team member limit reached. Each project supports 1 Lead + max 2 Team Members (Total 3 users per project)."
+            detail="Team member limit reached. Each project supports 1 Lead + max 2 Team Members."
         )
 
-    # Check existing membership
-    existing_m = db.query(ProjectMembership).filter(
-        ProjectMembership.project_id == project_id,
-        ProjectMembership.user_id == invited_email,
-        ProjectMembership.status == "ACTIVE"
-    ).first()
-
-    if existing_m:
-        raise HTTPException(status_code=400, detail=f"User '{invited_email}' is already an active member of this project.")
-
-    # Upsert pending invitation record
-    invitation = db.query(ProjectInvitation).filter(
+    # 4. Check for existing pending invitation
+    existing_inv = db.query(ProjectInvitation).filter(
         ProjectInvitation.project_id == project_id,
-        ProjectInvitation.invited_email == invited_email,
+        (ProjectInvitation.invited_email == target_user.email) | (ProjectInvitation.invited_user_id == target_user.id),
         ProjectInvitation.status == "PENDING"
     ).first()
 
-    if not invitation:
+    if existing_inv:
+        raise HTTPException(status_code=400, detail="Invitation already pending.")
+
+    assigned_role = payload.get("role", "MEMBER")
+    permissions_data = payload.get("permissions")
+    permissions_str = json.dumps(permissions_data) if permissions_data else None
+
+    project = db.query(Project).filter(Project.id == project_id).first()
+    project_name = project.name if project else "SEO Project"
+
+    inviter_user = db.query(User).filter((User.id == user_id) | (User.email == user_id)).first()
+    inviter_name = inviter_user.name if inviter_user else (user_id or "Project Owner")
+
+    # Atomic Transaction: Create ProjectInvitation AND Notification together
+    try:
         invitation = ProjectInvitation(
             id=str(uuid.uuid4()),
             project_id=project_id,
-            invited_email=invited_email,
+            invited_email=target_user.email,
+            invited_user_id=target_user.id,
             invited_by_user_id=user_id,
-            role="MEMBER",
+            role=assigned_role,
+            permissions_json=permissions_str,
             status="PENDING",
             expires_at=datetime.utcnow() + timedelta(days=7)
         )
         db.add(invitation)
+        db.flush()
+
+        # Create persistent Notification for recipient target_user.id
+        notif = Notification(
+            id=str(uuid.uuid4()),
+            user_id=target_user.id,
+            project_id=project_id,
+            invitation_id=invitation.id,
+            title="Project Team Invitation",
+            message=f"You have been invited to join '{project_name}' by {inviter_name}.",
+            type="TEAM_INVITATION",
+            status="UNREAD",
+            data_json=json.dumps({
+                "invitation_id": invitation.id,
+                "project_id": project_id,
+                "project_name": project_name,
+                "inviter_user_id": user_id,
+                "inviter_name": inviter_name,
+                "inviter_email": inviter_user.email if inviter_user else user_id,
+                "role": assigned_role
+            })
+        )
+        db.add(notif)
         db.commit()
         db.refresh(invitation)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create internal team invitation and notification: {str(exc)}"
+        )
 
     return {
         "status": "success",
-        "message": f"Invitation sent to Google account {invited_email}.",
+        "message": f"Team invitation sent to {target_user.name or target_user.email}.",
         "invitation": invitation.to_dict()
     }
+
 
 @router.post("/{project_id}/team/remove")
 def remove_teammate(
@@ -451,6 +555,7 @@ def remove_teammate(
         "message": f"Project access for '{target_user_id}' has been revoked cleanly."
     }
 
+
 @router.post("/{project_id}/team/cancel-invite")
 def cancel_invitation(
     project_id: str,
@@ -459,7 +564,7 @@ def cancel_invitation(
     db: Session = Depends(get_db)
 ):
     """
-    Cancels a pending invitation.
+    Cancels a pending invitation and updates corresponding notification state.
     OWNER ONLY endpoint.
     """
     require_project_owner(db, user_id, project_id)
@@ -473,8 +578,25 @@ def cancel_invitation(
     if not invite:
         raise HTTPException(status_code=404, detail="Pending invitation not found.")
 
-    invite.status = "REVOKED"
+    invite.status = "CANCELLED"
+
+    # Also update any associated notification records
+    notifs = db.query(Notification).filter(Notification.invitation_id == invitation_id).all()
+    for n in notifs:
+        if n.data_json:
+            try:
+                d = json.loads(n.data_json)
+                d["status"] = "CANCELLED"
+                n.data_json = json.dumps(d)
+            except Exception:
+                pass
+
     db.commit()
+
+    return {
+        "status": "success",
+        "message": "Invitation cancelled successfully."
+    }
 
     return {"status": "success", "message": "Pending invitation cancelled."}
 
@@ -572,6 +694,7 @@ def get_project_summary(
 
 DEFAULT_CRAWL_CONFIG = {
     "ignore_tracking_parameters": True,
+    "target_countries": [],
     "audit_modules": {
         "technical_http": True,
         "metadata": True,

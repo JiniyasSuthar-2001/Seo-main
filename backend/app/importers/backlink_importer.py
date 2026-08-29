@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from app.importers.base import BaseImporter
 from app.models.project import Project
-from app.config.utils import get_sanitized_domain
+from app.config.utils import get_sanitized_domain, get_project_storage_dir
 from app.services.competitor_service import normalize_domain
 
 from app.config.settings import settings
@@ -85,8 +85,8 @@ class BacklinkImporter(BaseImporter):
                 successful += 1
 
             # Save to backlinks.json for project
-            if safe_domain and backlinks_file_records:
-                proj_dir = os.path.join(settings.CRAWL_DATA_DIR, safe_domain)
+            if backlinks_file_records:
+                proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, self.project_id)
                 os.makedirs(proj_dir, exist_ok=True)
                 backlinks_file = os.path.join(proj_dir, "backlinks.json")
                 existing_json = []

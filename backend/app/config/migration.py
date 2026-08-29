@@ -104,6 +104,8 @@ def _migrate_single_file(db_file: str):
             "country": "TEXT",
             "device": "TEXT",
             "cpc": "REAL",
+            "frequency": "INTEGER",
+            "pages_found": "INTEGER",
             "serp_features": "TEXT",
             "source": "TEXT"
         },
@@ -182,6 +184,33 @@ def _migrate_single_file(db_file: str):
             "status": "TEXT",
             "created_at": "DATETIME",
             "updated_at": "DATETIME"
+        },
+        "project_invitations": {
+            "id": "TEXT",
+            "project_id": "TEXT",
+            "invited_email": "TEXT",
+            "invited_user_id": "TEXT",
+            "invited_by_user_id": "TEXT",
+            "role": "TEXT",
+            "permissions_json": "TEXT",
+            "status": "TEXT",
+            "expires_at": "DATETIME",
+            "created_at": "DATETIME",
+            "accepted_at": "DATETIME",
+            "rejected_at": "DATETIME"
+        },
+        "notifications": {
+            "id": "TEXT",
+            "user_id": "TEXT",
+            "project_id": "TEXT",
+            "invitation_id": "TEXT",
+            "title": "TEXT",
+            "message": "TEXT",
+            "type": "TEXT",
+            "status": "TEXT",
+            "data_json": "TEXT",
+            "created_at": "DATETIME",
+            "read_at": "DATETIME"
         }
     }
 

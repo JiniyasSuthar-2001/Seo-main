@@ -11,7 +11,7 @@ from app.models.project import Project
 from app.models.page import Page
 from app.models.audit_issue import AuditIssue
 from app.models.crawl_session import CrawlSession
-from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 from app.services.audit_rules import evaluate_site_audit_rules
 from app.config.auth import get_current_user_id
 from app.config.permissions import get_user_membership
@@ -41,12 +41,8 @@ def get_technical_audit(
         }
 
     domain = project.domain
-    safe_domain = get_sanitized_domain(domain)
-    
-    # 1. Load latest crawl pages (check project_id folder first, fallback to safe_domain)
-    latest_path = os.path.join(settings.CRAWL_DATA_DIR, project.id, "latest.json")
-    if not os.path.exists(latest_path):
-        latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+    proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, project.id)
+    latest_path = os.path.join(proj_dir, "latest.json")
 
     pages = []
     if os.path.exists(latest_path):
@@ -110,34 +106,164 @@ def get_audit_issue_history(
     db: Session = Depends(get_db)
 ):
     """
-    Compares recent crawl snapshots to detect New, Resolved, Persistent, Worsened, and Improved issues.
+    Compares recent crawl snapshots on disk to detect New, Resolved, Persistent, Worsened, and Improved issues.
     """
     get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found.")
-
-    sessions = db.query(CrawlSession).filter(
-        CrawlSession.project_id == project.id,
-        CrawlSession.status == "completed"
-    ).order_by(CrawlSession.completed_at.desc()).all()
-
-    if len(sessions) < 2:
+    if not project or not project.domain:
         return {
             "has_history": False,
-            "message": "Issue history timeline will appear after running additional website crawls.",
-            "new_issues": [],
-            "resolved_issues": [],
-            "persistent_issues": []
+            "message": "No previous crawl data available for comparison.",
+            "resolved_issues_count": 0,
+            "new_issues_count": 0,
+            "improved_issues_count": 0,
+            "worsened_issues_count": 0,
+            "still_open_issues_count": 0,
+            "comparison_items": []
         }
+
+    proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, project.domain, project.id)
+    crawls_dir = os.path.join(proj_dir, "crawls")
+
+    if not os.path.exists(crawls_dir):
+        return {
+            "has_history": False,
+            "message": "No previous crawl data available for comparison.",
+            "resolved_issues_count": 0,
+            "new_issues_count": 0,
+            "improved_issues_count": 0,
+            "worsened_issues_count": 0,
+            "still_open_issues_count": 0,
+            "comparison_items": []
+        }
+
+    # Find valid crawl directories sorted descending by folder name (timestamp)
+    crawl_folders = sorted(
+        [d for d in os.listdir(crawls_dir) if os.path.isdir(os.path.join(crawls_dir, d))],
+        reverse=True
+    )
+
+    if len(crawl_folders) == 0:
+        return {
+            "has_history": False,
+            "message": "No previous crawl data available for comparison.",
+            "resolved_issues_count": 0,
+            "new_issues_count": 0,
+            "improved_issues_count": 0,
+            "worsened_issues_count": 0,
+            "still_open_issues_count": 0,
+            "comparison_items": []
+        }
+
+    if len(crawl_folders) == 1:
+        return {
+            "has_history": False,
+            "message": "This is the first crawl. A comparison will be available after the next completed crawl.",
+            "current_snapshot": crawl_folders[0],
+            "resolved_issues_count": 0,
+            "new_issues_count": 0,
+            "improved_issues_count": 0,
+            "worsened_issues_count": 0,
+            "still_open_issues_count": 0,
+            "comparison_items": []
+        }
+
+    curr_dir = os.path.join(crawls_dir, crawl_folders[0])
+    prev_dir = os.path.join(crawls_dir, crawl_folders[1])
+
+    def load_snapshot_pages(cdir):
+        pfile = os.path.join(cdir, "pages.json")
+        if os.path.exists(pfile):
+            try:
+                with open(pfile, "r") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return []
+
+    curr_pages = load_snapshot_pages(curr_dir)
+    prev_pages = load_snapshot_pages(prev_dir)
+
+    curr_audit = evaluate_site_audit_rules(curr_pages)
+    prev_audit = evaluate_site_audit_rules(prev_pages)
+
+    curr_issues_map = {i.get("title"): i for i in curr_audit.get("issues", [])}
+    prev_issues_map = {i.get("title"): i for i in prev_audit.get("issues", [])}
+
+    all_titles = set(curr_issues_map.keys()).union(set(prev_issues_map.keys()))
+
+    comparison_items = []
+    resolved_count = 0
+    new_count = 0
+    improved_count = 0
+    worsened_count = 0
+    still_open_count = 0
+
+    for title in sorted(all_titles):
+        curr_i = curr_issues_map.get(title)
+        prev_i = prev_issues_map.get(title)
+
+        curr_urls = set(curr_i.get("affected_urls", [])) if curr_i else set()
+        prev_urls = set(prev_i.get("affected_urls", [])) if prev_i else set()
+
+        curr_count = curr_i.get("count", len(curr_urls)) if curr_i else 0
+        prev_count = prev_i.get("count", len(prev_urls)) if prev_i else 0
+
+        category = (curr_i or prev_i).get("category", "Website Check")
+        severity = (curr_i or prev_i).get("severity", "Notice")
+        rule_id = (curr_i or prev_i).get("rule_id")
+
+        if prev_count > 0 and curr_count == 0:
+            status = "RESOLVED"
+            resolved_count += 1
+            s_suffix = "s" if prev_count != 1 else ""
+            change_text = f"Resolved ({prev_count} page{s_suffix} fixed)"
+        elif prev_count == 0 and curr_count > 0:
+            status = "NEW"
+            new_count += 1
+            s_suffix = "s" if curr_count != 1 else ""
+            change_text = f"New problem ({curr_count} page{s_suffix} affected)"
+        elif curr_count < prev_count:
+            status = "IMPROVED"
+            improved_count += 1
+            diff = prev_count - curr_count
+            change_text = f"Improved ({diff} fixed, {curr_count} still affected)"
+        elif curr_count > prev_count:
+            status = "WORSENED"
+            worsened_count += 1
+            diff = curr_count - prev_count
+            change_text = f"Worsened (+{diff} affected, total {curr_count})"
+        else:
+            status = "STILL OPEN"
+            still_open_count += 1
+            change_text = f"Unchanged ({curr_count} affected)"
+
+        comparison_items.append({
+            "title": title,
+            "rule_id": rule_id,
+            "category": category,
+            "severity": severity,
+            "status": status,
+            "previous_affected_count": prev_count,
+            "current_affected_count": curr_count,
+            "change_summary": change_text,
+            "resolved_urls": list(prev_urls - curr_urls),
+            "new_urls": list(curr_urls - prev_urls),
+            "still_affected_urls": list(curr_urls.intersection(prev_urls))
+        })
 
     return {
         "has_history": True,
-        "current_snapshot": sessions[0].completed_at.isoformat() if sessions[0].completed_at else "Recent",
-        "previous_snapshot": sessions[1].completed_at.isoformat() if sessions[1].completed_at else "Previous",
-        "resolved_issues_count": 0,
-        "new_issues_count": 0,
-        "message": "Snapshot audit comparison active."
+        "current_snapshot": crawl_folders[0],
+        "previous_snapshot": crawl_folders[1],
+        "resolved_issues_count": resolved_count,
+        "new_issues_count": new_count,
+        "improved_issues_count": improved_count,
+        "worsened_issues_count": worsened_count,
+        "still_open_issues_count": still_open_count,
+        "total_compared_rules": len(all_titles),
+        "comparison_items": comparison_items,
+        "message": f"Comparing current scan ({crawl_folders[0]}) against previous scan ({crawl_folders[1]})."
     }
 
 

@@ -4,7 +4,7 @@ import re
 from collections import Counter
 from typing import Dict, Any, List, Optional
 from app.config.settings import settings
-from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 from app.llm.ai_service import AIService
 
 class AnchorSuggestionService:
@@ -19,13 +19,13 @@ class AnchorSuggestionService:
         target_url: str,
         refresh: bool = False
     ) -> Dict[str, Any]:
-        safe_domain = get_sanitized_domain(domain)
-        cache_key = f"{project_id}:{safe_domain}:{source_url}:{target_url}"
+        proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, project_id)
+        cache_key = f"{project_id}:{source_url}:{target_url}"
 
         if not refresh and cache_key in cls._cache:
             return cls._cache[cache_key]
 
-        latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+        latest_path = os.path.join(proj_dir, "latest.json")
         if not os.path.exists(latest_path):
             return {
                 "status": "no_crawl",

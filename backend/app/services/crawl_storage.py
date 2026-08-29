@@ -2,30 +2,17 @@ import os
 import json
 from datetime import datetime
 from typing import Dict, Any, List
-from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 
 class CrawlStorage:
     def __init__(self, base_dir: str = "data/websites"):
         self.base_dir = base_dir
 
-    def _get_website_folder(self, key: str, domain: str = None) -> str:
-        safe_key = get_sanitized_domain(key) if key else None
-        safe_domain = get_sanitized_domain(domain) if domain else None
+    def _get_website_folder(self, key: str, domain: str = None, project_id: str = None) -> str:
+        return get_project_storage_dir(self.base_dir, domain or key, project_id or (key if key and key != domain else None))
 
-        target_name = safe_key or safe_domain or "unknown_domain"
-        key_dir = os.path.join(self.base_dir, target_name)
-        if os.path.exists(key_dir):
-            return key_dir
-
-        if safe_domain:
-            domain_dir = os.path.join(self.base_dir, safe_domain)
-            if os.path.exists(domain_dir):
-                return domain_dir
-
-        return key_dir
-
-    def save_crawl_snapshot(self, key: str, session_id: str, results: Dict[str, Any], domain: str = None) -> str:
-        website_dir = self._get_website_folder(key, domain)
+    def save_crawl_snapshot(self, key: str, session_id: str, results: Dict[str, Any], domain: str = None, project_id: str = None) -> str:
+        website_dir = self._get_website_folder(key, domain, project_id)
         timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
         crawl_dir = os.path.join(website_dir, "crawls", timestamp)
         os.makedirs(crawl_dir, exist_ok=True)
@@ -51,11 +38,16 @@ class CrawlStorage:
         warning_count = sum(1 for i in issues if i.get("severity") == "Warning")
         notice_count = sum(1 for i in issues if i.get("severity") == "Notice")
 
+        raw_max = results.get("max_pages", 5000)
+        is_5000_plus = (raw_max == "5000+" or raw_max == 0 or raw_max is None or str(raw_max).strip() == "5000+")
+        max_pages_label = "5000+" if is_5000_plus else raw_max
+
         metadata = {
             "crawl_id": session_id,
             "website": domain,
             "timestamp": timestamp,
             "status": results.get("status", "completed"),
+            "max_pages_ceiling": max_pages_label,
             "pages_crawled": results.get("successful_pages_count", len(pages)),
             "failed_pages_count": results.get("failed_pages_count", 0),
             "total_issues": len(issues),
@@ -156,8 +148,8 @@ class CrawlStorage:
         print(f"[STORAGE] Snapshot saved successfully to {crawl_dir}", flush=True)
         return crawl_dir
 
-    def get_crawl_history(self, key: str, domain: str = None) -> List[Dict[str, Any]]:
-        website_dir = self._get_website_folder(key, domain)
+    def get_crawl_history(self, key: str, domain: str = None, project_id: str = None) -> List[Dict[str, Any]]:
+        website_dir = self._get_website_folder(key, domain, project_id)
         crawls_dir = os.path.join(website_dir, "crawls")
         if not os.path.exists(crawls_dir):
             return []

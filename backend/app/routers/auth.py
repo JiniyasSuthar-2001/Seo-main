@@ -15,6 +15,7 @@ from app.models.user import User
 from app.models.project import Project
 from app.models.project_membership import ProjectMembership
 from app.models.project_invitation import ProjectInvitation
+from app.models.notification import Notification
 from app.models.external_connection import ExternalConnection
 from app.config.utils import get_sanitized_domain
 from app.config.settings import settings, build_frontend_redirect
@@ -576,7 +577,7 @@ def register_discovered_projects(
                 "domain": found_existing.domain,
                 "url": found_existing.url,
                 "status": "already_exists",
-                "crawl_status": "Not Crawled" if not os_has_crawl(found_existing.domain) else "Completed"
+                "crawl_status": "Not Crawled" if not os_has_crawl(found_existing.domain, found_existing.id) else "Completed"
             })
         else:
             new_proj = Project(
@@ -617,30 +618,114 @@ def register_discovered_projects(
         "message": "Discovered Google properties registered successfully as Not Crawled workspace projects."
     }
 
+@router.get("/my-invitations")
+def get_my_invitations(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns pending internal team invitations for the currently authenticated application account.
+    """
+    email = user_id.strip().lower()
+    user = db.query(User).filter((User.email.ilike(email)) | (User.id.ilike(email))).first()
+
+    user_ids = [email]
+    if user:
+        user_ids.append(user.id)
+        if user.email:
+            user_ids.append(user.email.lower())
+
+    invitations = db.query(ProjectInvitation).filter(
+        (ProjectInvitation.invited_email.in_(user_ids)) | (ProjectInvitation.invited_user_id.in_(user_ids)),
+        ProjectInvitation.status == "PENDING"
+    ).all()
+
+    results = []
+    now = datetime.utcnow()
+
+    for inv in invitations:
+        if inv.expires_at and inv.expires_at < now:
+            inv.status = "EXPIRED"
+            db.commit()
+            continue
+
+        proj = db.query(Project).filter(Project.id == inv.project_id).first()
+        inviter = db.query(User).filter(User.id == inv.invited_by_user_id).first()
+
+        results.append({
+            "id": inv.id,
+            "project_id": inv.project_id,
+            "project_name": proj.name if proj else "SEO Project",
+            "project_domain": proj.domain if proj else None,
+            "inviter_user_id": inv.invited_by_user_id,
+            "inviter_name": inviter.name if inviter else (inv.invited_by_user_id or "Project Admin"),
+            "inviter_email": inviter.email if inviter else inv.invited_by_user_id,
+            "role": inv.role or "MEMBER",
+            "permissions_json": inv.permissions_json,
+            "status": inv.status,
+            "expires_at": inv.expires_at.isoformat() if inv.expires_at else None,
+            "created_at": inv.created_at.isoformat() if inv.created_at else None
+        })
+
+    return {
+        "user_id": email,
+        "count": len(results),
+        "invitations": results
+    }
+
+
 @router.post("/accept-invitation/{invitation_id}")
+@router.post("/invitations/{invitation_id}/accept")
 def accept_project_invitation(
     invitation_id: str,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """
-    Accepts a pending teammate invitation after verifying that the authenticated Google email
-    matches the invited email.
+    Accepts a pending internal team invitation after verifying authorization.
     """
     email = user_id.strip().lower()
+    user = db.query(User).filter((User.email.ilike(email)) | (User.id.ilike(email))).first()
+
     invite = db.query(ProjectInvitation).filter(ProjectInvitation.id == invitation_id).first()
-    
     if not invite:
         raise HTTPException(status_code=404, detail="Invitation not found or invalid.")
 
-    if invite.invited_email.lower() != email:
+    # Authorization Check: Verify invitation belongs to authenticated user account
+    allowed = False
+    if invite.invited_email and invite.invited_email.lower() == email:
+        allowed = True
+    if user and invite.invited_user_id and (invite.invited_user_id == user.id or invite.invited_user_id == user.email):
+        allowed = True
+
+    if not allowed:
         raise HTTPException(
             status_code=403,
-            detail=f"This invitation belongs to another Google account ({invite.to_dict()['masked_email']}). Please sign in with the Google account that received this invitation."
+            detail="This invitation belongs to another application account."
         )
 
-    if invite.status == "REVOKED" or invite.status == "EXPIRED":
-        raise HTTPException(status_code=400, detail="This project invitation has expired or was revoked by the project lead.")
+    if invite.status == "CANCELLED" or invite.status == "REVOKED":
+        raise HTTPException(status_code=400, detail="This invitation was cancelled by the project lead.")
+
+    if invite.status == "EXPIRED" or (invite.expires_at and invite.expires_at < datetime.utcnow()):
+        invite.status = "EXPIRED"
+        db.commit()
+        raise HTTPException(status_code=400, detail="This project invitation has expired.")
+
+    if invite.status == "ACCEPTED":
+        return {
+            "status": "success",
+            "message": "Invitation has already been accepted.",
+            "project_id": invite.project_id
+        }
+
+    if invite.status != "PENDING":
+        raise HTTPException(status_code=400, detail=f"Cannot accept invitation in status '{invite.status}'.")
+
+    # Check project exists
+    project = db.query(Project).filter(Project.id == invite.project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="The project for this invitation no longer exists.")
 
     team_count = db.query(ProjectMembership).filter(
         ProjectMembership.project_id == invite.project_id,
@@ -653,29 +738,92 @@ def accept_project_invitation(
 
     membership = db.query(ProjectMembership).filter(
         ProjectMembership.project_id == invite.project_id,
-        ProjectMembership.user_id == email
+        (ProjectMembership.user_id == email) | (user and ProjectMembership.user_id == user.id)
     ).first()
 
+    member_user_id = email
     if not membership:
         membership = ProjectMembership(
-            user_id=email,
+            user_id=member_user_id,
             project_id=invite.project_id,
-            role="MEMBER",
+            role=invite.role or "MEMBER",
             status="ACTIVE",
             invited_by=invite.invited_by_user_id
         )
         db.add(membership)
     else:
         membership.status = "ACTIVE"
-        membership.role = "MEMBER"
+        membership.role = invite.role or "MEMBER"
 
     invite.status = "ACCEPTED"
+    invite.accepted_at = datetime.utcnow()
+
+    # Mark associated notifications as READ
+    notifs = db.query(Notification).filter(Notification.invitation_id == invitation_id).all()
+    for n in notifs:
+        n.status = "READ"
+        n.read_at = datetime.utcnow()
+
     db.commit()
 
     return {
         "status": "success",
-        "message": "Project invitation accepted. You now have Team Member access to this project.",
+        "message": f"Team invitation accepted! You are now a member of '{project.name}'.",
         "project_id": invite.project_id
+    }
+
+
+@router.post("/invitations/{invitation_id}/decline")
+def decline_project_invitation(
+    invitation_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Declines a pending internal team invitation.
+    """
+    email = user_id.strip().lower()
+    user = db.query(User).filter((User.email.ilike(email)) | (User.id.ilike(email))).first()
+
+    invite = db.query(ProjectInvitation).filter(ProjectInvitation.id == invitation_id).first()
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invitation not found or invalid.")
+
+    # Authorization Check
+    allowed = False
+    if invite.invited_email and invite.invited_email.lower() == email:
+        allowed = True
+    if user and invite.invited_user_id and (invite.invited_user_id == user.id or invite.invited_user_id == user.email):
+        allowed = True
+
+    if not allowed:
+        raise HTTPException(
+            status_code=403,
+            detail="This invitation belongs to another application account."
+        )
+
+    if invite.status != "PENDING":
+        return {
+            "status": "success",
+            "message": f"Invitation is currently in status '{invite.status}'.",
+            "invitation_id": invitation_id
+        }
+
+    invite.status = "REJECTED"
+    invite.rejected_at = datetime.utcnow()
+
+    # Mark associated notifications as READ
+    notifs = db.query(Notification).filter(Notification.invitation_id == invitation_id).all()
+    for n in notifs:
+        n.status = "READ"
+        n.read_at = datetime.utcnow()
+
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": "Project invitation declined.",
+        "invitation_id": invitation_id
     }
 
 @router.post("/logout")
@@ -757,10 +905,11 @@ def platform_register(payload: dict = Body(...), db: Session = Depends(get_db)):
         "user": user.to_dict()
     }
 
-def os_has_crawl(domain: str) -> bool:
+def os_has_crawl(domain: str, project_id: Optional[str] = None) -> bool:
     from app.config.settings import settings
+    from app.config.utils import get_project_storage_dir
     import os
     if not domain:
         return False
-    safe_domain = get_sanitized_domain(domain)
-    return os.path.exists(os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json"))
+    proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, project_id)
+    return os.path.exists(os.path.join(proj_dir, "latest.json"))

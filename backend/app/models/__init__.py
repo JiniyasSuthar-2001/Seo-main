@@ -12,6 +12,7 @@ from app.models.crawl_session import CrawlSession
 from app.models.audit_issue import AuditIssue
 from app.models.action_opportunity import ActionOpportunity
 from app.models.report import ReportRecord
+from app.models.notification import Notification
 
 __all__ = [
     "Project",
@@ -27,5 +28,6 @@ __all__ = [
     "CrawlSession",
     "AuditIssue",
     "ActionOpportunity",
-    "ReportRecord"
+    "ReportRecord",
+    "Notification"
 ]

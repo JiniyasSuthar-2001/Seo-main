@@ -17,7 +17,7 @@ router = APIRouter()
 class CrawlRequest(BaseModel):
     url: Optional[str] = None
     scope_type: Optional[str] = "entire_domain"
-    max_pages: Optional[int] = 5000
+    max_pages: Optional[Any] = 5000
     max_depth: Optional[int] = 0
     respect_robots_txt: Optional[bool] = True
     crawl_delay_ms: Optional[int] = 500
@@ -27,6 +27,7 @@ class CrawlRequest(BaseModel):
     exclude_patterns: Optional[List[str]] = []
     ignore_utm_params: Optional[bool] = True
     follow_redirects: Optional[bool] = True
+    target_countries: Optional[List[str]] = []
 
 async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict[str, Any]] = None):
     db = SessionLocal()
@@ -44,12 +45,22 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
         except Exception as p_err:
             print(f"[CRAWL PROGRESS DB UPDATE ERROR] {p_err}", flush=True)
 
+    def check_cancellation() -> bool:
+        try:
+            db_chk = SessionLocal()
+            cs = db_chk.query(CrawlSession).filter(CrawlSession.id == session_id).first()
+            is_canc = bool(cs and cs.status in ("cancelling", "cancelled"))
+            db_chk.close()
+            return is_canc
+        except Exception:
+            return False
+
     try:
         crawl_session = db.query(CrawlSession).filter(CrawlSession.id == session_id).first()
         if not crawl_session:
             return
             
-        print(f"[CRAWL] Started crawl task for session {session_id} on {start_url}", flush=True)
+        print(f"[CRAWL] Started crawl task for session {session_id} on {start_url} (Target Countries: {opts.get('target_countries', [])})", flush=True)
         crawler = SEOCrawler(
             start_url=start_url,
             max_pages=opts.get("max_pages", 5000),
@@ -63,7 +74,9 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
             exclude_patterns=opts.get("exclude_patterns", []),
             ignore_utm_params=opts.get("ignore_utm_params", True),
             follow_redirects=opts.get("follow_redirects", True),
-            progress_callback=update_db_progress
+            target_countries=opts.get("target_countries", []),
+            progress_callback=update_db_progress,
+            cancellation_checker=check_cancellation
         )
 
         results = await crawler.start()
@@ -72,11 +85,13 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
         storage = CrawlStorage()
         project = db.query(Project).filter(Project.id == crawl_session.project_id).first() if crawl_session else None
         target_domain = (project.domain if project and project.domain else (project.url if project and project.url else start_url))
-        crawl_dir = storage.save_crawl_snapshot(target_domain, session_id, results, domain=target_domain)
+        crawl_dir = storage.save_crawl_snapshot(target_domain, session_id, results, domain=target_domain, project_id=project.id if project else None)
         
         # Determine status
         raw_status = results.get("status", "completed")
-        if raw_status == "completed_with_errors":
+        if raw_status == "cancelled":
+            crawl_status = "cancelled"
+        elif raw_status == "completed_with_errors":
             crawl_status = "completed_with_errors"
         elif raw_status in ("completed", "access_denied"):
             crawl_status = "completed"
@@ -88,7 +103,7 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
         crawl_session.pages_discovered = max(len(results.get("pages", [])), 1)
         crawl_session.issues_found = len(results.get("issues", []))
         db.commit()
-        print(f"[CRAWL COMPLETED] Session {session_id} status: '{crawl_status}'. Saved {len(results.get('pages', []))} pages to {crawl_dir}", flush=True)
+        print(f"[CRAWL FINISHED] Session {session_id} status: '{crawl_status}'. Saved {len(results.get('pages', []))} pages to {crawl_dir}", flush=True)
 
         # Trigger automatic re-evaluation of opportunities for project
         try:
@@ -176,6 +191,29 @@ async def start_crawl(
     background_tasks.add_task(run_crawl_task, new_session.id, target_url, options_dict)
     return {"message": "Crawl started", "session_id": new_session.id, "target_url": target_url}
 
+@router.post("/{project_id}/crawl/{session_id}/cancel")
+async def cancel_crawl_session(
+    project_id: str,
+    session_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    crawl_session = db.query(CrawlSession).filter(CrawlSession.id == session_id, CrawlSession.project_id == project_id).first()
+    if not crawl_session:
+        raise HTTPException(status_code=404, detail="Crawl session not found")
+        
+    if crawl_session.status in ("started", "running", "queued"):
+        crawl_session.status = "cancelling"
+        db.commit()
+        print(f"[CRAWL CANCEL REQUESTED] Session {session_id} set to status 'cancelling'", flush=True)
+
+    return {
+        "message": "Crawl cancellation requested",
+        "session_id": session_id,
+        "status": crawl_session.status
+    }
+
 @router.get("/{project_id}/crawl/{session_id}")
 async def get_crawl_status(
     project_id: str,
@@ -188,11 +226,20 @@ async def get_crawl_status(
     if not crawl_session:
         raise HTTPException(status_code=404, detail="Crawl session not found")
         
+    cfg = {}
+    if crawl_session.project and crawl_session.project.crawl_config:
+        try:
+            cfg = json.loads(crawl_session.project.crawl_config)
+        except Exception:
+            pass
+    max_pages_ceiling = cfg.get("max_pages", 5000)
+
     return {
         "status": crawl_session.status,
         "pages_discovered": crawl_session.pages_discovered,
         "pages_crawled": crawl_session.pages_crawled,
-        "issues_found": crawl_session.issues_found
+        "issues_found": crawl_session.issues_found,
+        "max_pages": max_pages_ceiling
     }
 
 @router.get("/{project_id}/crawl-history")
@@ -208,7 +255,7 @@ async def get_crawl_history(
         
     domain = project.domain
     storage = CrawlStorage()
-    history = storage.get_crawl_history(domain)
+    history = storage.get_crawl_history(domain, project_id=project.id)
     return history
 
 from app.routers.reports import build_export_filename, record_report_generation, CSVExportService
@@ -226,7 +273,7 @@ def export_crawl_history_csv(
         raise HTTPException(status_code=404, detail="Project not found")
 
     storage = CrawlStorage()
-    history = storage.get_crawl_history(project.domain)
+    history = storage.get_crawl_history(project.domain, project_id=project.id)
     csv_str = CSVExportService.generate_crawl_history_csv(history)
     filename = build_export_filename(project.domain, "crawl-history", "csv")
     record_report_generation(db, project, "Crawl History CSV", "csv", filename, None, "Crawl Engine Logs")

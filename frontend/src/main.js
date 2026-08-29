@@ -3,6 +3,7 @@ import { authStore } from './core/authStore.js';
 import { Router } from './core/router.js';
 import { Sidebar } from './components/Sidebar.js';
 import { TopBar } from './components/TopBar.js';
+import { aiFloatingButton } from './components/AIFloatingButton.js';
 
 // Views
 import { Login } from './views/Login.js';
@@ -48,6 +49,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const topBar = new TopBar();
   topbarContainer.appendChild(topBar.render());
+
+  document.body.appendChild(aiFloatingButton.render());
 
   // Initialize Router
   const router = new Router(viewContainer);

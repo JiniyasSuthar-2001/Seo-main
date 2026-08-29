@@ -5,9 +5,11 @@
  * Enforces global 20 rows per page pagination standard.
  */
 import { Pagination } from './Pagination.js';
+import { apiClient } from '../services/apiClient.js';
+import { projectStore } from '../core/projectStore.js';
 
 export class AuditEvidenceModal {
-    static open({ title, ruleId, category, severity, description, recommendation, affectedUrls, evidenceText, provenance, scanDate }) {
+    static open({ projectId, title, ruleId, category, severity, description, recommendation, affectedUrls, evidenceText, provenance, scanDate }) {
         // Remove any existing audit modal
         const existing = document.getElementById('audit-evidence-modal-root');
         if (existing) existing.remove();
@@ -18,6 +20,10 @@ export class AuditEvidenceModal {
         let currentPage = 1;
         const pageSize = 20; // MANDATORY PLATFORM STANDARD: 20 rows per page
         let searchQuery = '';
+        let pageSolutionsMap = {};
+        let defaultSolution = null;
+        let aiLoading = true;
+        let aiUnavailable = false;
 
         const modalRoot = document.createElement('div');
         modalRoot.id = 'audit-evidence-modal-root';
@@ -41,7 +47,7 @@ export class AuditEvidenceModal {
             else if (sevLower === 'notice') sevBadgeStyle = 'background: rgba(59, 130, 246, 0.1); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.3);';
 
             modalRoot.innerHTML = `
-                <div class="card" style="width: 100%; max-width: 840px; max-height: 90vh; display: flex; flex-direction: column; background: var(--bg-card); border-radius: 16px; border: 1px solid var(--border); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.35); overflow: hidden;">
+                <div class="card" style="width: 100%; max-width: 960px; max-height: 90vh; display: flex; flex-direction: column; background: var(--bg-card); border-radius: 16px; border: 1px solid var(--border); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.35); overflow: hidden;">
                     
                     <!-- MODAL HEADER -->
                     <div style="padding: 20px 24px; border-bottom: 1px solid var(--border); background: var(--bg-subtle); display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
@@ -74,28 +80,44 @@ export class AuditEvidenceModal {
                         </div>
                     </div>
 
-                    <!-- EVIDENCE TABLE -->
+                    <!-- EVIDENCE TABLE WITH AI SOLUTION COLUMN -->
                     <div style="flex: 1; overflow-y: auto; padding: 0;">
                         <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
                             <thead>
                                 <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
-                                    <th style="padding: 10px 24px; width: 60%;">Affected Page URL</th>
-                                    <th style="padding: 10px 16px;">What We Found</th>
+                                    <th style="padding: 12px 18px; width: 36%;">Affected Page URL</th>
+                                    <th style="padding: 12px 16px; width: 28%;">What We Found</th>
+                                    <th style="padding: 12px 18px; width: 36%;">AI Solution</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                ${paginated.items.length > 0 ? paginated.items.map(url => `
-                                    <tr style="border-bottom: 1px solid var(--border);">
-                                        <td style="padding: 10px 24px; font-family: monospace; font-size: 12px; word-break: break-all;">
-                                            <a href="${escapeHtml(url)}" target="_blank" style="color: var(--primary); text-decoration: none; font-weight: 600;">${escapeHtml(url)}</a>
-                                        </td>
-                                        <td style="padding: 10px 16px; font-size: 12px; color: var(--text-secondary);">
-                                            ${escapeHtml(evidenceText || title || 'Issue detected during website scan')}
-                                        </td>
-                                    </tr>
-                                `).join('') : `
+                                ${paginated.items.length > 0 ? paginated.items.map(url => {
+                                    const pageSol = pageSolutionsMap[url] || defaultSolution;
+                                    let aiSolCell = '';
+                                    if (pageSol) {
+                                        aiSolCell = `<span style="color: var(--text-primary); line-height: 1.45;">${escapeHtml(pageSol)}</span>`;
+                                    } else if (aiLoading) {
+                                        aiSolCell = `<span style="color: var(--text-tertiary); font-size: 11.5px; display: inline-flex; align-items: center; gap: 6px;"><span class="crawl-spinner" style="width: 10px; height: 10px; border-width: 1.5px;"></span> Analyzing page...</span>`;
+                                    } else {
+                                        aiSolCell = `<span style="color: var(--text-tertiary); font-size: 11.5px;">AI solution temporarily unavailable.</span>`;
+                                    }
+
+                                    return `
+                                        <tr style="border-bottom: 1px solid var(--border);">
+                                            <td style="padding: 12px 18px; font-family: monospace; font-size: 12px; word-break: break-all; vertical-align: top;">
+                                                <a href="${escapeHtml(url)}" target="_blank" style="color: var(--primary); text-decoration: none; font-weight: 600;">${escapeHtml(url)}</a>
+                                            </td>
+                                            <td style="padding: 12px 16px; font-size: 12px; color: var(--text-secondary); vertical-align: top;">
+                                                ${escapeHtml(evidenceText || title || 'Issue detected during website scan')}
+                                            </td>
+                                            <td style="padding: 12px 18px; font-size: 12px; vertical-align: top;">
+                                                ${aiSolCell}
+                                            </td>
+                                        </tr>
+                                    `;
+                                }).join('') : `
                                     <tr>
-                                        <td colspan="2" style="padding: 32px; text-align: center; color: var(--text-secondary);">
+                                        <td colspan="3" style="padding: 32px; text-align: center; color: var(--text-secondary);">
                                             ${searchQuery ? 'No matching pages found for your query.' : 'No detailed evidence records available.'}
                                         </td>
                                     </tr>
@@ -131,7 +153,6 @@ export class AuditEvidenceModal {
             const searchInput = modalRoot.querySelector('#modal-search-input');
             if (searchInput) {
                 searchInput.focus();
-                // move cursor to end
                 searchInput.setSelectionRange(searchQuery.length, searchQuery.length);
                 searchInput.addEventListener('input', (e) => {
                     searchQuery = e.target.value;
@@ -143,6 +164,60 @@ export class AuditEvidenceModal {
 
         renderModalContent();
         document.body.appendChild(modalRoot);
+
+        const fetchAiSolution = async () => {
+            try {
+                let targetProjectId = projectId;
+                if (!targetProjectId) {
+                    targetProjectId = projectStore.getSelectedProjectId();
+                }
+                if (!targetProjectId) {
+                    const match = window.location.pathname.match(/\/projects\/([^\/]+)/);
+                    if (match) targetProjectId = match[1];
+                }
+                if (!targetProjectId) {
+                    targetProjectId = localStorage.getItem('seo_selected_project_id') || localStorage.getItem('active_project_id') || localStorage.getItem('selected_project_id');
+                }
+                if (!targetProjectId) {
+                    aiLoading = false;
+                    aiUnavailable = true;
+                    renderModalContent();
+                    return;
+                }
+
+                const payload = {
+                    rule_id: ruleId,
+                    title: title,
+                    category: category,
+                    severity: severity,
+                    description: description,
+                    recommendation: recommendation,
+                    affected_urls: urls,
+                    evidence_text: evidenceText
+                };
+
+                const res = await apiClient.post(`/api/projects/${targetProjectId}/ai/problem-solution`, payload);
+
+                if (res?.status === 'no_provider' || res?.code === 'NO_PROVIDER_CONFIGURED') {
+                    aiLoading = false;
+                    aiUnavailable = true;
+                    renderModalContent();
+                    return;
+                }
+
+                pageSolutionsMap = res?.page_solutions || {};
+                defaultSolution = res?.default_solution || null;
+                aiLoading = false;
+                renderModalContent();
+            } catch (err) {
+                console.warn("[AI SOLUTION FETCH NOTICE]", err);
+                aiLoading = false;
+                aiUnavailable = true;
+                renderModalContent();
+            }
+        };
+
+        fetchAiSolution();
     }
 }
 

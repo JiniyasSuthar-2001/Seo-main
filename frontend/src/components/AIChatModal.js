@@ -1,6 +1,6 @@
 /**
- * AIChatModal.js — Evidence-Grounded AI SEO Assistant Drawer
- * Fully transparent AI output with model identification & View Evidence panels.
+ * AIChatModal.js — Evidence-Grounded Floating AI SEO Assistant Panel
+ * Anchored to the bottom-right of the viewport. Non-intrusive floating panel.
  */
 
 import { projectStore } from '../core/projectStore.js';
@@ -29,53 +29,69 @@ export class AIChatModal {
     }
   }
 
+  toggle() {
+    if (this.container && this.container.style.display === 'flex') {
+      this.close();
+    } else {
+      this.open();
+    }
+  }
+
   renderModal() {
     this.container = document.createElement('div');
-    this.container.id = 'ai-chat-drawer-overlay';
+    this.container.id = 'ai-chat-panel-container';
     this.container.style.cssText = `
-      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-      background: rgba(8, 12, 20, 0.6); backdrop-filter: blur(4px);
-      display: flex; justify-content: flex-end; z-index: 99999;
+      position: fixed; bottom: 80px; right: 24px; width: 420px; max-width: calc(100vw - 32px);
+      height: 560px; max-height: calc(100vh - 110px);
+      background: var(--bg-card); border-radius: 14px; border: 1px solid var(--border);
+      box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+      display: flex; flex-direction: column; overflow: hidden; z-index: 99995;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      animation: slideUpIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     `;
 
     const selectedProj = projectStore.getSelectedProject() || {};
     const domain = selectedProj.domain || selectedProj.url || 'Your Website';
 
     this.container.innerHTML = `
-      <div style="background: var(--bg-card); width: 100%; max-width: 520px; height: 100%; display: flex; flex-direction: column; border-left: 1px solid var(--border); box-shadow: var(--shadow-lg);">
-        
-        <!-- HEADER -->
-        <div style="padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-subtle);">
-          <div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <h3 style="font-size: 17px; font-weight: 700; color: var(--text-primary); margin: 0;">AI SEO Assistant</h3>
-              ${renderAIBadge('analysis')}
-            </div>
-            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
-              Grounding queries in real project evidence for <strong>${domain}</strong>
-            </div>
+      <style>
+        @keyframes slideUpIn {
+          from { opacity: 0; transform: translateY(12px) scale(0.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+      </style>
+      
+      <!-- HEADER -->
+      <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-subtle);">
+        <div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <h3 style="font-size: 15px; font-weight: 700; color: var(--text-primary); margin: 0;">AI SEO Assistant</h3>
+            ${renderAIBadge('analysis')}
           </div>
-          <button onclick="window.closeAIChatModal()" style="font-size: 24px; color: var(--text-tertiary); cursor: pointer; border: none; background: none;">&times;</button>
-        </div>
-
-        <!-- TRANSPARENCY NOTICE BANNER -->
-        <div style="background: rgba(124, 58, 237, 0.08); border-bottom: 1px solid rgba(139, 92, 246, 0.2); padding: 10px 20px; font-size: 11.5px; color: var(--text-secondary);">
-          💡 <strong>AI Output Transparency:</strong> Responses are AI interpretations generated from your website crawl evidence. Click <strong>View Evidence</strong> under answers to see the underlying source facts.
-        </div>
-
-        <!-- CHAT MESSAGES STREAM CONTAINER -->
-        <div id="ai-chat-messages-container" style="flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px;">
-          <div style="background: var(--bg-subtle); padding: 14px 16px; border-radius: 10px; border: 1px solid var(--border); font-size: 13px; color: var(--text-secondary);">
-            👋 Hi! Ask me any question about your website SEO audit, missing meta descriptions, crawl issues, or content improvements.
+          <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">
+            Grounded in real evidence for <strong>${this.escapeHtml(domain)}</strong>
           </div>
         </div>
-
-        <!-- INPUT FORM -->
-        <form onsubmit="window.submitAIChatQuery(event)" style="padding: 16px 20px; border-top: 1px solid var(--border); background: var(--bg-subtle); display: flex; gap: 10px;">
-          <input id="ai-chat-input" type="text" placeholder="Ask a question about your SEO data..." required style="flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 13.5px; background: var(--bg-card); color: var(--text-primary);">
-          <button type="submit" id="ai-chat-submit-btn" class="btn btn-primary btn-sm" style="padding: 0 16px; font-weight: 600;">Ask AI</button>
-        </form>
+        <button onclick="window.closeAIChatModal()" style="font-size: 22px; color: var(--text-tertiary); cursor: pointer; border: none; background: none; line-height: 1;">&times;</button>
       </div>
+
+      <!-- TRANSPARENCY NOTICE BANNER -->
+      <div style="background: rgba(124, 58, 237, 0.08); border-bottom: 1px solid rgba(139, 92, 246, 0.2); padding: 8px 16px; font-size: 11px; color: var(--text-secondary);">
+        💡 <strong>AI Output Transparency:</strong> Answers are AI interpretations generated from your website crawl evidence. Click <strong>View Evidence</strong> to see source facts.
+      </div>
+
+      <!-- CHAT MESSAGES STREAM CONTAINER -->
+      <div id="ai-chat-messages-container" style="flex: 1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px;">
+        <div style="background: var(--bg-subtle); padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); font-size: 12.5px; color: var(--text-secondary);">
+          👋 Hi! Ask me any question about your website SEO audit, missing meta descriptions, crawl issues, or technical improvements.
+        </div>
+      </div>
+
+      <!-- INPUT FORM -->
+      <form onsubmit="window.submitAIChatQuery(event)" style="padding: 12px 16px; border-top: 1px solid var(--border); background: var(--bg-subtle); display: flex; gap: 8px;">
+        <input id="ai-chat-input" type="text" placeholder="Ask a question about your SEO data..." required style="flex: 1; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: var(--bg-card); color: var(--text-primary); outline: none;">
+        <button type="submit" id="ai-chat-submit-btn" class="btn btn-primary btn-sm" style="padding: 0 14px; font-weight: 600; font-size: 12.5px;">Ask AI</button>
+      </form>
     `;
 
     document.body.appendChild(this.container);
@@ -103,7 +119,7 @@ export class AIChatModal {
 
     // Append user message
     const userBubble = document.createElement('div');
-    userBubble.style.cssText = 'align-self: flex-end; background: var(--primary); color: #fff; padding: 10px 14px; border-radius: 10px 10px 0 10px; max-width: 80%; font-size: 13px;';
+    userBubble.style.cssText = 'align-self: flex-end; background: var(--primary); color: #fff; padding: 9px 13px; border-radius: 10px 10px 0 10px; max-width: 82%; font-size: 12.5px;';
     userBubble.innerText = query;
     msgContainer.appendChild(userBubble);
 
@@ -114,13 +130,16 @@ export class AIChatModal {
 
     // Loading placeholder
     const aiBubble = document.createElement('div');
-    aiBubble.style.cssText = 'align-self: flex-start; background: var(--bg-subtle); border: 1px solid var(--border); padding: 14px 16px; border-radius: 10px 10px 10px 0; max-width: 90%; font-size: 13px;';
+    aiBubble.style.cssText = 'align-self: flex-start; background: var(--bg-subtle); border: 1px solid var(--border); padding: 12px 14px; border-radius: 10px 10px 10px 0; max-width: 90%; font-size: 12.5px;';
     aiBubble.innerHTML = `<div style="display: flex; align-items: center; gap: 8px;">${renderAIBadge('analysis')} <span style="color: var(--text-tertiary);">Analyzing project evidence...</span></div>`;
     msgContainer.appendChild(aiBubble);
     msgContainer.scrollTop = msgContainer.scrollHeight;
 
     try {
-      const res = await apiClient.post(`/api/projects/${projectId}/ai/chat`, { query });
+      const res = await apiClient.post(`/api/projects/${projectId}/ai/chat`, { 
+        query,
+        current_page: window.location.pathname
+      });
       const answerText = res.answer || res.message || "No answer generated.";
       const provider = res.provider || 'AI Engine';
       const evidence = res.context_used || { domain: projectStore.getSelectedProject()?.domain, pages_analyzed: 1 };
@@ -133,9 +152,9 @@ export class AIChatModal {
       aiBubble.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
           ${renderAIBadge('analysis')}
-          <span style="font-size: 10.5px; color: var(--text-tertiary);">Provider: ${provider.toUpperCase()}</span>
+          <span style="font-size: 10px; color: var(--text-tertiary);">Provider: ${provider.toUpperCase()}</span>
         </div>
-        <div style="color: var(--text-primary); line-height: 1.5; white-space: pre-wrap; margin-bottom: 10px;">${answerText}</div>
+        <div style="color: var(--text-primary); line-height: 1.5; white-space: pre-wrap; margin-bottom: 10px;">${this.escapeHtml(answerText)}</div>
         ${renderViewEvidenceButton(evidenceList, `chat-ev-${Math.random().toString(36).substring(2, 7)}`)}
       `;
     } catch (err) {
@@ -144,7 +163,7 @@ export class AIChatModal {
           ${renderAIBadge('analysis')}
           <span style="color: var(--critical); font-weight: 600;">Unable to complete query</span>
         </div>
-        <div style="color: var(--text-secondary); font-size: 12.5px;">${err.message || "Please check backend AI service status."}</div>
+        <div style="color: var(--text-secondary); font-size: 12px;">${this.escapeHtml(err.message || "Please check backend AI service status.")}</div>
       `;
     } finally {
       this.isSubmitting = false;
@@ -152,6 +171,15 @@ export class AIChatModal {
       btn.innerText = 'Ask AI';
       msgContainer.scrollTop = msgContainer.scrollHeight;
     }
+  }
+
+  escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
   }
 }
 

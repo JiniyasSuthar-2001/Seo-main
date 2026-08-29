@@ -96,6 +96,12 @@ class CrawlProgressOverlayManager {
                 <span>Local Engine Running</span>
                 <span id="crawl-overlay-percent" style="font-weight: 600; color: #94a3b8;">Scanning</span>
             </div>
+
+            <div id="crawl-overlay-actions" style="margin-top: 14px; display: flex; justify-content: flex-end; gap: 8px;">
+                <button id="btn-cancel-crawl" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s ease;">
+                    Cancel Crawl
+                </button>
+            </div>
         `;
 
         document.body.appendChild(container);
@@ -115,6 +121,31 @@ class CrawlProgressOverlayManager {
 
         this.setButtonsState(true);
 
+        const cancelBtn = document.getElementById('btn-cancel-crawl');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', async () => {
+                if (cancelBtn.disabled) return;
+                cancelBtn.disabled = true;
+                cancelBtn.style.opacity = '0.7';
+                cancelBtn.style.cursor = 'not-allowed';
+                cancelBtn.innerHTML = `<span class="crawl-spinner" style="width: 10px; height: 10px; border-width: 2px; margin-right: 6px;"></span> Cancelling...`;
+
+                const statusTextEl = document.getElementById('crawl-overlay-status-text');
+                if (statusTextEl) {
+                    statusTextEl.innerHTML = `<span style="color: #f59e0b; font-weight: 500;">Safely stopping current scan...</span>`;
+                }
+
+                try {
+                    await crawlService.cancelCrawl(projectId, sessionId);
+                } catch (err) {
+                    console.error("[CRAWL CANCEL ERROR]", err);
+                    if (statusTextEl) {
+                        statusTextEl.innerHTML = `<span style="color: #cbd5e1; font-weight: 500;">We couldn't stop the crawl immediately. The system will stop it as soon as the current operation finishes.</span>`;
+                    }
+                }
+            });
+        }
+
         this.activeInterval = setInterval(async () => {
             try {
                 const statusData = await crawlService.getCrawlStatus(projectId, sessionId);
@@ -125,24 +156,68 @@ class CrawlProgressOverlayManager {
                 const statusTextEl = document.getElementById('crawl-overlay-status-text');
                 const spinnerEl = document.getElementById('crawl-overlay-spinner');
                 const titleEl = document.getElementById('crawl-overlay-title');
+                const actionsEl = document.getElementById('crawl-overlay-actions');
 
                 const discovered = statusData.pages_discovered || 1;
                 const crawled = statusData.pages_crawled || 0;
+                const maxCfg = statusData.max_pages;
+                const is5000Plus = (maxCfg === '5000+' || maxCfg === 0 || maxCfg === '0' || maxCfg === null || maxCfg === undefined);
                 
                 let pct = 10;
                 if (crawled > 0) {
                     pct = Math.min(100, Math.round((crawled / Math.max(crawled, discovered)) * 100));
                 }
 
-                if (statsEl) statsEl.innerText = `${crawled} / ${discovered} pages`;
-                if (percentEl) percentEl.innerText = `${pct}%`;
-                if (barEl) barEl.style.width = `${pct}%`;
-
-                if (crawled > 0 && statusTextEl) {
-                    statusTextEl.innerText = `Crawling HTML, extracting links & meta tags...`;
+                if (is5000Plus) {
+                    if (statsEl) statsEl.innerText = `${crawled.toLocaleString()} pages scanned`;
+                    if (percentEl) percentEl.innerText = `Unlimited Scope`;
+                    if (barEl) barEl.style.width = `100%`;
+                    if (crawled > 0 && statusTextEl && statusData.status !== 'cancelling' && statusData.status !== 'cancelled') {
+                        statusTextEl.innerText = `Crawling HTML... Continuing until crawl scope is exhausted.`;
+                    }
+                } else {
+                    if (statsEl) statsEl.innerText = `${crawled.toLocaleString()} / ${discovered.toLocaleString()} pages`;
+                    if (percentEl) percentEl.innerText = `${pct}%`;
+                    if (barEl) barEl.style.width = `${pct}%`;
+                    if (crawled > 0 && statusTextEl && statusData.status !== 'cancelling' && statusData.status !== 'cancelled') {
+                        statusTextEl.innerText = `Crawling HTML, extracting links & meta tags...`;
+                    }
                 }
 
-                if (statusData.status === 'completed' || statusData.status === 'completed_with_errors') {
+                if (statusData.status === 'cancelled') {
+                    clearInterval(this.activeInterval);
+                    this.activeInterval = null;
+
+                    if (statsEl) statsEl.innerText = `${crawled} page(s) audited before cancellation`;
+                    if (statusTextEl) {
+                        statusTextEl.innerHTML = `<span style="color: #f59e0b; font-weight: 600;">Crawl cancelled by user after ${crawled} pages.</span>`;
+                    }
+                    if (titleEl) titleEl.innerText = "Crawl Cancelled";
+                    if (barEl) {
+                        barEl.style.width = "100%";
+                        barEl.style.backgroundColor = "#f59e0b";
+                        barEl.classList.remove('crawl-progress-striped');
+                    }
+                    if (spinnerEl) {
+                        spinnerEl.outerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`;
+                    }
+                    if (actionsEl) {
+                        actionsEl.innerHTML = `
+                            <button id="btn-overlay-view-results" style="background: #2563eb; color: #fff; border: none; border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer;">View Results</button>
+                            <button id="btn-overlay-new-crawl" style="background: rgba(255, 255, 255, 0.1); color: #e2e8f0; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer;">Start New Crawl</button>
+                        `;
+                        document.getElementById('btn-overlay-view-results')?.addEventListener('click', () => window.location.href = '/technical');
+                        document.getElementById('btn-overlay-new-crawl')?.addEventListener('click', () => {
+                            document.getElementById('global-crawl-overlay')?.remove();
+                            window.dispatchEvent(new CustomEvent('seo:open-crawl-config'));
+                        });
+                    }
+
+                    this.setButtonsState(false);
+                    projectStore.fetchProjects().catch(() => {});
+                    window.dispatchEvent(new CustomEvent('seo:crawl-completed', { detail: { projectId, sessionId } }));
+
+                } else if (statusData.status === 'completed' || statusData.status === 'completed_with_errors') {
                     clearInterval(this.activeInterval);
                     this.activeInterval = null;
 
@@ -167,6 +242,9 @@ class CrawlProgressOverlayManager {
                             ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`
                             : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
                     }
+                    if (actionsEl) {
+                        actionsEl.innerHTML = ``;
+                    }
 
                     this.setButtonsState(false);
 
@@ -184,6 +262,9 @@ class CrawlProgressOverlayManager {
                         barEl.style.width = "100%";
                         barEl.style.backgroundColor = "#ef4444";
                         barEl.classList.remove('crawl-progress-striped');
+                    }
+                    if (actionsEl) {
+                        actionsEl.innerHTML = ``;
                     }
 
                     this.setButtonsState(false);

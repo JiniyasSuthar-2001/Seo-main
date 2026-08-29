@@ -16,6 +16,12 @@ export const crawlService = {
         return await apiClient.get(`/api/projects/${id}/crawl/${sessionId}`);
     },
 
+    async cancelCrawl(projectId, sessionId) {
+        const id = resolveProjectId(projectId);
+        if (!id) return null;
+        return await apiClient.post(`/api/projects/${id}/crawl/${sessionId}/cancel`);
+    },
+
     async getCrawlHistory(projectId) {
         const id = resolveProjectId(projectId);
         if (!id) return [];

@@ -358,24 +358,27 @@ class GroqProviderAdapter(LLMProvider):
 
     def _get_model_candidates(self) -> List[str]:
         candidates = []
-        if self.model:
-            candidates.append(self.model)
 
+        # 1. Dynamically query Groq GET /models endpoint first for active chat models
         discovered = self.fetch_available_models()
         if discovered:
             for m in discovered:
                 m_id = m["id"]
                 if m_id not in candidates:
                     candidates.append(m_id)
-        
+
+        # 2. Add requested model if specified
+        if self.model and self.model not in candidates:
+            candidates.append(self.model)
+
+        # 3. Known standard active Groq models fallback list
         fallback_defaults = [
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b",
-            "qwen/qwen3.6-27b",
-            "allam-2-7b",
-            "groq/compound",
             "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant"
+            "llama-3.1-8b-instant",
+            "llama3-70b-8192",
+            "llama3-8b-8192",
+            "mixtral-8x7b-32768",
+            "gemma2-9b-it"
         ]
         for d in fallback_defaults:
             if d not in candidates:

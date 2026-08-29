@@ -20,6 +20,8 @@ class Keyword(Base):
     country = Column(String, nullable=True)
     device = Column(String, nullable=True)
     cpc = Column(Float, nullable=True)
+    frequency = Column(Integer, nullable=True)
+    pages_found = Column(Integer, nullable=True)
     serp_features = Column(String, nullable=True)  # JSON string e.g. ["Featured Snippet", "PAA"]
     source = Column(String, nullable=True, default="Crawler")  # Crawler, Search Console, CSV Import, Manual, Autocomplete
     

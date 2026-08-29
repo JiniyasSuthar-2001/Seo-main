@@ -19,7 +19,7 @@ router = APIRouter()
 import os
 import json
 from app.config.settings import settings
-from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 
 @router.get("")
 @router.get("/")
@@ -37,11 +37,8 @@ def get_project_opportunities(
 
     # 1. Load latest crawl snapshot from disk
     domain = project.domain or project.url
-    safe_domain = get_sanitized_domain(domain)
-    
-    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
-    if not os.path.exists(latest_path):
-        latest_path = os.path.join(settings.CRAWL_DATA_DIR, project.id, "latest.json")
+    proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, project.id)
+    latest_path = os.path.join(proj_dir, "latest.json")
 
     has_crawl = False
     pages = []

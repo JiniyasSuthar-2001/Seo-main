@@ -224,13 +224,36 @@ export class Settings {
             const pendingInvites = teamData.pending_invitations || [];
             const memberCount = teamData.member_count || 0;
 
+            let pendingRows = pendingInvites.map(inv => `
+                <tr>
+                    <td style="padding: 12px 16px;">
+                        <strong style="color: var(--text-primary); display: block;">${this.escapeHtml(inv.invited_email)}</strong>
+                        <span style="font-size: 11px; color: var(--text-tertiary);">Internal Invitation</span>
+                    </td>
+                    <td style="padding: 12px 16px;">
+                        <span class="badge badge-info" style="font-size: 11px;">${this.escapeHtml(inv.role || 'MEMBER')}</span>
+                    </td>
+                    <td style="padding: 12px 16px;">
+                        <span class="badge badge-warning" style="font-size: 11px;">● Pending</span>
+                    </td>
+                    <td style="padding: 12px 16px; font-size: 12px; color: var(--text-secondary);">
+                        ${inv.created_at ? new Date(inv.created_at).toLocaleDateString() : 'Recent'}
+                    </td>
+                    <td style="padding: 12px 16px; text-align: right;">
+                        ${isOwner ? `
+                            <button class="btn btn-secondary btn-sm btn-cancel-invitation" data-id="${inv.id}" style="font-size: 11px; color: var(--critical);">Cancel</button>
+                        ` : ''}
+                    </td>
+                </tr>
+            `).join('');
+
             wrapper.innerHTML = `
-                <div class="card" style="padding: 24px;">
+                <div class="card" style="padding: 24px; margin-bottom: 20px;">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; flex-wrap: wrap; gap: 12px;">
                         <div>
                             <h3 style="font-size: 17px; font-weight: 700; margin: 0; color: var(--text-primary);">Project Team & Teammate Permissions</h3>
                             <p style="font-size: 12.5px; color: var(--text-secondary); margin-top: 2px;">
-                                Each project supports 1 Lead + max 2 Team Members (${memberCount}/2 teammates active). Access is project-specific.
+                                Invite registered SEO Intelligence Platform accounts to collaborate on this project. Each project supports 1 Lead + max 2 Team Members (${memberCount}/2 teammates active).
                             </p>
                         </div>
                         ${isOwner && memberCount < 2 ? `
@@ -238,22 +261,52 @@ export class Settings {
                         ` : (isOwner ? `<span class="badge badge-warning">Team Member Limit Reached (2/2)</span>` : '')}
                     </div>
 
-                    <!-- INVITE TEAMMATE FORM -->
-                    <div id="invite-form-container" style="display: none; background: var(--bg-subtle); border-radius: 10px; padding: 18px; margin-bottom: 20px; border: 1px solid var(--border);">
-                        <h4 style="font-size: 14px; font-weight: 700; margin: 0 0 8px; color: var(--text-primary);">Invite Teammate</h4>
-                        <p style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 12px;">
-                            Enter your teammate's email address. They will gain access upon signing into the SEO platform.
+                    <!-- SEARCH & INVITE TEAMMATE FORM -->
+                    <div id="invite-form-container" style="display: none; background: var(--bg-subtle); border-radius: 10px; padding: 20px; margin-bottom: 24px; border: 1px solid var(--border);">
+                        <h4 style="font-size: 14px; font-weight: 700; margin: 0 0 6px; color: var(--text-primary);">Add Teammate (Internal Account Invitation)</h4>
+                        <p style="font-size: 12.5px; color: var(--text-secondary); margin-bottom: 14px;">
+                            Search for an existing SEO Intelligence Platform account. The invited recipient will receive an internal invitation inside their account.
                         </p>
-                        <form id="invite-teammate-form" style="display: flex; gap: 10px; flex-wrap: wrap;">
-                            <input type="email" id="invite-google-email" placeholder="e.g. teammate@company.com" required style="flex: 1; min-width: 240px; padding: 8px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-primary);"/>
-                            <button type="submit" class="btn btn-primary btn-sm">Send Invitation</button>
-                            <button type="button" class="btn btn-secondary btn-sm" id="btn-cancel-invite-form">Cancel</button>
+                        
+                        <form id="invite-teammate-form">
+                            <div style="margin-bottom: 14px; position: relative;">
+                                <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-secondary);">Search Existing Account</label>
+                                <input type="text" id="invite-account-search" placeholder="Type email or account name (e.g. john@example.com)..." autocomplete="off" required style="width: 100%; padding: 9px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-primary);"/>
+                                <div id="account-search-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 100; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); max-height: 180px; overflow-y: auto; margin-top: 4px;"></div>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px;">
+                                <div>
+                                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-secondary);">Requested Role</label>
+                                    <select id="invite-role-select" style="width: 100%; padding: 8px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-primary);">
+                                        <option value="MEMBER">Team Member (Editor)</option>
+                                        <option value="ADMIN">Project Admin</option>
+                                        <option value="VIEWER">Viewer (Read Only)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-secondary);">Assigned Permissions</label>
+                                    <div style="display: flex; gap: 12px; font-size: 12px; flex-wrap: wrap; margin-top: 6px;">
+                                        <label><input type="checkbox" checked disabled/> Can View</label>
+                                        <label><input type="checkbox" id="perm-edit" checked/> Can Edit</label>
+                                        <label><input type="checkbox" id="perm-crawl" checked/> Can Crawl</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="invite-error-box" style="display: none; padding: 10px 14px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 6px; color: #ef4444; font-size: 12.5px; margin-bottom: 14px;"></div>
+
+                            <div style="display: flex; gap: 10px;">
+                                <button type="submit" class="btn btn-primary btn-sm">Send Team Invitation</button>
+                                <button type="button" class="btn btn-secondary btn-sm" id="btn-cancel-invite-form">Cancel</button>
+                            </div>
                         </form>
                     </div>
 
                     <!-- ACTIVE TEAM MEMBERS TABLE -->
-                    <div style="overflow-x: auto; margin-bottom: 16px;">
-                        <table class="data-table">
+                    <h4 style="font-size: 14px; font-weight: 700; margin: 0 0 10px; color: var(--text-primary);">Current Team Members (${members.length})</h4>
+                    <div style="overflow-x: auto; margin-bottom: 24px;">
+                        <table class="data-table" style="width: 100%;">
                             <thead>
                                 <tr>
                                     <th style="padding: 10px 16px;">User Account</th>
@@ -266,18 +319,18 @@ export class Settings {
                                 ${members.map(m => `
                                     <tr>
                                         <td style="padding: 12px 16px;">
-                                            <strong style="color: var(--text-primary); display: block;">${m.name}</strong>
-                                            <span style="font-size: 11.5px; color: var(--text-secondary); font-family: monospace;">${m.email || m.masked_email}</span>
+                                            <strong style="color: var(--text-primary); display: block;">${this.escapeHtml(m.name)}</strong>
+                                            <span style="font-size: 11.5px; color: var(--text-secondary); font-family: monospace;">${this.escapeHtml(m.email || m.masked_email)}</span>
                                         </td>
                                         <td style="padding: 12px 16px;">
-                                            <span class="badge ${m.role === 'OWNER' ? 'badge-success' : 'badge-info'}">${m.role_label}</span>
+                                            <span class="badge ${m.role === 'OWNER' ? 'badge-success' : 'badge-info'}">${this.escapeHtml(m.role_label)}</span>
                                         </td>
                                         <td style="padding: 12px 16px;">
                                             <span style="color: var(--success); font-weight: 600; font-size: 12px;">● Active</span>
                                         </td>
                                         <td style="padding: 12px 16px; text-align: right;">
                                             ${isOwner && m.role !== 'OWNER' ? `
-                                                <button class="btn btn-secondary btn-sm btn-remove-teammate" data-user="${m.email}" style="font-size: 11px; color: var(--critical);">Remove Access</button>
+                                                <button class="btn btn-secondary btn-sm btn-remove-teammate" data-user="${this.escapeHtml(m.email)}" style="font-size: 11px; color: var(--critical);">Remove Access</button>
                                             ` : '<span style="font-size: 11px; color: var(--text-tertiary);">Owner</span>'}
                                         </td>
                                     </tr>
@@ -286,20 +339,42 @@ export class Settings {
                         </table>
                     </div>
 
+                    <!-- PENDING INVITATIONS TABLE -->
+                    <h4 style="font-size: 14px; font-weight: 700; margin: 0 0 10px; color: var(--text-primary);">Pending Invitations (${pendingInvites.length})</h4>
+                    <div style="overflow-x: auto;">
+                        <table class="data-table" style="width: 100%;">
+                            <thead>
+                                <tr>
+                                    <th style="padding: 10px 16px;">Invited Account</th>
+                                    <th style="padding: 10px 16px;">Role</th>
+                                    <th style="padding: 10px 16px;">Status</th>
+                                    <th style="padding: 10px 16px;">Invited Date</th>
+                                    <th style="padding: 10px 16px; text-align: right;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${pendingRows.length > 0 ? pendingRows : `<tr><td colspan="5" style="padding: 24px; text-align: center; color: var(--text-secondary);">No pending invitations.</td></tr>`}
+                            </tbody>
+                        </table>
+                    </div>
+
                 </div>
             `;
 
-            this.bindTeamHandlers(wrapper, projectId);
+            this.bindTeamHandlers(wrapper, projectId, isOwner);
         } catch (err) {
             console.error('[SETTINGS] Team load error:', err);
         }
     }
 
-    bindTeamHandlers(wrapper, projectId) {
+    bindTeamHandlers(wrapper, projectId, isOwner) {
         const toggleBtn = wrapper.querySelector('#btn-show-invite-form');
         const inviteFormContainer = wrapper.querySelector('#invite-form-container');
         const cancelBtn = wrapper.querySelector('#btn-cancel-invite-form');
         const inviteForm = wrapper.querySelector('#invite-teammate-form');
+        const searchInput = wrapper.querySelector('#invite-account-search');
+        const searchResults = wrapper.querySelector('#account-search-results');
+        const errorBox = wrapper.querySelector('#invite-error-box');
 
         if (toggleBtn && inviteFormContainer) {
             toggleBtn.addEventListener('click', () => {
@@ -312,22 +387,106 @@ export class Settings {
             });
         }
 
+        // Live Account Search Autocomplete
+        if (searchInput && searchResults) {
+            let searchTimeout = null;
+            searchInput.addEventListener('input', (e) => {
+                const query = e.target.value.trim();
+                if (searchTimeout) clearTimeout(searchTimeout);
+                if (query.length < 2) {
+                    searchResults.style.display = 'none';
+                    return;
+                }
+
+                searchTimeout = setTimeout(async () => {
+                    try {
+                        const res = await apiClient.get(`/api/projects/users/search?q=${encodeURIComponent(query)}`);
+                        const users = res.users || [];
+                        if (users.length === 0) {
+                            searchResults.innerHTML = `<div style="padding: 10px 14px; font-size: 12px; color: var(--text-secondary);">No registered accounts found matching "${this.escapeHtml(query)}"</div>`;
+                        } else {
+                            searchResults.innerHTML = users.map(u => `
+                                <div class="search-user-item" data-email="${this.escapeHtml(u.email)}" style="padding: 10px 14px; border-bottom: 1px solid var(--border); cursor: pointer;">
+                                    <strong style="font-size: 13px; color: var(--text-primary); display: block;">${this.escapeHtml(u.name)}</strong>
+                                    <span style="font-size: 11.5px; color: var(--text-secondary);">${this.escapeHtml(u.email)}</span>
+                                </div>
+                            `).join('');
+
+                            searchResults.querySelectorAll('.search-user-item').forEach(item => {
+                                item.addEventListener('click', () => {
+                                    searchInput.value = item.dataset.email;
+                                    searchResults.style.display = 'none';
+                                });
+                            });
+                        }
+                        searchResults.style.display = 'block';
+                    } catch (err) {
+                        console.error('[SEARCH USERS] Error:', err);
+                    }
+                }, 300);
+            });
+        }
+
         if (inviteForm) {
             inviteForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                const emailInput = wrapper.querySelector('#invite-google-email');
-                const email = emailInput ? emailInput.value.trim() : '';
+                if (errorBox) errorBox.style.display = 'none';
+                const email = searchInput ? searchInput.value.trim() : '';
+                const role = wrapper.querySelector('#invite-role-select')?.value || 'MEMBER';
+                const permEdit = wrapper.querySelector('#perm-edit')?.checked ?? true;
+                const permCrawl = wrapper.querySelector('#perm-crawl')?.checked ?? true;
 
                 if (!email) return;
 
                 try {
-                    await apiClient.post(`/api/projects/${projectId}/team/invite`, { email });
-                    await this.renderTeamSection(wrapper, projectId, true);
-                    alert(`Invitation sent to ${email}.`);
+                    await apiClient.post(`/api/projects/${projectId}/team/invite`, {
+                        email,
+                        role,
+                        permissions: { can_view: true, can_edit: permEdit, can_crawl: permCrawl }
+                    });
+                    await this.renderTeamSection(wrapper, projectId, isOwner);
+                    alert(`Team invitation sent successfully.`);
                 } catch (err) {
-                    alert(`Failed to invite teammate: ${err.message || err}`);
+                    if (errorBox) {
+                        errorBox.textContent = err.message || err;
+                        errorBox.style.display = 'block';
+                    } else {
+                        alert(`Failed to send invitation: ${err.message || err}`);
+                    }
                 }
             });
         }
+
+        // Cancel Pending Invitation Buttons
+        wrapper.querySelectorAll('.btn-cancel-invitation').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const invId = e.currentTarget.dataset.id;
+                if (!invId) return;
+                if (confirm('Cancel this pending project invitation?')) {
+                    try {
+                        await apiClient.post(`/api/projects/${projectId}/team/cancel-invite`, { invitation_id: invId });
+                        await this.renderTeamSection(wrapper, projectId, isOwner);
+                    } catch (err) {
+                        alert(`Failed to cancel invitation: ${err.message || err}`);
+                    }
+                }
+            });
+        });
+
+        // Remove Teammate Buttons
+        wrapper.querySelectorAll('.btn-remove-teammate').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const userEmail = e.currentTarget.dataset.user;
+                if (!userEmail) return;
+                if (confirm(`Remove project access for ${userEmail}?`)) {
+                    try {
+                        await apiClient.post(`/api/projects/${projectId}/team/remove`, { email: userEmail });
+                        await this.renderTeamSection(wrapper, projectId, isOwner);
+                    } catch (err) {
+                        alert(`Failed to remove teammate: ${err.message || err}`);
+                    }
+                }
+            });
+        });
     }
 }

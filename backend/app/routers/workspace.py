@@ -5,9 +5,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.config.database import get_db
 from app.models.project import Project
-from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 from app.config.settings import settings
 from app.routers.projects import get_project_metrics
+
+from app.services.audit_rules import evaluate_site_audit_rules
 
 from app.config.auth import get_current_user_id
 from app.models.project_membership import ProjectMembership
@@ -50,9 +52,8 @@ def get_workspace_overview(
     })
 
     for p in projects:
-        safe_domain = get_sanitized_domain(p.domain or p.url)
-        website_dir = os.path.join(settings.CRAWL_DATA_DIR, safe_domain)
-        metrics = get_project_metrics(p.domain or p.url)
+        website_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, p.domain or p.url, p.id)
+        metrics = get_project_metrics(p.domain or p.url, project_id=p.id)
 
         has_crawled = metrics.get("has_crawled", False)
         if has_crawled:
@@ -61,7 +62,7 @@ def get_workspace_overview(
             total_critical_issues += metrics.get("critical_issues", 0)
             total_warnings += metrics.get("warnings", 0)
 
-        # Health score calculation for this project
+        # Health score calculation for this project via canonical audit engine
         latest_path = os.path.join(website_dir, "latest.json")
         project_health = None
 
@@ -71,30 +72,28 @@ def get_workspace_overview(
                     latest = json.load(f)
                 crawl_dir = normalize_stored_path(latest.get("path"))
                 if crawl_dir and os.path.exists(crawl_dir):
-                    issues_path = os.path.join(crawl_dir, "issues.json")
-                    if os.path.exists(issues_path):
-                        with open(issues_path, "r") as isf:
-                            p_issues = json.load(isf)
-                            crit = sum(1 for i in p_issues if i.get("severity") in ("critical", "error"))
-                            warn = sum(1 for i in p_issues if i.get("severity") == "warning")
-                            pages_c = metrics.get("pages_count", 1) or 1
-                            total_checks = pages_c * 5
-                            failed_weight = (crit * 2) + warn
-                            passed = max(0, total_checks - failed_weight)
-                            project_health = min(100, max(0, round((passed / total_checks) * 100)))
-                            health_scores.append(project_health)
+                    pages_file = os.path.join(crawl_dir, "pages.json")
+                    pages = []
+                    if os.path.exists(pages_file):
+                        with open(pages_file, "r") as pf:
+                            pages = json.load(pf)
 
-                            # Aggregate account-wide issue breakdown
-                            for iss in p_issues:
-                                itype = iss.get("issue_type") or iss.get("title") or "Technical Issue"
-                                entry = issues_by_type[itype]
-                                entry["title"] = iss.get("title") or itype
-                                entry["severity"] = iss.get("severity", "notice")
-                                entry["affected_websites"].add(p.name)
-                                urls_cnt = len(iss.get("affected_urls", [])) or iss.get("affected_pages_count", 1)
-                                entry["total_urls_count"] += urls_cnt
+                    eval_res = evaluate_site_audit_rules(pages)
+                    project_health = eval_res.get("health_score", 100)
+                    health_scores.append(project_health)
+
+                    p_issues = eval_res.get("issues", [])
+                    # Aggregate account-wide issue breakdown
+                    for iss in p_issues:
+                        itype = iss.get("issue_type") or iss.get("title") or "Technical Issue"
+                        entry = issues_by_type[itype]
+                        entry["title"] = iss.get("title") or itype
+                        entry["severity"] = iss.get("severity", "notice")
+                        entry["affected_websites"].add(p.name)
+                        urls_cnt = len(iss.get("affected_urls", [])) or iss.get("affected_count", 1)
+                        entry["total_urls_count"] += urls_cnt
             except Exception as e:
-                print(f"[WORKSPACE API] Error reading issues for {p.name}: {e}", flush=True)
+                print(f"[WORKSPACE API] Error evaluating audit for {p.name}: {e}", flush=True)
 
         # Determine Status
         status_label = "Never Crawled"

@@ -8,7 +8,7 @@ from app.models.project import Project
 from app.models.keyword import Keyword
 from app.models.competitor import Competitor
 from app.models.crawl_session import CrawlSession
-from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 from app.config.settings import settings
 
 from app.config.auth import get_current_user_id
@@ -32,13 +32,11 @@ def get_rankings(
         return {"rankings": [], "status": "not_connected", "competitors": [], "message": "No project domain configured."}
 
     domain = project.domain
-    safe_domain = get_sanitized_domain(domain)
-    
     confirmed_competitors = db.query(Competitor).filter(
         Competitor.project_id == project.id,
         Competitor.status == "Confirmed"
     ).all()
-    
+
     competitors_summary = [
         {
             "id": c.id,
@@ -48,8 +46,9 @@ def get_rankings(
             "is_primary": c.is_primary
         } for c in confirmed_competitors
     ]
-    
-    rankings_file = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "rankings.json")
+
+    proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, project.id)
+    rankings_file = os.path.join(proj_dir, "rankings.json")
 
     rankings_data = []
     

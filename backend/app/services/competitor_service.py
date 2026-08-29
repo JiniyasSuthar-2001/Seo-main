@@ -1,5 +1,6 @@
 import re
 import json
+import uuid
 import urllib.parse
 from datetime import datetime
 from typing import List, Dict, Any, Optional
@@ -65,7 +66,7 @@ def extract_location_info(project: Project) -> Dict[str, Any]:
 
 import os
 from app.config.settings import settings
-from app.config.utils import get_sanitized_domain
+from app.config.utils import get_sanitized_domain, get_project_storage_dir
 from app.providers.datasources import DataSourceManager
 
 def check_serp_provider_status(project: Project) -> Dict[str, Any]:
@@ -80,12 +81,12 @@ def check_serp_provider_status(project: Project) -> Dict[str, Any]:
             "message": "No project domain configured."
         }
 
-    safe_domain = get_sanitized_domain(project.domain)
+    proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, project.domain, project.id)
     
     # 1. Check if an imported SERP / competitor dataset exists
-    comp_file = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "competitors.json")
-    serp_file = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "serp_results.json")
-    rankings_file = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "rankings.json")
+    comp_file = os.path.join(proj_dir, "competitors.json")
+    serp_file = os.path.join(proj_dir, "serp_results.json")
+    rankings_file = os.path.join(proj_dir, "rankings.json")
     
     if os.path.exists(comp_file) or os.path.exists(serp_file) or os.path.exists(rankings_file):
         return {
@@ -132,8 +133,8 @@ def discover_competitors_for_project(project: Project, db: Session) -> Dict[str,
 
     # If imported dataset exists and no suggested competitors stored yet, load imported candidates
     if serp_status["has_serp_provider"] and not suggested:
-        safe_domain = get_sanitized_domain(project.domain)
-        comp_file = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "competitors.json")
+        proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, project.domain, project.id)
+        comp_file = os.path.join(proj_dir, "competitors.json")
         if os.path.exists(comp_file):
             try:
                 with open(comp_file, "r") as cf:

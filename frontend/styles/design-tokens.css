@@ -71,6 +71,16 @@
   --radius-xl: 16px;
   --radius-full: 9999px;
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+
+  /* Compatibility Aliases */
+  --primary-bg: var(--bg-workspace);
+  --sidebar-active-bg: var(--sidebar-item-active);
+  --bg-input: var(--bg-card);
+  --accent-primary: var(--primary);
+  --sidebar-text-muted: var(--sidebar-text);
+  --sidebar-active-text: var(--sidebar-text-active);
+  --sidebar-hover-bg: var(--sidebar-item-hover);
+  --border-color: var(--border);
 }
 
 /* Dark Mode Override Tokens (Dark Premium / Technical SEO SaaS) */

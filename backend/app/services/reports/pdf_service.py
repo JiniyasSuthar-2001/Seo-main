@@ -172,7 +172,7 @@ class PDFReportGenerator:
         story.append(Paragraph("3. Problems We Found (Audit Findings & Evidence)", self.section_heading))
         if issues:
             display_issues = issues[:25]
-            iss_rows = [[Paragraph("Priority", self.table_header), Paragraph("Category", table_header), Paragraph("Problem Finding", self.table_header), Paragraph("Affected Page URL", self.table_header)]]
+            iss_rows = [[Paragraph("Priority", self.table_header), Paragraph("Category", self.table_header), Paragraph("Problem Finding", self.table_header), Paragraph("Affected Page URL", self.table_header)]]
             for iss in display_issues:
                 sev = iss.get("severity") or iss.get("priority") or "Warning"
                 color_hex = "#ef4444" if sev.lower() == "critical" else ("#f59e0b" if sev.lower() == "warning" else "#3b82f6")
@@ -200,12 +200,12 @@ class PDFReportGenerator:
         story.append(Paragraph("4. Recommended Actions (Opportunity Engine)", self.section_heading))
         if opps_list:
             display_opps = opps_list[:15]
-            o_rows = [[Paragraph("Priority", table_header), Paragraph("Action Title", table_header), Paragraph("Recommended Fix", table_header)]]
+            o_rows = [[Paragraph("Priority", self.table_header), Paragraph("Action Title", self.table_header), Paragraph("Recommended Fix", self.table_header)]]
             for o in display_opps:
                 o_rows.append([
-                    Paragraph(str(o.get("priority_level") or o.get("priority") or "Medium").upper(), table_cell),
-                    Paragraph(o.get("title", "-"), table_cell),
-                    Paragraph(o.get("recommendation", "-"), table_cell)
+                    Paragraph(str(o.get("priority_level") or o.get("priority") or "Medium").upper(), self.table_cell),
+                    Paragraph(o.get("title", "-"), self.table_cell),
+                    Paragraph(o.get("recommendation", "-"), self.table_cell)
                 ])
             t_opps = Table(o_rows, colWidths=[80, 200, 260])
             t_opps.setStyle(TableStyle([
@@ -222,7 +222,7 @@ class PDFReportGenerator:
         story.append(Paragraph("5. Target Keywords & Content Frequencies", self.section_heading))
         if keywords:
             display_kw = keywords[:20]
-            kw_rows = [[Paragraph("Keyword", table_header), Paragraph("Content Frequency", table_header), Paragraph("Pages Found", table_header), Paragraph("Google Position", table_header)]]
+            kw_rows = [[Paragraph("Keyword", self.table_header), Paragraph("Content Frequency", self.table_header), Paragraph("Pages Found", self.table_header), Paragraph("Google Position", self.table_header)]]
             for k in display_kw:
                 pos_val = f"#{k.get('position')}" if k.get("position") else "Not available (Connect Search Data)"
                 kw_rows.append([
@@ -246,7 +246,7 @@ class PDFReportGenerator:
         story.append(Paragraph("6. Search Rankings", self.section_heading))
         if rankings:
             display_rk = rankings[:20]
-            rk_rows = [[Paragraph("Keyword", table_header), Paragraph("Target URL", table_header), Paragraph("Google Position", table_header), Paragraph("Change", table_header)]]
+            rk_rows = [[Paragraph("Keyword", self.table_header), Paragraph("Target URL", self.table_header), Paragraph("Google Position", self.table_header), Paragraph("Change", self.table_header)]]
             for r in display_rk:
                 rk_rows.append([
                     Paragraph(r.get("keyword", "-"), self.table_cell),
@@ -275,7 +275,7 @@ class PDFReportGenerator:
         # 8. COMPETITORS
         story.append(Paragraph("8. Competitor Comparison", self.section_heading))
         if competitors:
-            comp_rows = [[Paragraph("Competitor", table_header), Paragraph("Domain", table_header), Paragraph("Relevance Match", table_header)]]
+            comp_rows = [[Paragraph("Competitor", self.table_header), Paragraph("Domain", self.table_header), Paragraph("Relevance Match", self.table_header)]]
             for c in competitors[:10]:
                 comp_rows.append([
                     Paragraph(c.get("name", "-"), self.table_cell),

@@ -409,8 +409,8 @@ export class Competitors {
                                         <h3 style="font-size: 16px; font-weight: 600; margin: 0 0 4px 0;">${this.escapeHtml(c.name)}</h3>
                                         <a href="${this.escapeHtml(c.url)}" target="_blank" style="color: var(--accent-primary, #3b82f6); font-size: 13px; text-decoration: none;">${this.escapeHtml(c.domain)} &rarr;</a>
                                     </div>
-                                    <span style="background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 20px;">
-                                        ${c.relevance_score}% Match
+                                    <span style="background: ${c.relevance_score != null ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.08)'}; color: ${c.relevance_score != null ? '#10b981' : 'var(--text-secondary)'}; border: 1px solid ${c.relevance_score != null ? 'rgba(16, 185, 129, 0.3)' : 'var(--border-color)'}; font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 20px;">
+                                        ${c.relevance_score != null ? `${c.relevance_score}% Match` : 'Match: Not available'}
                                     </span>
                                 </div>
 
@@ -424,8 +424,8 @@ export class Competitors {
                                 </div>
 
                                 <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
-                                    <div><strong style="color: var(--text-primary);">${c.keyword_overlap}</strong> Overlapping Keywords</div>
-                                    <div><strong style="color: var(--text-primary);">${c.search_appearances}</strong> SERP Appearances</div>
+                                    <div><strong style="color: var(--text-primary);">${c.keyword_overlap != null ? c.keyword_overlap : 'Not available'}</strong> Overlapping Keywords</div>
+                                    <div><strong style="color: var(--text-primary);">${c.search_appearances != null ? c.search_appearances : 'Not available'}</strong> SERP Appearances</div>
                                 </div>
 
                                 <div style="font-size: 12px; color: var(--text-tertiary, #94a3b8); margin-bottom: 16px;">
@@ -494,8 +494,8 @@ export class Competitors {
                             </div>
 
                             <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px;">
-                                <div><strong style="color: var(--text-primary);">${c.keyword_overlap}</strong> Keyword Overlap</div>
-                                <div><strong style="color: var(--text-primary);">${c.search_appearances}</strong> SERP Appearances</div>
+                                <div><strong style="color: var(--text-primary);">${c.keyword_overlap != null ? c.keyword_overlap : 'Not available'}</strong> Keyword Overlap</div>
+                                <div><strong style="color: var(--text-primary);">${c.search_appearances != null ? c.search_appearances : 'Not available'}</strong> SERP Appearances</div>
                             </div>
 
                             <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 14px; gap: 8px;">

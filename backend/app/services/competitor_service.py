@@ -147,6 +147,9 @@ def discover_competitors_for_project(project: Project, db: Session) -> Dict[str,
                                 Competitor.domain == dom
                             ).first()
                             if not existing:
+                                rel_val = float(item["relevance_score"]) if item.get("relevance_score") is not None else None
+                                kw_val = int(item["keyword_overlap"]) if item.get("keyword_overlap") is not None else None
+                                search_val = int(item["search_appearances"]) if item.get("search_appearances") is not None else None
                                 new_comp = Competitor(
                                     id=str(uuid.uuid4()),
                                     project_id=project.id,
@@ -155,9 +158,9 @@ def discover_competitors_for_project(project: Project, db: Session) -> Dict[str,
                                     url=item.get("url") or f"https://{dom}",
                                     location=item.get("location") or "Market Candidate",
                                     geographic_level=item.get("geographic_level") or "City",
-                                    relevance_score=float(item.get("relevance_score", 75.0)),
-                                    keyword_overlap=int(item.get("keyword_overlap", 5)),
-                                    search_appearances=int(item.get("search_appearances", 3)),
+                                    relevance_score=rel_val,
+                                    keyword_overlap=kw_val,
+                                    search_appearances=search_val,
                                     status="Suggested",
                                     is_primary=False,
                                     discovery_source="Imported SERP Dataset",

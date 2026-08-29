@@ -120,12 +120,12 @@ export class Backlinks {
             container.innerHTML = `
                 <div class="card" style="padding: 40px 28px; text-align: center; max-width: 580px; margin: 24px auto; background: var(--bg-card); border-radius: 14px; border: 1px dashed var(--border);">
                     <div style="font-size: 36px; margin-bottom: 12px;">🔗</div>
-                    <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">No links from other websites found yet</h3>
+                    <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">No inbound backlink data is available yet</h3>
                     <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.6;">
-                        Your website scan discovers links on your own site. Inbound backlinks from external websites require a connected provider API or an imported dataset.
+                        Your website scan can find links from your website to other websites, but it cannot discover every website on the internet that links to you.
                     </p>
                     <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
-                        <a href="/import" data-link class="btn btn-primary btn-sm">Import Link Data</a>
+                        <a href="/import" data-link class="btn btn-primary btn-sm">Import Backlink Data</a>
                         <a href="/integrations" data-link class="btn btn-secondary btn-sm">Connect a Data Source</a>
                     </div>
                 </div>

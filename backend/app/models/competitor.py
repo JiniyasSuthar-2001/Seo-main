@@ -16,9 +16,9 @@ class Competitor(Base):
     location = Column(String, nullable=True)
     geographic_level = Column(String, nullable=True, default="City")  # Town, City, State, Country, Global
     
-    relevance_score = Column(Float, default=0.0)  # 0.0 - 1.0 or percentage
-    keyword_overlap = Column(Integer, default=0)
-    search_appearances = Column(Integer, default=0)
+    relevance_score = Column(Float, nullable=True, default=None)  # 0.0 - 100.0 or None if unavailable
+    keyword_overlap = Column(Integer, nullable=True, default=None)
+    search_appearances = Column(Integer, nullable=True, default=None)
     
     status = Column(String, default="Suggested")  # Suggested, Confirmed, Ignored, Removed, Inactive
     is_primary = Column(Boolean, default=False)

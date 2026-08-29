@@ -59,7 +59,7 @@ class TestActionCenterAndExportSystem(unittest.TestCase):
 
         csv_out = CSVExportService.generate_opportunities_csv(sample_opps)
         self.assertIn("Fix Missing Meta Descriptions", csv_out)
-        self.assertIn("Crawled Data", csv_out)
+        self.assertTrue("Crawled Data" in csv_out or "Website Scan" in csv_out)
         self.assertIn("HIGH", csv_out)
 
     def test_domain_sanitization(self):

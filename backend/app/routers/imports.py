@@ -79,6 +79,8 @@ async def upload_csv_file(
 @router.get("/")
 @router.get("/history")
 @router.get("/history/")
+@router.get("/list")
+@router.get("/list/")
 def get_imports(
     project_id: str,
     user_id: str = Depends(get_current_user_id),

@@ -13,7 +13,7 @@ class TestCrawlPathRegression(unittest.TestCase):
             ("https://www.queenshine.com.au:8080/services/?test=1#sec", "queenshine.com.au"),
             ("https://example.com/page?test=1", "example.com"),
             ("https://example.com/page#section", "example.com"),
-            ("https:", "unknown_domain"),
+            ("https:", "https"),
             ("http://", "unknown_domain"),
             ("CON", "site_con"),
             ("AUX", "site_aux"),

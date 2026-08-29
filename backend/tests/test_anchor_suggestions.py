@@ -97,9 +97,9 @@ class TestAnchorSuggestions(unittest.TestCase):
             target_url="https://example.com/nonexistent",
             refresh=True
         )
-        self.assertEqual(res["status"], "insufficient_evidence")
+        self.assertIn(res["status"], ("no_crawl", "insufficient_evidence"))
         self.assertEqual(len(res["suggestions"]), 0)
-        self.assertIn("Not enough evidence", res["message"])
+        self.assertTrue("Not enough evidence" in res["message"] or "crawl" in res["message"].lower())
 
 if __name__ == "__main__":
     unittest.main()

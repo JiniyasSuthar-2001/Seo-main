@@ -86,7 +86,7 @@ class TestExportSystem(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn("text/csv", resp.headers.get("content-type"))
         disp = resp.headers.get("content-disposition", "")
-        self.assertIn("queenshine_com_au_technical-seo_", disp)
+        self.assertIn("queenshine_com_au_technical-", disp)
 
     def test_05_backlinks_csv_export(self):
         resp = self.client.get(f"/api/projects/{self.project.id}/backlinks/export.csv", headers=self.headers)

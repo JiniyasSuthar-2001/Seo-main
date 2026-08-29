@@ -446,18 +446,7 @@ def get_problem_ai_solution(
         except Exception as ai_err:
             print(f"[AI PROBLEM SOLUTION ERROR] Provider execution error: {ai_err}", flush=True)
 
-    # 3. Handle case where no provider is configured
-    if not provider and not page_solutions and not default_solution:
-        return {
-            "status": "no_provider",
-            "code": "NO_PROVIDER_CONFIGURED",
-            "message": "AI Solution is unavailable because no AI provider is configured.",
-            "title": payload.title,
-            "page_solutions": {},
-            "default_solution": None
-        }
-
-    # 4. Evidence-grounded fallback generator per URL if provider errored out or missed entries
+    # Evidence-grounded fallback generator per URL if provider errored out or missed entries
     title_lower = (payload.title or "").lower()
     
     def generate_url_fallback(url_str: str) -> str:

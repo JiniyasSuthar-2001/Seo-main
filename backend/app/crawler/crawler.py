@@ -152,13 +152,14 @@ class SEOCrawler:
 
     async def fetch_sitemap_xml(self, client: httpx.AsyncClient):
         sitemap_candidates = list(self.sitemap_urls) or [f"{self.scheme}://{self.domain}/sitemap.xml"]
-        for sm_url in sitemap_candidates[:3]:
+        max_sitemap_entries = 5000 if not self.is_unlimited_scope else 20000
+        for sm_url in sitemap_candidates[:5]:
             try:
                 resp = await client.get(sm_url, timeout=10.0, follow_redirects=True)
                 if resp.status_code == 200:
                     found_locs = re.findall(r"<loc>(.*?)</loc>", resp.text, re.I)
                     print(f"[SITEMAP] Discovered {len(found_locs)} URLs from {sm_url}", flush=True)
-                    for loc in found_locs[:100]:
+                    for loc in found_locs[:max_sitemap_entries]:
                         norm = self.normalize_url(loc.strip(), sm_url)
                         if self.is_same_domain(norm) and not self.is_static_asset(norm) and norm not in self.queue_status:
                             self.queue_status[norm] = "PENDING"
@@ -314,7 +315,7 @@ class SEOCrawler:
             })
 
     async def crawl_page(self, client: httpx.AsyncClient, url: str):
-        if url in self.visited or len(self.visited) >= self.max_pages:
+        if url in self.visited or (not self.is_unlimited_scope and self.max_pages > 0 and len(self.visited) >= self.max_pages):
             return
             
         if self.is_disallowed(url):

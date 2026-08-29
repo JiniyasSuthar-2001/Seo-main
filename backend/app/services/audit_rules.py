@@ -391,6 +391,10 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             "checks_performed": checks_count,
             "passed": passed_count,
             "issues_count": issues_count,
+            "critical": stats.get("critical", 0),
+            "error": stats.get("error", 0),
+            "warning": stats.get("warning", 0),
+            "notice": stats.get("notice", 0),
             "status": stats.get("status", "Not Evaluated"),
             "reason": stats.get("reason", "")
         })

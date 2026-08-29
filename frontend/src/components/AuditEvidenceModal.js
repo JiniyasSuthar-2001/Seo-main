@@ -99,7 +99,7 @@ export class AuditEvidenceModal {
                                     } else if (aiLoading) {
                                         aiSolCell = `<span style="color: var(--text-tertiary); font-size: 11.5px; display: inline-flex; align-items: center; gap: 6px;"><span class="crawl-spinner" style="width: 10px; height: 10px; border-width: 1.5px;"></span> Analyzing page...</span>`;
                                     } else {
-                                        aiSolCell = `<span style="color: var(--text-tertiary); font-size: 11.5px;">AI solution temporarily unavailable.</span>`;
+                                        aiSolCell = `<span style="color: var(--text-secondary); font-size: 12px; line-height: 1.45;">${escapeHtml(recommendation || 'Fix identified issue.')}</span>`;
                                     }
 
                                     return `

@@ -4,9 +4,11 @@ from datetime import datetime
 from typing import Dict, Any, List
 from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 
+from app.config.settings import settings
+
 class CrawlStorage:
-    def __init__(self, base_dir: str = "data/websites"):
-        self.base_dir = base_dir
+    def __init__(self, base_dir: str = None):
+        self.base_dir = base_dir or settings.CRAWL_DATA_DIR
 
     def _get_website_folder(self, key: str, domain: str = None, project_id: str = None) -> str:
         return get_project_storage_dir(self.base_dir, domain or key, project_id or (key if key and key != domain else None))

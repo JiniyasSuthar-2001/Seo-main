@@ -7,7 +7,17 @@ def normalize_stored_path(path: str) -> str:
     if not path:
         return ""
     clean_path = str(path).replace("\\", "/")
-    return os.path.normpath(clean_path)
+    norm = os.path.normpath(clean_path)
+    if os.path.exists(norm):
+        return os.path.abspath(norm)
+    abs_path = os.path.abspath(norm)
+    if os.path.exists(abs_path):
+        return abs_path
+    if clean_path.startswith("backend/") and os.path.exists(clean_path[8:]):
+        return os.path.abspath(clean_path[8:])
+    if not clean_path.startswith("backend/") and os.path.exists(os.path.join("backend", clean_path)):
+        return os.path.abspath(os.path.join("backend", clean_path))
+    return abs_path
 
 def get_sanitized_domain(url_or_domain: str) -> str:
     """

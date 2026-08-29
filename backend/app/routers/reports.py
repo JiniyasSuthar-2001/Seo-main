@@ -75,7 +75,7 @@ def get_shared_project_report_data(project: Project, db: Session, user_id: str) 
     Central shared report data layer.
     Ensures PDF, CSV, and ZIP exports draw from 100% identical real project data.
     """
-    domain = project.domain or project.url
+    domain = get_sanitized_domain(project.domain or project.url)
     if not domain:
         return {
             "metadata": {}, "pages": [], "issues": [], "internal_links": [], "external_links": [],

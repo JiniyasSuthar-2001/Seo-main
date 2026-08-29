@@ -82,6 +82,8 @@ export class Reports {
 
                     <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
                         <button class="btn btn-primary" id="btn-generate-pdf">Download Custom Executive PDF</button>
+                        <button class="btn btn-secondary" id="btn-generate-xlsx">Download Master Excel Workbook (.xlsx)</button>
+                        <button class="btn btn-secondary" id="btn-generate-pptx">Download Executive Presentation (.pptx)</button>
                         <button class="btn btn-secondary" id="btn-generate-zip">Download All My Data (ZIP)</button>
                     </div>
                 </div>
@@ -95,6 +97,16 @@ export class Reports {
                         <button id="btn-quick-audit-pdf" class="btn btn-primary btn-sm" style="width: 100%; text-align: center;">Download PDF</button>
                     </div>
                     <div class="card" style="padding: 18px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border);">
+                        <div style="font-weight: 700; font-size: 14.5px; margin-bottom: 4px; color: var(--text-primary);">Master Excel Workbook</div>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">10 Structured Worksheets (.xlsx)</div>
+                        <button id="btn-quick-master-xlsx" class="btn btn-secondary btn-sm" style="width: 100%; text-align: center;">Download XLSX</button>
+                    </div>
+                    <div class="card" style="padding: 18px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border);">
+                        <div style="font-weight: 700; font-size: 14.5px; margin-bottom: 4px; color: var(--text-primary);">Executive Presentation</div>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">14 Client Slides (.pptx)</div>
+                        <button id="btn-quick-master-pptx" class="btn btn-secondary btn-sm" style="width: 100%; text-align: center;">Download PPTX</button>
+                    </div>
+                    <div class="card" style="padding: 18px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border);">
                         <div style="font-weight: 700; font-size: 14.5px; margin-bottom: 4px; color: var(--text-primary);">Technical Health Checks</div>
                         <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">Detailed check findings</div>
                         <button id="btn-quick-tech-pdf" class="btn btn-secondary btn-sm" style="width: 100%; text-align: center;">Download PDF</button>
@@ -102,15 +114,19 @@ export class Reports {
                     <div class="card" style="padding: 18px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border);">
                         <div style="font-weight: 700; font-size: 14.5px; margin-bottom: 4px; color: var(--text-primary);">Pages Discovered (CSV)</div>
                         <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">Spreadsheet of website pages</div>
-                        <button id="btn-quick-pages-csv" class="btn btn-secondary btn-sm" style="width: 100%; text-align: center;">Download Spreadsheet</button>
+                        <button id="btn-quick-pages-csv" class="btn btn-secondary btn-sm" style="width: 100%; text-align: center;">Download CSV</button>
                     </div>
                 </div>
             `;
 
             // Bind download buttons with standardized filenames
             const btnPdf = container.querySelector('#btn-generate-pdf');
+            const btnXlsx = container.querySelector('#btn-generate-xlsx');
+            const btnPptx = container.querySelector('#btn-generate-pptx');
             const btnZip = container.querySelector('#btn-generate-zip');
             const btnQuickAudit = container.querySelector('#btn-quick-audit-pdf');
+            const btnQuickXlsx = container.querySelector('#btn-quick-master-xlsx');
+            const btnQuickPptx = container.querySelector('#btn-quick-master-pptx');
             const btnQuickTech = container.querySelector('#btn-quick-tech-pdf');
             const btnQuickPages = container.querySelector('#btn-quick-pages-csv');
 
@@ -132,8 +148,12 @@ export class Reports {
                 };
             }
 
+            if (btnXlsx) btnXlsx.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/export.xlsx`, `${safeProjName}_SEO_Master_Export_${todayStr}.xlsx`, e.currentTarget);
+            if (btnPptx) btnPptx.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/export.pptx`, `${safeProjName}_SEO_Executive_Presentation_${todayStr}.pptx`, e.currentTarget);
             if (btnZip) btnZip.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/reports/complete-export.zip`, `${safeProjName}_SEO_Master_Export_${todayStr}.zip`, e.currentTarget);
             if (btnQuickAudit) btnQuickAudit.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/report.pdf`, `${safeProjName}_Full_Website_Health_Report_${todayStr}.pdf`, e.currentTarget);
+            if (btnQuickXlsx) btnQuickXlsx.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/export.xlsx`, `${safeProjName}_SEO_Master_Export_${todayStr}.xlsx`, e.currentTarget);
+            if (btnQuickPptx) btnQuickPptx.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/export.pptx`, `${safeProjName}_SEO_Executive_Presentation_${todayStr}.pptx`, e.currentTarget);
             if (btnQuickTech) btnQuickTech.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/technical/report.pdf`, `${safeProjName}_Technical_Issues_${todayStr}.pdf`, e.currentTarget);
             if (btnQuickPages) btnQuickPages.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/pages/export.csv`, `${safeProjName}_Pages_Inventory_${todayStr}.csv`, e.currentTarget);
 

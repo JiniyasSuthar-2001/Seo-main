@@ -15,6 +15,8 @@ from app.models.keyword import Keyword
 from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 from app.services.reports.pdf_service import PDFReportGenerator
 from app.services.reports.export_service import CSVExportService, ZIPExportService
+from app.services.reports.xlsx_service import XLSXExportService
+from app.services.reports.pptx_service import PPTXExportService
 from app.services.report_builder_service import generate_custom_pdf_report
 from app.services.backlink_service import BacklinkDataService
 from app.services.audit_rules import evaluate_site_audit_rules
@@ -260,6 +262,70 @@ def get_crawl_pdf_report(
     return Response(content=pdf_bytes, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
 
 
+@router.get("/export.xlsx")
+@router.get("/reports/export.xlsx")
+def get_master_xlsx_report(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    report_data = get_shared_project_report_data(project, db, user_id)
+    xlsx_bytes = XLSXExportService.generate_full_project_xlsx(
+        project_name=project.name,
+        project_url=project.domain,
+        metadata=report_data["metadata"],
+        pages=report_data["pages"],
+        keywords=report_data["keywords"],
+        issues=report_data["issues"],
+        opportunities=report_data["opportunities"],
+        ai_insights=report_data["ai_insights"],
+        internal_links=report_data["internal_links"],
+        outbound_links=report_data["outbound_links"],
+        competitors=report_data["competitors"],
+        backlinks=report_data["inbound_backlinks"]
+    )
+    filename = build_export_filename(project.name or project.domain, "SEO_Master_Export", "xlsx")
+    record_report_generation(db, project, "Full Master Workbook XLSX", "xlsx", filename, report_data.get("crawl_id"), "AI Intelligence Layer")
+    return Response(content=xlsx_bytes, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
+
+
+@router.get("/export.pptx")
+@router.get("/reports/export.pptx")
+def get_master_pptx_report(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    report_data = get_shared_project_report_data(project, db, user_id)
+    pptx_bytes = PPTXExportService.generate_full_project_pptx(
+        project_name=project.name,
+        project_url=project.domain,
+        metadata=report_data["metadata"],
+        pages=report_data["pages"],
+        keywords=report_data["keywords"],
+        issues=report_data["issues"],
+        opportunities=report_data["opportunities"],
+        ai_insights=report_data["ai_insights"],
+        internal_links=report_data["internal_links"],
+        outbound_links=report_data["outbound_links"],
+        competitors=report_data["competitors"],
+        backlinks=report_data["inbound_backlinks"]
+    )
+    filename = build_export_filename(project.name or project.domain, "SEO_Executive_Presentation", "pptx")
+    record_report_generation(db, project, "Executive Presentation PPTX", "pptx", filename, report_data.get("crawl_id"), "AI Intelligence Layer")
+    return Response(content=pptx_bytes, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
+
+
 # ------------------------------------------------------------------------------
 # 3. PAGES REPORT (PDF & CSV)
 # ------------------------------------------------------------------------------
@@ -315,8 +381,27 @@ def export_pages_csv(
     return Response(content=csv_str.encode("utf-8"), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
 
 
+@router.get("/pages/export.xlsx")
+@router.get("/reports/pages.xlsx")
+def export_pages_xlsx(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    report_data = get_shared_project_report_data(project, db, user_id)
+    xlsx_bytes = XLSXExportService.generate_pages_xlsx(report_data["pages"])
+    filename = build_export_filename(project.domain, "pages", "xlsx")
+    record_report_generation(db, project, "Pages Inventory XLSX", "xlsx", filename, report_data.get("crawl_id"), "Website Scan")
+    return Response(content=xlsx_bytes, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
+
+
 # ------------------------------------------------------------------------------
-# 4. KEYWORDS REPORT (PDF & CSV)
+# 4. KEYWORDS REPORT (PDF & CSV & XLSX)
 # ------------------------------------------------------------------------------
 @router.get("/keywords/report.pdf")
 @router.get("/reports/keywords")
@@ -368,6 +453,25 @@ def export_keywords_csv(
     filename = build_export_filename(project.domain, "keywords", "csv")
     record_report_generation(db, project, "Keywords CSV Export", "csv", filename, report_data.get("crawl_id"), "Website Scan / Content NLP Engine")
     return Response(content=csv_str.encode("utf-8"), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
+
+
+@router.get("/keywords/export.xlsx")
+@router.get("/reports/keywords.xlsx")
+def export_keywords_xlsx(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    report_data = get_shared_project_report_data(project, db, user_id)
+    xlsx_bytes = XLSXExportService.generate_keywords_xlsx(report_data["keywords"])
+    filename = build_export_filename(project.domain, "keywords", "xlsx")
+    record_report_generation(db, project, "Keywords XLSX Export", "xlsx", filename, report_data.get("crawl_id"), "Website Scan / Content NLP Engine")
+    return Response(content=xlsx_bytes, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
 
 
 # ------------------------------------------------------------------------------
@@ -543,6 +647,25 @@ def export_technical_csv(
     filename = build_export_filename(project.domain, "technical-issues", "csv")
     record_report_generation(db, project, "Technical Issues CSV", "csv", filename, report_data.get("crawl_id"), "Website Scan")
     return Response(content=csv_str.encode("utf-8"), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
+
+
+@router.get("/technical/export.xlsx")
+@router.get("/reports/technical.xlsx")
+def export_technical_xlsx(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    report_data = get_shared_project_report_data(project, db, user_id)
+    xlsx_bytes = XLSXExportService.generate_technical_xlsx(report_data["issues"])
+    filename = build_export_filename(project.domain, "technical-issues", "xlsx")
+    record_report_generation(db, project, "Technical Issues XLSX", "xlsx", filename, report_data.get("crawl_id"), "Website Scan")
+    return Response(content=xlsx_bytes, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
 
 
 # ------------------------------------------------------------------------------

@@ -110,5 +110,24 @@ class TestPageSpecificExports(unittest.TestCase):
         disp = resp.headers.get("content-disposition", "")
         self.assertIn("Full_Website_Health_Report", disp)
 
+    def test_05_master_xlsx_export(self):
+        resp = self.client.get(f"/api/projects/{self.project.id}/export.xlsx", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.headers.get("content-type"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        disp = resp.headers.get("content-disposition", "")
+        self.assertIn("SEO_Master_Export", disp)
+
+    def test_06_master_pptx_export(self):
+        resp = self.client.get(f"/api/projects/{self.project.id}/export.pptx", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.headers.get("content-type"), "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+        disp = resp.headers.get("content-disposition", "")
+        self.assertIn("SEO_Executive_Presentation", disp)
+
+    def test_07_page_specific_xlsx_export(self):
+        resp = self.client.get(f"/api/projects/{self.project.id}/pages/export.xlsx", headers=self.headers)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.headers.get("content-type"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
 if __name__ == "__main__":
     unittest.main()

@@ -17,7 +17,7 @@ from app.models.project_membership import ProjectMembership
 from app.models.project_invitation import ProjectInvitation
 from app.models.external_connection import ExternalConnection
 from app.config.utils import get_sanitized_domain
-from app.config.settings import settings
+from app.config.settings import settings, build_frontend_redirect
 from app.services.oauth_provider_service import (
     build_authorization_url,
     validate_oauth_state,

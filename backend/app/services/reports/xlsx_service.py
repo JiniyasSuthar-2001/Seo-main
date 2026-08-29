@@ -1,12 +1,21 @@
 import io
-import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
 from typing import Dict, Any, List
+
+try:
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+    HAS_OPENPYXL = True
+except ImportError:
+    openpyxl = None
+    Font = PatternFill = Alignment = Border = Side = get_column_letter = None
+    HAS_OPENPYXL = False
 
 class XLSXExportService:
     @staticmethod
     def _apply_header_style(ws, row=1):
+        if not HAS_OPENPYXL:
+            return
         header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
         header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
         thin_border = Border(

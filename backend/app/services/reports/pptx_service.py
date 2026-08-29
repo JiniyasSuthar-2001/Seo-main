@@ -1,23 +1,32 @@
 import io
-from pptx import Presentation
-from pptx.util import Inches, Pt
-from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
-from pptx.enum.shapes import MSO_SHAPE
 from typing import Dict, Any, List
 
+try:
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN
+    from pptx.enum.shapes import MSO_SHAPE
+    HAS_PPTX = True
+except ImportError:
+    Presentation = None
+    Inches = Pt = RGBColor = PP_ALIGN = MSO_SHAPE = None
+    HAS_PPTX = False
+
 class PPTXExportService:
-    NAVY = RGBColor(15, 23, 42)      # #0F172A
-    SLATE = RGBColor(30, 41, 59)     # #1E293B
-    BLUE = RGBColor(37, 99, 235)     # #2563EB
-    LIGHT_BG = RGBColor(248, 250, 252) # #F8FAFC
-    GRAY = RGBColor(100, 116, 139)   # #64748B
-    WHITE = RGBColor(255, 255, 255)
-    RED = RGBColor(225, 29, 72)      # #E11D48
-    GREEN = RGBColor(16, 185, 129)   # #10B981
+    NAVY = RGBColor(15, 23, 42) if HAS_PPTX else None
+    SLATE = RGBColor(30, 41, 59) if HAS_PPTX else None
+    BLUE = RGBColor(37, 99, 235) if HAS_PPTX else None
+    LIGHT_BG = RGBColor(248, 250, 252) if HAS_PPTX else None
+    GRAY = RGBColor(100, 116, 139) if HAS_PPTX else None
+    WHITE = RGBColor(255, 255, 255) if HAS_PPTX else None
+    RED = RGBColor(225, 29, 72) if HAS_PPTX else None
+    GREEN = RGBColor(16, 185, 129) if HAS_PPTX else None
 
     @classmethod
     def _create_title_slide(cls, prs, project_name: str, domain: str, timestamp: str):
+        if not HAS_PPTX:
+            return
         blank_slide_layout = prs.slide_layouts[6]
         slide = prs.slides.add_slide(blank_slide_layout)
 
@@ -52,6 +61,8 @@ class PPTXExportService:
 
     @classmethod
     def _create_standard_slide(cls, prs, title: str, subtitle: str = None):
+        if not HAS_PPTX:
+            return None
         blank_slide_layout = prs.slide_layouts[6]
         slide = prs.slides.add_slide(blank_slide_layout)
 
@@ -95,6 +106,8 @@ class PPTXExportService:
         competitors: List[Dict[str, Any]] = None,
         backlinks: List[Dict[str, Any]] = None
     ) -> bytes:
+        if not HAS_PPTX:
+            return b""
         prs = Presentation()
         prs.slide_width = Inches(10)
         prs.slide_height = Inches(7.5)

@@ -5,39 +5,63 @@ SEO INTELLIGENCE PLATFORM — ARCHITECTURE & PROJECT OVERVIEW GUIDE
 1. WHAT ARE WE DOING? (PROJECT GOAL & VISION)
 --------------------------------------------------------------------------------
 We are building a production-grade, local-first SEO Intelligence & Website Audit
-Platform. The platform gives website owners, SEO specialists, and developers full
+Platform. The platform gives website owners, SEO agencies, and developers full
 control over their SEO data, crawler analysis, technical audits, keyword tracking,
-competitor insights, and automated executive reporting—without relying on costly
-SaaS subscriptions or sending proprietary data to third-party databases.
+competitor insights, business context intelligence, and automated executive reporting—
+without relying on costly SaaS subscriptions or leaking proprietary data.
 
-KEY CAPABILITIES & FEATURES:
-  1. Website Crawler & HTML Parser:
-     - Asynchronously crawls target domain pages, extracts HTML titles, meta tags,
-       h1-h6 headings, canonical URLs, image alt attributes, and word counts.
-     - Maps internal link graphs and outgoing external links across pages.
-  2. Technical SEO Audit Engine:
-     - Detects technical issues (404 broken links, missing title tags, missing meta
-       descriptions, slow page load times, duplicate content, non-canonical URLs).
-  3. Real-Time Crawl Loading Overlay:
-     - Prominent floating progress bar on the UI displaying live audited page counts,
-       percentage progress, active status ticker, and success reload states.
-  4. Keyword Analysis & Search Suggestions:
-     - Automatically extracts page topics, entity phrases, and content keywords.
-     - Provides real-time Google Autocomplete keyword ideas.
-  5. Rank Tracking & SERP Positions:
-     - Tracks Google search position movements, ranking URLs, and SERP positions.
-  6. Competitor Intelligence & Gap Analysis:
-     - Tracks confirmed project competitors and performs keyword gap comparisons.
-     - Strictly enforces data integrity: No fake competitors (e.g. Fallon Solutions,
-       Mergetest) or fabricated rankings. Returns honest empty/unavailable states.
-  7. Automated Executive PDF & CSV Exports:
-     - Generates professional PDF reports and complete ZIP packages of CSV datasets.
-  8. External OAuth 2.0 Integrations (Google, Meta, AI):
-     - Authenticates user-owned Google Search Console, Google Analytics, Google Ads,
-       Meta, OpenAI, Gemini, and Claude AI accounts.
-     - Uses real OAuth token exchange with AES-256 Fernet encrypted key storage.
-  9. Subscribable 3-State System Health Pill:
-     - Real-time header indicator reflecting ONLINE, DEGRADED, or OFFLINE backend state.
+KEY CAPABILITIES & CORE MODULES:
+  1. Universal Asynchronous Crawler & Parser:
+     - High-speed async crawler with configurable depth and concurrency limits.
+     - Extracts HTML titles, meta descriptions, robots directives, canonical tags,
+       H1-H6 heading hierarchy, open graph tags, image alt texts, and word counts.
+     - Maps full internal link graphs and outbound external link profiles.
+     - Stores immutable, timestamped JSON snapshot artifacts for historical comparisons.
+
+  2. Automated 14-Point Technical SEO Audit Engine:
+     - Detects 404 broken links, missing/suboptimal titles (length checks), missing
+       meta descriptions, thin content (<300 words), heading hierarchy violations,
+       non-canonical URLs, broken outbound links, and crawlability blockers.
+     - Computes an objective 0–100 Website Health Score with issue severity weightings.
+
+  3. Business Context Intelligence Layer:
+     - Integrates real business details: Business Name, Industry/Niche, Core Services,
+       Target Service Areas/Locations, and Country/Language targets.
+     - Automatically infers topic themes from crawled titles/H1s when unconfigured,
+       without fabricating unverified business claims.
+
+  4. Batched AI-Powered Solutions & Executive Analysis:
+     - Intelligence layer built on top of real SEO crawl data (zero fabricated stats).
+     - Resolves user-configured LLM providers (Groq, Google Gemini, OpenAI, Claude,
+       or local Ollama) and executes batched analysis prompts.
+     - Generates grounded, page-specific AI fixes, future roadmap recommendations,
+       executive summaries, and score explanations with transparent "ai_generated" flags.
+     - Gracefully falls back to deterministic rule-based templates if offline.
+
+  5. Single-Source-of-Truth Multi-Format Reporting Pipeline:
+     - Every export derives strictly from `MasterReportBuilder.build_master_report()`:
+       * PDF: Client-ready executive health report via ReportLab with branded styling.
+       * XLSX: Multi-sheet workbook with front 📊 Dashboard summary (KPI cards,
+         severity rollup, health breakdown) + 10 dedicated category audit sheets.
+       * PPTX: Executive slide presentation for client and stakeholder reviews.
+       * CSV: Human-readable, structured data exports for spreadsheet analysis.
+       * ZIP: Comprehensive data archive containing Master PDF, XLSX, PPTX, CSVs,
+         and a data definitions README.
+     - Scoped page-specific downloads ensure buttons on individual views (e.g.
+       Keywords, Pages, Technical) only download their respective filtered datasets.
+
+  6. Keyword Analysis & Search Suggestions:
+     - Frequency-based topic extraction from crawled page contents.
+     - Real-time Google Autocomplete query suggestions.
+
+  7. External OAuth 2.0 Integrations & AES-256 Encryption:
+     - Secure OAuth 2.0 connectors for Google Search Console, Google Analytics 4,
+       Google Ads, Google Calendar, Gmail, and Meta.
+     - AES-256 Fernet encrypted key storage at rest with HMAC-SHA256 CSRF protection.
+
+  8. Real-Time UI Ticker & 3-State System Health:
+     - Live floating crawl progress overlay displaying page counts and completion state.
+     - Header status pill indicating ONLINE, DEGRADED, or OFFLINE backend state.
 
 --------------------------------------------------------------------------------
 2. HOW ARE WE DOING IT? (TECHNICAL ARCHITECTURE & STACK)
@@ -45,80 +69,90 @@ KEY CAPABILITIES & FEATURES:
 
 FRONTEND ARCHITECTURE:
   - Stack: Vanilla JavaScript (ES Modules), HTML5, CSS Custom Design Tokens.
-  - Architecture: Lightweight Single Page Application (SPA) with component-based
-    views and routing (zero heavy framework bloat like React/Angular).
+  - Design Philosophy: Lightweight Single Page Application (SPA) with zero heavy
+    framework dependencies (no React/Angular build overhead).
   - Dev Server: Custom Python SPA server running on http://localhost:8030.
-  - UI Components:
-    * TopBar.js: Header search, project switcher, (+) project modal, health pill.
-    * Sidebar.js: Sidebar navigation across Dashboard, Pages, Technical, Links,
-      Keywords, Rankings, Competitors, Reports, Settings, Integrations, Help.
-    * CrawlProgressOverlay.js: Live floating crawl loading bar component.
-    * ErrorState.js: Backend offline & degraded state fallback UI cards.
+  - UI Views & Components:
+    * Views: Dashboard, Pages, Technical, Keywords, Rankings, Competitors,
+      AEO/GEO, Reports, Integrations, Settings, Help.
+    * Components: TopBar, Sidebar, CrawlProgressOverlay, ErrorState, Modals.
+    * Services: API Client, Crawl Service, Dashboard Service, AI Service.
 
 BACKEND ARCHITECTURE:
   - Framework: FastAPI (Python 3.14 / 3.x) running on http://127.0.0.1:8020.
-  - Database: SQLAlchemy ORM with SQLite database (backend/seo.db).
-  - Configuration: pydantic-settings & python-dotenv reading backend/.env.
-  - Encryption & Security:
-    * AES-256 Fernet encryption (cryptography package) for token/key storage at rest.
-    * Cryptographically signed HMAC-SHA256 state tokens for OAuth CSRF protection.
-    * Multi-user session isolation via X-User-ID header.
-  - Data Integrity Policy:
-    * Zero fabricated SEO metrics, zero mock OAuth tokens (oauth_access_token_...),
-      zero fake emails (user@google.com), and zero fake Facebook pages.
-    * Returns honest empty/error states when integrations or data are missing.
+  - Database: SQLAlchemy ORM with SQLite (backend/seo.db).
+  - Config & Settings: pydantic-settings & python-dotenv reading backend/.env.
+  - Single Source of Truth: `MasterReportBuilder` (app/services/reports/master_report_service.py).
+  - Multi-Format Generators:
+    * `PDFReportGenerator` (app/services/reports/pdf_service.py)
+    * `XLSXExportService` (app/services/reports/xlsx_service.py)
+    * `PPTXExportService` (app/services/reports/pptx_service.py)
+    * `CSVExportService` & `ZIPExportService` (app/services/reports/export_service.py)
+
+DATA INTEGRITY POLICY:
+  - AI is strictly an analysis and presentation layer—it NEVER invents SEO data.
+  - Zero fabricated rankings, zero mock OAuth tokens, and zero fake competitors.
+  - When an external integration (GSC, GA4, Backlinks) is not connected, the UI and
+    reports clearly state "Data Not Connected" with instructions on how to connect.
 
 --------------------------------------------------------------------------------
-3. PROJECT FILE STRUCTURE & MAP
+3. PROJECT FILE STRUCTURE
 --------------------------------------------------------------------------------
 seo new/
-├── start_dev.py               # One-Click Development Starter (Spawns Backend & Frontend)
-├── guide.txt                  # Step-by-step Google Cloud Console OAuth setup guide
-├── PROJECT_OVERVIEW.txt       # This comprehensive architecture & guide file
+├── start_dev.py                   # One-Click Development Starter (Spawns Backend & Frontend)
+├── guide.txt                      # Step-by-step Setup Guide (Google OAuth, LLMs, Business Context)
+├── PROJECT_OVERVIEW.txt           # Comprehensive Architecture & System Overview
+├── README.md                      # GitHub/Project Readme Documentation
+├── requirements.txt               # Root environment dependencies
 ├── backend/
 │   ├── app/
-│   │   ├── config/            # Database connection, Settings, Crypto AES-256, Migrations
-│   │   ├── crawler/           # Async Python HTML crawler & parser
-│   │   ├── llm/               # AI analyst context builder & provider adapters
-│   │   ├── models/            # SQLAlchemy database models (Project, Page, Keyword, Competitor, ExternalConnection, CrawlSession)
-│   │   ├── routers/           # FastAPI API endpoints (projects, pages, technical, internal_links, keywords, rankings, competitors, integrations, reports, crawl, ai)
-│   │   └── services/          # Business logic (crawl storage, competitor service, oauth provider service, PDF export service)
-│   ├── data/                  # Immutable local crawl snapshot JSON files
-│   ├── .env                   # Local backend environment variables (GOOGLE_CLIENT_ID, SECRET_KEY)
-│   ├── requirements.txt       # Python dependencies (fastapi, uvicorn, sqlalchemy, pydantic, python-dotenv, httpx, cryptography, reportlab)
-│   ├── verify_integrations.py # Security & integration test suite
-│   └── verify_deep_audit.py   # Full system 35-endpoint verification suite
+│   │   ├── config/                # Database connection, Settings, Crypto AES-256, Schema Migrations
+│   │   ├── crawler/               # Async Python HTML crawler, parser, and link extractor
+│   │   ├── llm/                   # LLM Provider adapters (Groq, Gemini, Ollama, OpenAI, Claude)
+│   │   ├── models/                # SQLAlchemy Models (Project, Page, Keyword, Competitor, ExternalConnection, CrawlSession)
+│   │   ├── routers/               # FastAPI Endpoints (projects, pages, technical, keywords, rankings, competitors, integrations, reports, crawl, ai)
+│   │   └── services/              # Business logic & reporting services:
+│   │       ├── crawler_service.py
+│   │       ├── competitor_service.py
+│   │       ├── oauth_service.py
+│   │       └── reports/           # Unified Reporting Engine:
+│   │           ├── master_report_service.py  # MasterReportBuilder (Single Source of Truth)
+│   │           ├── pdf_service.py            # PDFReportGenerator (ReportLab)
+│   │           ├── xlsx_service.py           # Multi-Sheet Master XLSX Generator
+│   │           ├── pptx_service.py           # Executive PPTX Presentation Generator
+│   │           └── export_service.py         # CSV & ZIP Scoped Export Services
+│   ├── data/                      # Local immutable crawl snapshot JSON files
+│   ├── tests/                     # Automated Test Suites:
+│   │   ├── test_master_export_consistency.py
+│   │   ├── test_universal_master_reporting.py
+│   │   ├── test_page_specific_exports.py
+│   │   └── test_full_master_health_report.py
+│   ├── .env                       # Local backend environment variables
+│   └── requirements.txt           # Python packages (fastapi, uvicorn, sqlalchemy, reportlab, python-pptx, openpyxl, httpx, cryptography)
 └── frontend/
-    ├── index.html             # Main HTML entry point
-    ├── serve_spa.py           # Local SPA development HTTP server (Port 8030)
-    ├── styles/                # CSS design tokens, base, layout, and component styles
+    ├── index.html                 # Main HTML entry point
+    ├── serve_spa.py               # Local SPA development HTTP server (Port 8030)
+    ├── styles/                    # CSS design tokens, layouts, navigation, and components
     └── src/
-        ├── main.js            # App shell & router initialization
-        ├── components/        # TopBar, Sidebar, ErrorState, CrawlProgressOverlay
-        ├── core/              # Router & Project Store state management
-        ├── services/          # API Client, Crawl Service, Dashboard Service, AI Service
-        └── views/             # Dashboard, Pages, Technical, Keywords, Rankings, Competitors, Reports, Integrations, Settings, Help
+        ├── main.js                # App bootstrap & router initialization
+        ├── components/            # TopBar, Sidebar, ErrorState, CrawlProgressOverlay
+        ├── core/                  # Client Router & Project Store state
+        ├── services/              # API Client & View Data Services
+        └── views/                 # Dashboard, Pages, Technical, Keywords, Rankings, Competitors, Reports, Integrations, Settings, Help
 
 --------------------------------------------------------------------------------
-4. HOW TO RUN & DEVELOP THE PROJECT
+4. HOW TO RUN & TEST THE SYSTEM
 --------------------------------------------------------------------------------
-1. Start Development Environment:
-   Run the one-click Python starter script from the project root:
+1. Launch Local Development Environment:
      python start_dev.py
 
-   This will:
-     - Start Backend API server on http://127.0.0.1:8020
-     - Start Frontend SPA server on http://localhost:8030
-     - Perform health checks and automatically open your browser.
+   - Frontend Web App:  http://localhost:8030/
+   - Backend REST API:  http://127.0.0.1:8020/
+   - Interactive Docs:  http://127.0.0.1:8020/docs
 
-2. Access Interactive Web Application:
-   - Web App UI:  http://localhost:8030/
-   - API Docs:    http://127.0.0.1:8020/docs
-
-3. Run Automated System Test Suites:
-   - Security & OAuth Test Suite:
-     python backend/verify_integrations.py
-   - Endpoint Deep Audit Test Suite:
-     python backend/verify_deep_audit.py
+2. Run Automated Regression Test Suites:
+   From the backend directory:
+     cd backend
+     python -m pytest tests/test_master_export_consistency.py tests/test_universal_master_reporting.py tests/test_page_specific_exports.py tests/test_full_master_health_report.py -v
 
 ================================================================================

@@ -1,5 +1,5 @@
 import io
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 try:
     from pptx import Presentation
@@ -30,7 +30,6 @@ class PPTXExportService:
         blank_slide_layout = prs.slide_layouts[6]
         slide = prs.slides.add_slide(blank_slide_layout)
 
-        # Background shape
         bg = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, Inches(10), Inches(7.5))
         bg.fill.solid()
         bg.fill.fore_color.rgb = cls.NAVY
@@ -66,7 +65,6 @@ class PPTXExportService:
         blank_slide_layout = prs.slide_layouts[6]
         slide = prs.slides.add_slide(blank_slide_layout)
 
-        # Top Header Bar
         hdr = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, Inches(10), Inches(1.1))
         hdr.fill.solid()
         hdr.fill.fore_color.rgb = cls.SLATE
@@ -93,28 +91,68 @@ class PPTXExportService:
     @classmethod
     def generate_full_project_pptx(
         cls,
-        project_name: str,
-        project_url: str,
-        metadata: Dict[str, Any],
-        pages: List[Dict[str, Any]],
-        keywords: List[Dict[str, Any]],
-        issues: List[Dict[str, Any]],
-        opportunities: List[Dict[str, Any]],
-        ai_insights: Dict[str, Any],
+        project_name: str = None,
+        project_url: str = None,
+        metadata: Dict[str, Any] = None,
+        pages: List[Dict[str, Any]] = None,
+        keywords: List[Dict[str, Any]] = None,
+        issues: List[Dict[str, Any]] = None,
+        opportunities: List[Dict[str, Any]] = None,
+        ai_insights: Dict[str, Any] = None,
         internal_links: List[Dict[str, Any]] = None,
         outbound_links: List[Dict[str, Any]] = None,
         competitors: List[Dict[str, Any]] = None,
-        backlinks: List[Dict[str, Any]] = None
+        backlinks: List[Dict[str, Any]] = None,
+        master_report: Dict[str, Any] = None
     ) -> bytes:
         if not HAS_PPTX:
             return b""
+
+        # Normalize from master_report dictionary if provided
+        if master_report:
+            p_obj = master_report.get("project", {})
+            c_obj = master_report.get("crawl", {})
+            project_name = p_obj.get("name", project_name or "Website")
+            project_url = p_obj.get("url", project_url or p_obj.get("domain", "Website"))
+            domain = p_obj.get("domain", project_url)
+            timestamp = c_obj.get("timestamp", "N/A")
+            pages = master_report.get("affected_pages", [])
+            keywords = master_report.get("keywords", [])
+            issues = master_report.get("problems", [])
+            opportunities = master_report.get("opportunities", [])
+            ai_insights = master_report.get("ai_analysis", {})
+            internal_links = master_report.get("content_and_links", {}).get("internal_links", [])
+            outbound_links = master_report.get("content_and_links", {}).get("outbound_links", [])
+            competitors = master_report.get("competitors", [])
+            backlinks = master_report.get("backlinks", {}).get("inbound_backlinks", [])
+            aeo_list = master_report.get("aeo", [])
+            geo_list = master_report.get("geo", [])
+            hist_obj = master_report.get("historical_comparison", {})
+            road_list = master_report.get("next_improvements", [])
+            limits_list = master_report.get("data_limitations", [])
+            health_score = master_report.get("health", {}).get("health_score", 100)
+        else:
+            domain = project_url or "Website"
+            timestamp = metadata.get("timestamp", "N/A") if metadata else "N/A"
+            pages = pages or []
+            keywords = keywords or []
+            issues = issues or []
+            opportunities = opportunities or []
+            ai_insights = ai_insights or {}
+            internal_links = internal_links or []
+            outbound_links = outbound_links or []
+            competitors = competitors or []
+            backlinks = backlinks or []
+            aeo_list = []
+            geo_list = []
+            hist_obj = {}
+            road_list = []
+            limits_list = []
+            health_score = ai_insights.get("health_score", 100)
+
         prs = Presentation()
         prs.slide_width = Inches(10)
         prs.slide_height = Inches(7.5)
-
-        domain = project_url or "Website"
-        timestamp = metadata.get("timestamp", "N/A")
-        health_score = ai_insights.get("health_score", 100)
 
         # SLIDE 1: Title
         cls._create_title_slide(prs, project_name, domain, timestamp)
@@ -124,18 +162,15 @@ class PPTXExportService:
         tx2 = s2.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
         tf2 = tx2.text_frame
         tf2.word_wrap = True
-
         p2_1 = tf2.paragraphs[0]
         p2_1.text = f"Overall Website Health Score: {health_score} / 100"
         p2_1.font.size = Pt(24)
         p2_1.font.bold = True
         p2_1.font.color.rgb = cls.BLUE
-
         p2_2 = tf2.add_paragraph()
         p2_2.text = "\nExecutive Assessment:"
         p2_2.font.size = Pt(16)
         p2_2.font.bold = True
-
         p2_3 = tf2.add_paragraph()
         p2_3.text = ai_insights.get("executive_assessment", "Your website scan has been evaluated against deterministic SEO standards.")
         p2_3.font.size = Pt(14)
@@ -146,7 +181,6 @@ class PPTXExportService:
         tx3 = s3.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
         tf3 = tx3.text_frame
         tf3.word_wrap = True
-
         metrics = [
             f"• Health Score: {health_score}/100",
             f"• Pages Scanned: {len(pages)} HTML pages",
@@ -157,7 +191,7 @@ class PPTXExportService:
         for m in metrics:
             p = tf3.add_paragraph()
             p.text = m
-            p.font.size = Pt(16)
+            p.font.size = Pt(15)
             p.font.color.rgb = cls.SLATE
 
         # SLIDE 4: Main Problems Found
@@ -165,7 +199,6 @@ class PPTXExportService:
         tx4 = s4.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
         tf4 = tx4.text_frame
         tf4.word_wrap = True
-
         top_issues = issues[:4] if issues else []
         if not top_issues:
             p = tf4.add_paragraph()
@@ -174,14 +207,14 @@ class PPTXExportService:
         else:
             for idx, iss in enumerate(top_issues, 1):
                 p = tf4.add_paragraph()
-                p.text = f"{idx}. [{iss.get('severity', 'Notice')}] {iss.get('issue', 'Problem')} — {iss.get('url', '')}"
-                p.font.size = Pt(14)
+                ind = iss.get("indicator") or "🔴"
+                p.text = f"{idx}. {ind} [{iss.get('severity', 'Notice')}] {iss.get('problem') or iss.get('issue', 'Problem')} — {iss.get('affected_url') or iss.get('url', '')}"
+                p.font.size = Pt(13)
                 p.font.bold = True
-                p.font.color.rgb = cls.RED if iss.get("severity") in ("Critical", "Error", "High") else cls.SLATE
-
+                p.font.color.rgb = cls.RED if iss.get("severity") in ("Critical", "Fatal") else cls.SLATE
                 p_ev = tf4.add_paragraph()
-                p_ev.text = f"   Evidence: {iss.get('evidence') or iss.get('description', 'N/A')}\n   Solution: {iss.get('ai_solution', 'Fix issue')}"
-                p_ev.font.size = Pt(12)
+                p_ev.text = f"   Evidence: {iss.get('evidence') or iss.get('what_was_found', 'N/A')}\n   Solution: {iss.get('ai_solution', 'Fix issue')}"
+                p_ev.font.size = Pt(11)
                 p_ev.font.color.rgb = cls.GRAY
 
         # SLIDE 5: AI Recommendations
@@ -189,7 +222,6 @@ class PPTXExportService:
         tx5 = s5.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
         tf5 = tx5.text_frame
         tf5.word_wrap = True
-
         ai_recs = [
             "• Fix High-Severity Status Code Errors: Ensure broken URLs resolve to valid 200 HTTP status.",
             "• Eliminate Missing & Duplicate Meta Titles: Every page requires a unique 30-60 character title tag.",
@@ -199,7 +231,7 @@ class PPTXExportService:
         for r in ai_recs:
             p = tf5.add_paragraph()
             p.text = r
-            p.font.size = Pt(15)
+            p.font.size = Pt(14)
             p.font.color.rgb = cls.SLATE
 
         # SLIDE 6: Technical SEO
@@ -207,7 +239,6 @@ class PPTXExportService:
         tx6 = s6.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
         tf6 = tx6.text_frame
         tf6.word_wrap = True
-
         tech_points = [
             f"• Total Audited URLs: {len(pages)} pages",
             f"• Valid HTTP 200 URLs: {sum(1 for p in pages if p.get('status_code') == 200)} pages",
@@ -225,7 +256,6 @@ class PPTXExportService:
         tx7 = s7.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
         tf7 = tx7.text_frame
         tf7.word_wrap = True
-
         onpage_points = [
             f"• Missing Meta Titles: {sum(1 for p in pages if not p.get('title') or p.get('title') == '(Missing Title)')} pages",
             f"• Missing Meta Descriptions: {sum(1 for p in pages if not p.get('meta_description') or p.get('meta_description') == '(Missing Meta Description)')} pages",
@@ -242,7 +272,6 @@ class PPTXExportService:
         tx8 = s8.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
         tf8 = tx8.text_frame
         tf8.word_wrap = True
-
         top_kws = keywords[:5] if keywords else []
         if not top_kws:
             p = tf8.add_paragraph()
@@ -254,119 +283,171 @@ class PPTXExportService:
                 p.text = f"• Keyword: '{kw.get('keyword')}' | Frequency: {kw.get('frequency', 1)} times | Source: {kw.get('target_url', 'Website Content')}"
                 p.font.size = Pt(14)
 
-        # SLIDE 9: Backlinks Status
-        s9 = cls._create_standard_slide(prs, "8. Backlinks & External Link Analysis", "Inbound & Outbound Profile")
+        # SLIDE 9: Local SEO
+        s9 = cls._create_standard_slide(prs, "8. Local SEO & Geographic Optimization", "Local Search Visibility")
         tx9 = s9.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
         tf9 = tx9.text_frame
         tf9.word_wrap = True
-
-        bl_points = [
-            f"• Outbound External Links Found: {len(outbound_links or [])} external links on audited pages",
-            "• Inbound External Backlinks: Data Not Connected",
-            "• Status: An inbound backlink dataset is not currently connected. The website scan can identify links found on the website, but cannot discover external referring domains without an active integration key.",
-            "• Action Required: Connect Backlinks API key in Settings -> Integrations."
+        loc_points = [
+            f"• Local Business Entity: {project_name}",
+            "• Google Business Profile: Data Not Connected (Connect in Settings -> Integrations)",
+            "• NAP Consistency: Audited for homepage formatting consistency",
+            "• Local Recommendation: Maintain localized address and service area landing pages."
         ]
-        for bl in bl_points:
+        for lp in loc_points:
             p = tf9.add_paragraph()
-            p.text = bl
+            p.text = lp
             p.font.size = Pt(15)
 
-        # SLIDE 10: Competitors
-        s10 = cls._create_standard_slide(prs, "9. Competitor Benchmark Analysis", "Domain Comparison")
+        # SLIDE 10: Content & Links
+        s10 = cls._create_standard_slide(prs, "9. Content & Internal Link Structure", "Site Interconnectivity")
         tx10 = s10.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
         tf10 = tx10.text_frame
         tf10.word_wrap = True
-
-        if competitors:
-            for comp in competitors:
-                p = tf10.add_paragraph()
-                p.text = f"• Competitor: {comp.get('name') or comp.get('domain')} | Overlap: {comp.get('overlap', 'N/A')}"
-                p.font.size = Pt(14)
-        else:
+        link_points = [
+            f"• Total Internal Links Audited: {len(internal_links)} links across site",
+            f"• Total Outbound External Links Found: {len(outbound_links)} links on audited pages",
+            "• Crawl Accessibility: Internal links enable search bots to discover deep pages.",
+            "• Anchor Text Best Practice: Use descriptive topical keywords in internal link anchors."
+        ]
+        for lk in link_points:
             p = tf10.add_paragraph()
-            p.text = "Competitor data is not currently configured.\nAdd competitor domains in Settings -> Competitors to enable automated overlap analysis."
-            p.font.size = Pt(16)
+            p.text = lk
+            p.font.size = Pt(15)
 
-        # SLIDE 11: SEO Opportunities
-        s11 = cls._create_standard_slide(prs, "10. Prioritized SEO Opportunities", "High-Impact Growth Actions")
+        # SLIDE 11: Backlinks Profile
+        s11 = cls._create_standard_slide(prs, "10. Inbound Backlink Profile", "External Link Authority")
         tx11 = s11.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
         tf11 = tx11.text_frame
         tf11.word_wrap = True
+        if backlinks:
+            for b in backlinks[:4]:
+                p = tf11.add_paragraph()
+                p.text = f"• Source: {b.get('source')} -> Target: {b.get('target')}"
+                p.font.size = Pt(14)
+        else:
+            bl_points = [
+                "• Inbound External Backlinks: Data Not Connected",
+                "• Explanation: No inbound backlink dataset is connected. The website scan can identify links found on the website, but cannot discover external referring domains without an active integration key.",
+                "• Action Required: Connect Backlinks API key in Settings -> Integrations."
+            ]
+            for bl in bl_points:
+                p = tf11.add_paragraph()
+                p.text = bl
+                p.font.size = Pt(15)
 
+        # SLIDE 12: AEO & GEO
+        s12 = cls._create_standard_slide(prs, "11. AEO & GEO Optimization", "Answer Engines & Generative AI")
+        tx12 = s12.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
+        tf12 = tx12.text_frame
+        tf12.word_wrap = True
+        aeo_points = [
+            "• Answer Engine Optimization (AEO): Add FAQPage JSON-LD schema on core service pages.",
+            "• Generative Engine Optimization (GEO): Include quotable facts, statistics, and structured tables.",
+            "• Question-Based Headings: Structure H2 headings to answer direct 'What is / How to' queries.",
+            "• AI Overviews: High-depth authoritative content increases snippet citation probability."
+        ]
+        for ap in aeo_points:
+            p = tf12.add_paragraph()
+            p.text = ap
+            p.font.size = Pt(15)
+
+        # SLIDE 13: AI Citations
+        s13 = cls._create_standard_slide(prs, "12. AI Citations & Brand Presence", "LLM Brand Visibility")
+        tx13 = s13.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
+        tf13 = tx13.text_frame
+        tf13.word_wrap = True
+        p13 = tf13.add_paragraph()
+        p13.text = "AI Citation Testing Status:"
+        p13.font.size = Pt(16)
+        p13.font.bold = True
+        p13_sub = tf13.add_paragraph()
+        p13_sub.text = "AI citation testing is configured but results are not yet available for this crawl.\nOnce active, tracking covers ChatGPT, Perplexity AI, Google Gemini, and AI Overviews."
+        p13_sub.font.size = Pt(14)
+
+        # SLIDE 14: Opportunities
+        s14 = cls._create_standard_slide(prs, "13. Prioritized SEO Opportunities", "High-Impact Growth Actions")
+        tx14 = s14.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
+        tf14 = tx14.text_frame
+        tf14.word_wrap = True
         top_opps = opportunities[:4] if opportunities else []
         if not top_opps:
-            p = tf11.add_paragraph()
+            p = tf14.add_paragraph()
             p.text = "No central SEO opportunities identified."
             p.font.size = Pt(16)
         else:
             for opp in top_opps:
-                p = tf11.add_paragraph()
+                p = tf14.add_paragraph()
                 p.text = f"• [{opp.get('priority', 'Medium')}] {opp.get('title')} — {opp.get('url', 'Site Level')}"
-                p.font.size = Pt(14)
+                p.font.size = Pt(13)
                 p.font.bold = True
-                p_sol = tf11.add_paragraph()
+                p_sol = tf14.add_paragraph()
                 p_sol.text = f"   Action: {opp.get('recommended_action', 'N/A')}"
-                p_sol.font.size = Pt(12)
+                p_sol.font.size = Pt(11)
 
-        # SLIDE 12: Evidence
-        s12 = cls._create_standard_slide(prs, "11. Audit Evidence & Traceability", "Observed Code Snapshots")
-        tx12 = s12.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
-        tf12 = tx12.text_frame
-        tf12.word_wrap = True
+        # SLIDE 15: Historical Comparison
+        s15 = cls._create_standard_slide(prs, "14. Historical Crawl Comparison", "Progress Over Time")
+        tx15 = s15.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
+        tf15 = tx15.text_frame
+        tf15.word_wrap = True
+        if hist_obj.get("has_previous_crawl"):
+            h_points = [
+                f"• Previous Score: {hist_obj.get('previous_score')}/100 -> Current Score: {hist_obj.get('current_score')}/100 ({hist_obj.get('score_delta'):+d} points)",
+                f"• Problems Resolved: {hist_obj.get('problems_fixed_count')} previous issues fixed",
+                f"• Newly Detected: {hist_obj.get('new_problems_count')} new findings",
+                f"• Summary: {hist_obj.get('ai_trend_summary')}"
+            ]
+            for hp in h_points:
+                p = tf15.add_paragraph()
+                p.text = hp
+                p.font.size = Pt(15)
+        else:
+            p = tf15.add_paragraph()
+            p.text = "Historical comparison is not available because no previous completed crawl exists.\nFuture scans will automatically track score movements, fixed issues, and new findings."
+            p.font.size = Pt(15)
 
-        p12 = tf12.add_paragraph()
-        p12.text = "All audit findings and AI recommendations in this report are 100% grounded in verified crawl evidence:"
-        p12.font.size = Pt(15)
+        # SLIDE 16: Next 90-Day Improvement Plan
+        s16 = cls._create_standard_slide(prs, "15. Next SEO Improvement Plan", "Phased Execution Roadmap")
+        tx16 = s16.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
+        tf16 = tx16.text_frame
+        tf16.word_wrap = True
+        if road_list:
+            for rm in road_list:
+                p = tf16.add_paragraph()
+                p.text = f"• {rm.get('timeframe')}: {rm.get('action')}"
+                p.font.size = Pt(13)
+                p.font.color.rgb = cls.BLUE if "NOW" in rm.get("timeframe", "") else cls.SLATE
+        else:
+            default_roadmap = [
+                "• NOW (0–7 Days): Resolve critical 404 status codes and broken URLs.",
+                "• NEXT (8–30 Days): Rewrite missing titles and meta descriptions for all pages.",
+                "• 30–60 DAYS: Expand thin content and optimize internal linking structure.",
+                "• 60–90 DAYS: Implement AEO/GEO structured FAQ schema and entity authority.",
+                "• ONGOING: Monitor crawl health, internal links, and connect external search APIs."
+            ]
+            for drm in default_roadmap:
+                p = tf16.add_paragraph()
+                p.text = drm
+                p.font.size = Pt(14)
 
-        ev_list = [
-            "• Status Code 404 / 500 HTTP Server Responses",
-            "• Exact character count length of <title> tags",
-            "• Verified word counts per audited HTML page",
-            "• Explicit internal link source and destination page URLs"
+        # SLIDE 17: Data Limitations
+        s17 = cls._create_standard_slide(prs, "16. Data Limitations & Next Integrations", "Audit Transparency")
+        tx17 = s17.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
+        tf17 = tx17.text_frame
+        tf17.word_wrap = True
+        limit_points = [
+            "• Google Search Console: Data Not Connected (Connect in Settings for impressions/clicks)",
+            "• Inbound Backlinks: No inbound backlink dataset connected (Does not penalize health score)",
+            "• PageSpeed Performance: Not measured during this crawl (Requires PageSpeed API)",
+            "• Search Position Tracking: Ranking data is not currently connected."
         ]
-        for ev in ev_list:
-            p = tf12.add_paragraph()
-            p.text = ev
+        for lp in limit_points:
+            p = tf17.add_paragraph()
+            p.text = lp
             p.font.size = Pt(14)
-
-        # SLIDE 13: Fix First Priority Roadmap
-        s13 = cls._create_standard_slide(prs, "12. What To Fix First Roadmap", "Immediate Tactical Priority")
-        tx13 = s13.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
-        tf13 = tx13.text_frame
-        tf13.word_wrap = True
-
-        priorities = [
-            "1. Fix Critical Technical Errors (404 broken pages, server errors)",
-            "2. Resolve Missing & Short Meta Title Tags (30-60 character target)",
-            "3. Add Compelling Meta Descriptions for Key Landing Pages",
-            "4. Expand Thin Content Pages Under 300 Words",
-            "5. Build Contextual Internal Links Between Core Pages"
-        ]
-        for pr in priorities:
-            p = tf13.add_paragraph()
-            p.text = pr
-            p.font.size = Pt(15)
-            p.font.bold = True
-            p.font.color.rgb = cls.SLATE
-
-        # SLIDE 14: Future Improvement Plan
-        s14 = cls._create_standard_slide(prs, "13. Future SEO Improvements Plan", "Phased Execution Roadmap")
-        tx14 = s14.shapes.add_textbox(Inches(0.8), Inches(1.5), Inches(8.4), Inches(5.2))
-        tf14 = tx14.text_frame
-        tf14.word_wrap = True
-
-        roadmap_items = [
-            "• NOW (0-7 Days): Resolve critical 404 status codes and broken URLs.",
-            "• NEXT 30 DAYS: Rewrite missing titles and meta descriptions for all pages.",
-            "• NEXT 60-90 DAYS: Expand thin content and optimize H1/H2 heading structure.",
-            "• ONGOING: Monitor crawl health, internal links, and connect external Search Console APIs."
-        ]
-        for rm in roadmap_items:
-            p = tf14.add_paragraph()
-            p.text = rm
-            p.font.size = Pt(15)
-            p.font.color.rgb = cls.BLUE if "NOW" in rm else cls.SLATE
 
         stream = io.BytesIO()
         prs.save(stream)
         return stream.getvalue()
+
+    generate_presentation = generate_full_project_pptx

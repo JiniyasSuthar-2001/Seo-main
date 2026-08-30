@@ -55,6 +55,8 @@ def _migrate_single_file(db_file: str):
             "url": "TEXT",
             "description": "TEXT",
             "industry": "TEXT",
+            "services": "TEXT",
+            "service_areas": "TEXT",
             "notes": "TEXT",
             "target_type": "TEXT",
             "search_engine": "TEXT",

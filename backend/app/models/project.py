@@ -12,6 +12,8 @@ class Project(Base):
     url = Column(String)
     description = Column(String, nullable=True)
     industry = Column(String, nullable=True)
+    services = Column(String, nullable=True)
+    service_areas = Column(String, nullable=True)
     notes = Column(String, nullable=True)
 
     # Campaign Configuration Fields

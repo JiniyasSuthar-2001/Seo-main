@@ -1,173 +1,147 @@
-# SEO Intelligence Platform
+# SEO Intelligence & Full Website Health Platform
 
-A data-driven SEO analysis workspace for managing, importing, analyzing, and monitoring SEO datasets.
+A high-performance, local-first SEO Intelligence & Website Audit Platform. Built with a FastAPI backend and a lightweight Vanilla JavaScript SPA frontend, it provides deep crawler analysis, technical SEO auditing, AI-powered recommendations, business context integration, and client-ready multi-format reporting without costly SaaS subscriptions or cloud data lock-in.
 
-## 1. Project Overview
+---
 
-The SEO Intelligence Platform is a centralized SEO workspace designed to bring multiple SEO datasets into one application and organize them into a structured analytical environment.
+## 🌟 Key Capabilities & Features
 
-The platform is intended to help users work with:
-- Website pages
-- Keywords
-- Rankings
-- Backlinks
-- Internal links
-- Competitors
-- Technical SEO data
-- Imported SEO datasets
+### 1. High-Speed Asynchronous Website Crawler
+- Crawls target domains asynchronously with configurable depth and concurrency limits.
+- Extracts HTML title tags, meta descriptions, robots directives, canonical URLs, heading hierarchy (`<h1>`-`<h6>`), Open Graph tags, image `alt` attributes, and page word counts.
+- Maps internal link graphs and outgoing external links.
+- Stores immutable, timestamped JSON crawl snapshots on disk for historical audits.
 
-The platform analyzes imported data and does not directly modify the user's website. It acts as an investigative layer on top of your existing datasets.
+### 2. 14-Point Technical SEO Audit Engine
+- Inspects HTTP status codes (broken 404s, 500s, 301/302 redirects), missing/short/long title tags, missing meta descriptions, thin content (<300 words), heading hierarchy gaps, duplicate or missing canonical tags, and search engine indexability.
+- Calculates an objective **0–100 Website Health Score** with weighted severity penalties (Critical, High, Warning, Info).
 
-## 2. Core Principle
+### 3. Business Context Intelligence Layer
+- Allows configuring real business parameters per project: **Business Name**, **Industry / Niche**, **Core Services**, **Target Service Areas / Locations**, and **Target Country / Language**.
+- Automatically infers topic themes from crawled page titles/H1s when unconfigured, without fabricating unverified business services.
 
-**DATA IN ↓ STORE ↓ ANALYZE ↓ DISPLAY**
+### 4. Grounded AI Intelligence Layer
+- Integrates with user-configured LLM providers (**Groq**, **Google Gemini**, **Anthropic Claude**, **OpenAI**, or local **Ollama**).
+- Processes audit findings in batched prompts to generate tailored, evidence-grounded solutions, future roadmap steps, executive summaries, and score explanations.
+- **Strict Data Grounding:** AI never invents SEO metrics or ranking positions. Each problem includes transparent `ai_generated: true/false` indicators and gracefully falls back to deterministic rule templates when offline.
 
-The platform is currently designed around imported/project data. It does not automatically modify the customer's website or execute live crawls against the internet. All intelligence relies on discrete data ingestion.
+### 5. Universal Multi-Format Master Reporting Pipeline
+Every export derives from a single authoritative source of truth: `MasterReportBuilder.build_master_report()`.
+- **PDF Export (`report.pdf`):** Multi-page executive health report built with ReportLab, featuring styled tables, severity badges, and AI recommendations.
+- **XLSX Export (`export.xlsx`):** Multi-sheet workbook formatted like top agency audit trackers, with a front **📊 Dashboard** (KPI cards, AI overview, severity breakdown) + 10 dedicated category audit sheets (`Technical SEO`, `On-Page SEO`, `Local SEO`, `Content & Links`, `Keywords`, `AEO`, `GEO`, `AI Citations`, `Opportunities & Roadmap`, `Affected Pages`, `Data Limitations`).
+- **PPTX Export (`export.pptx`):** Executive slide deck for client and stakeholder presentations.
+- **CSV Summaries (`summary.csv`, etc.):** Human-readable, structured data exports.
+- **Complete ZIP Data Package (`complete-export.zip`):** Self-contained archive with Master PDF, XLSX, PPTX, all CSV slices, and a data definitions `README.txt`.
 
-## 3. Current Features
+### 6. Scoped Page-Specific Downloads
+- Export buttons on individual views (e.g. Pages, Keywords, Technical Issues, Opportunities) download scoped datasets specifically filtered to that section, preventing data confusion.
 
-### Project Management
-- Company/project creation
-- Website URL storage
-- Project context
-- Project status (availability of data)
+### 7. External OAuth 2.0 Integrations & Encryption
+- Connects directly to Google Search Console, Google Analytics 4, Google Ads / Keyword Planner, Google Calendar, Gmail, and Meta.
+- Encrypts API keys and OAuth tokens at rest using **AES-256 Fernet** encryption.
 
-### Website
-- Pages interface structure
-- Website Map structural view
+---
 
-### Search
-- Keywords list (via imported dataset integration)
-- Rankings interface structure
+## 🏛️ System Architecture
 
-### Links
-- Backlinks interface structure
-- Internal Links interface structure
-
-### Competitors
-- Competitors interface structure
-
-### Technical SEO
-- Technical SEO issues interface structure
-
-### Data Management
-- CSV import system (with basic validation and transactional safety)
-- Dataset management via the backend database
-
-*(Note: While the frontend views for most entities exist structurally, currently only keyword data is fully piped through the backend Importer to the Frontend API layer as a proof of concept).*
-
-## 4. Current Limitations
-
-- **No live website crawling.**
-- **No automatic website scraping.**
-- **No direct website write access.**
-- **No external API integrations.** The system does not connect to Google Search Console, Google Analytics, Ahrefs, Semrush, or Bing Webmaster.
-- **No automated data discovery.** Competitors, keywords, and rankings must be provided to the system.
-- **No AI recommendations.** The system currently acts as a passive data repository and viewer.
-- Missing specific importers for some data structures (currently only Keyword import is fully demonstrated server-side).
-
-## 5. Read-Only Architecture
-
-The platform is designed to analyze SEO information **without modifying the target website.**
-
-The application must not and does not:
-- Edit website HTML
-- Publish content
-- Modify CMS data
-- Modify WordPress or Shopify
-- Change metadata
-- Modify `robots.txt` or `sitemap.xml`
-- Create redirects
-- Delete pages
-
-## 6. Data Sources
-
-All SEO data in this system originates from user-imported datasets.
-
-**Import Pipeline:**
-`CSV → validation → database → analysis → UI`
-
-Imported datasets are fully traceable. The `Dataset` database model tracks:
-- `project_id`
-- `filename`
-- `data_type`
-- `source`
-- `record_count`
-- `error_count`
-- `imported_at`
-- `status`
-
-## 7. Project Structure
-
-The project has been refactored into a scalable, two-tier architecture separating the client from the server database operations.
-
-```text
-seo-intelligence/
-│
-├── frontend/
-│   ├── index.html
-│   ├── styles/
-│   │   ├── base.css
-│   │   ├── layout.css
-│   │   └── components.css
-│   └── src/
-│       ├── main.js
-│       ├── router/
-│       │   └── router.js
-│       ├── state/
-│       │   └── appState.js
-│       ├── components/
-│       │   ├── Sidebar.js
-│       │   └── Header.js
-│       ├── pages/
-│       │   ├── DashboardPage.js
-│       │   └── KeywordsPage.js
-│       └── services/
-│           └── keywordService.js
-│
-├── backend/
-│   ├── app/
-│   │   ├── main.py
-│   │   ├── config/
-│   │   │   ├── database.py
-│   │   │   └── settings.py
-│   │   ├── models/
-│   │   │   ├── project.py
-│   │   │   ├── dataset.py
-│   │   │   ├── page.py
-│   │   │   └── keyword.py
-│   │   ├── schemas/
-│   │   │   └── project.py
-│   │   ├── routers/
-│   │   │   ├── projects.py
-│   │   │   ├── imports.py
-│   │   │   └── keywords.py
-│   │   ├── services/
-│   │   │   └── project_service.py
-│   │   ├── repositories/
-│   │   │   └── project_repository.py
-│   │   └── importers/
-│   │       ├── base.py
-│   │       └── keyword_importer.py
-│   └── requirements.txt
-│
-└── README.md
+```
+                       ┌──────────────────────────────┐
+                       │       User Web Browser       │
+                       │   (Vanilla JS SPA :8030)     │
+                       └──────────────┬───────────────┘
+                                      │ REST API / JSON
+                       ┌──────────────▼───────────────┐
+                       │     FastAPI Backend :8020    │
+                       └──────────────┬───────────────┘
+                                      │
+           ┌──────────────────────────┼──────────────────────────┐
+           │                          │                          │
+┌──────────▼──────────┐    ┌──────────▼──────────┐    ┌──────────▼──────────┐
+│   Async Crawler     │    │  SQLAlchemy/SQLite  │    │  LLM Provider API   │
+│ (HTML/Meta/Links)   │    │ (Projects/Metadata) │    │ (Groq/Gemini/Local) │
+└──────────┬──────────┘    └──────────┬──────────┘    └──────────┬──────────┘
+           │                          │                          │
+           └──────────────────────────┼──────────────────────────┘
+                                      │
+                       ┌──────────────▼───────────────┐
+                       │     MasterReportBuilder      │
+                       │  (Single Source of Truth)    │
+                       └──────────────┬───────────────┘
+                                      │
+         ┌────────────┬───────────────┼───────────────┬────────────┐
+         │            │               │               │            │
+    ┌────▼───┐   ┌────▼───┐      ┌────▼───┐      ┌────▼───┐   ┌────▼───┐
+    │  PDF   │   │  XLSX  │      │  PPTX  │      │  CSV   │   │  ZIP   │
+    │ Report │   │ (Multi-│      │ Slides │      │ Slices │   │Archive │
+    │        │   │ Sheet) │      │        │      │        │   │        │
+    └────────┘   └────────┘      └────────┘      └────────┘   └────────┘
 ```
 
-### Running Locally
+---
 
-**Development Launcher (Recommended):**
-To start the entire application for development, run the unified startup script from the root directory:
+## 🚀 Quickstart & Development
+
+### 1. Prerequisites
+- Python 3.10+ (Python 3.12 / 3.14 fully supported)
+
+### 2. Installation
+Clone the repository and install required Python packages:
+
+```bash
+git clone <repo-url>
+cd "seo new"
+pip install -r backend/requirements.txt
+```
+
+### 3. Start Development Environment
+Run the unified one-click launcher from the project root:
 
 ```bash
 python start_dev.py
 ```
 
-This command will:
-- Start the backend FastAPI server on port 8020
-- Start the frontend SPA server on port 8030
-- Stream logs from both services concurrently into your terminal
-- Wait until both services are ready before automatically opening your browser
-- Gracefully shut down all services and child processes when you press `CTRL+C`
+This will automatically:
+1. Start the **FastAPI backend** on `http://127.0.0.1:8020`
+2. Start the **SPA frontend server** on `http://localhost:8030`
+3. Verify backend and frontend health checks
+4. Automatically open `http://localhost:8030` in your default browser
 
-*Note: Ensure you have your virtual environment activated (if you are using one) before running the command.*
+---
+
+## ⚙️ Configuration
+
+### Business Context Configuration
+In the Web UI, navigate to **Settings > Workspace & Team** to configure your project's business context:
+- **Industry / Business Niche** (e.g. `Electrical Contracting & Solar Installation`)
+- **Target Service Areas / Locations** (e.g. `Sydney, NSW, Parramatta, Penrith`)
+- **Core Services / Topic Focus** (e.g. `Commercial Electrician, Solar Panel Installation, EV Charger Setup`)
+
+### AI Provider Keys
+In **Settings > AI Settings**, select your preferred provider and add your API key:
+- **Groq API Key** (`gsk_...`)
+- **Google Gemini API Key** (`AIzaSy...`)
+- **OpenAI API Key** (`sk-...`)
+- **Anthropic Claude API Key** (`sk-ant-...`)
+- **Ollama Local Endpoint** (e.g. `http://localhost:11434`)
+
+---
+
+## 🧪 Testing
+
+Run the automated regression test suite to verify export consistency and reporting integrity:
+
+```bash
+cd backend
+python -m pytest tests/test_master_export_consistency.py tests/test_universal_master_reporting.py tests/test_page_specific_exports.py tests/test_full_master_health_report.py -v
+```
+
+All 19 tests assert:
+- `MasterReportBuilder` generates complete, unified report dictionaries for any project.
+- PDF, XLSX, PPTX, CSV, and ZIP exports generate valid, non-empty files without crashing.
+- Multi-project isolation is maintained without cross-website data leakage.
+- Page-specific export endpoints remain scoped strictly to their respective views.
+
+---
+
+## 📄 License
+MIT License. Free for personal, commercial, and agency use.

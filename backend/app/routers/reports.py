@@ -21,18 +21,18 @@ from app.services.report_builder_service import generate_custom_pdf_report
 from app.services.backlink_service import BacklinkDataService
 from app.services.audit_rules import evaluate_site_audit_rules
 from app.services.opportunity_engine import generate_central_opportunities
-from app.llm.seo_analyst import SEOAnalystAgent
 from app.config.settings import settings
 from app.providers.nlp_keywords import NLPKeywordExtractor
 
 from app.config.auth import get_current_user_id
 from app.config.permissions import get_user_membership
 
+from app.services.reports.master_report_service import MasterReportBuilder
+
 router = APIRouter()
 
 pdf_gen = PDFReportGenerator()
 nlp_extractor = NLPKeywordExtractor()
-seo_analyst = SEOAnalystAgent()
 
 
 class CustomReportBuilderSchema(BaseModel):
@@ -43,29 +43,37 @@ class CustomReportBuilderSchema(BaseModel):
 
 def build_export_filename(domain: str, report_type: str, extension: str) -> str:
     """
-    Standardized professional export filename generator:
-    {site-name}_{report-type}_{YYYY-MM-DD}.{extension}
+    Format standard, clean export filenames without double timestamps.
+    Example: queenshine_com_au_SEO_Master_Export_2026-08-29.xlsx
     """
     clean_dom = get_sanitized_domain(domain).replace(".", "_") if domain else "seo_project"
-    now_str = datetime.now().strftime("%Y-%m-%d")
-    return f"{clean_dom}_{report_type}_{now_str}.{extension}"
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    return f"{clean_dom}_{report_type}_{date_str}.{extension}"
 
 
-def record_report_generation(db: Session, project: Project, report_type: str, file_type: str, filename: str, crawl_id: str = None, data_sources: str = "Website Scan"):
+def record_report_generation(
+    db: Session,
+    project: Project,
+    report_type: str,
+    file_type: str,
+    filename: str,
+    crawl_id: Optional[str] = None,
+    data_sources: Optional[str] = "Website Scan & Audit Rules"
+):
     try:
-        record = ReportRecord(
+        report_record = ReportRecord(
             id=str(uuid.uuid4()),
             project_id=project.id,
             website=project.domain or project.url or "Website",
             report_type=report_type,
             file_type=file_type,
             filename=filename,
-            crawl_id=crawl_id,
-            data_sources=data_sources,
             status="Completed",
-            generated_at=datetime.utcnow()
+            generated_at=datetime.now(),
+            crawl_id=crawl_id,
+            data_sources=data_sources
         )
-        db.add(record)
+        db.add(report_record)
         db.commit()
     except Exception as e:
         db.rollback()
@@ -75,91 +83,33 @@ def record_report_generation(db: Session, project: Project, report_type: str, fi
 def get_shared_project_report_data(project: Project, db: Session, user_id: str) -> Dict[str, Any]:
     """
     Central shared report data layer.
-    Ensures PDF, CSV, and ZIP exports draw from 100% identical real project data.
+    Uses MasterReportBuilder to ensure PDF, CSV, XLSX, PPTX, and ZIP exports draw from 100% identical real project data.
     """
-    domain = get_sanitized_domain(project.domain or project.url)
-    if not domain:
-        return {
-            "metadata": {}, "pages": [], "issues": [], "internal_links": [], "external_links": [],
-            "keywords": [], "opportunities": [], "ai_insights": {}, "competitors": [],
-            "inbound_backlinks": [], "outbound_links": [], "crawl_id": None
-        }
-
-    proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, project.id)
-    latest_path = os.path.join(proj_dir, "latest.json")
-
-    metadata = {}
-    pages = []
-    issues = []
-    internal_links = []
-    external_links = []
-    crawl_id = None
-
-    if os.path.exists(latest_path):
-        try:
-            with open(latest_path, "r", encoding="utf-8") as f:
-                latest = json.load(f)
-            crawl_dir = normalize_stored_path(latest.get("path"))
-
-            meta_path = os.path.join(crawl_dir, "metadata.json")
-            pages_path = os.path.join(crawl_dir, "pages.json")
-            issues_path = os.path.join(crawl_dir, "issues.json")
-            links_path = os.path.join(crawl_dir, "internal_links.json")
-            ext_path = os.path.join(crawl_dir, "external_links.json")
-
-            metadata = json.load(open(meta_path, encoding="utf-8")) if os.path.exists(meta_path) else {}
-            pages = json.load(open(pages_path, encoding="utf-8")) if os.path.exists(pages_path) else []
-            issues = json.load(open(issues_path, encoding="utf-8")) if os.path.exists(issues_path) else []
-            internal_links = json.load(open(links_path, encoding="utf-8")) if os.path.exists(links_path) else []
-            external_links = json.load(open(ext_path, encoding="utf-8")) if os.path.exists(ext_path) else []
-            crawl_id = metadata.get("crawl_id") or latest.get("crawl_id")
-        except Exception as e:
-            print(f"[REPORT DATA SNAPSHOT ERROR] {e}", flush=True)
-
-    # Calculate audit summary and evaluated rules
-    audit_eval = evaluate_site_audit_rules(pages) if pages else {"health_score": 100, "summary": {}, "issues": issues}
-
-    # Extract content keywords
-    keywords = nlp_extractor.extract_content_keywords(pages) if pages else []
-
-    # Generate central opportunities using real Opportunity Engine
-    opportunities = generate_central_opportunities(audit_eval, keywords, pages) if pages else []
-
-    # Get competitors from DB
-    comp_records = db.query(Competitor).filter(Competitor.project_id == project.id).all()
-    competitors = [{
-        "name": c.name, "domain": c.domain, "url": c.url, "location": c.location,
-        "geographic_level": c.geographic_level, "relevance_score": c.relevance_score,
-        "keyword_overlap": c.keyword_overlap, "search_appearances": c.search_appearances,
-        "is_primary": c.is_primary, "status": c.status, "discovery_source": c.discovery_source
-    } for c in comp_records]
-
-    # Get backlinks & outbound links
-    b_data = BacklinkDataService.get_project_backlink_data(project=project)
-    outbound_links = b_data.get("outbound_links", [])
-    inbound_backlinks = b_data.get("backlinks", [])
-
-    # Fetch real AI Insights if available
-    ai_insights = {}
-    try:
-        ai_insights = seo_analyst.analyze_project(domain=project.domain, user_id=user_id, db=db)
-    except Exception as e:
-        ai_insights = {"status": "AI_TEMPORARILY_UNAVAILABLE", "message": "AI analysis has not been generated for this project."}
-
+    master = MasterReportBuilder.build_master_report(project, db, user_id)
     return {
-        "metadata": metadata,
-        "audit_summary": audit_eval,
-        "pages": pages,
-        "issues": issues,
-        "internal_links": internal_links,
-        "external_links": external_links,
-        "keywords": keywords,
-        "opportunities": opportunities,
-        "ai_insights": ai_insights,
-        "competitors": competitors,
-        "inbound_backlinks": inbound_backlinks,
-        "outbound_links": outbound_links,
-        "crawl_id": crawl_id
+        "master_report": master,
+        "metadata": {
+            "website": master.get("project", {}).get("domain"),
+            "health_score": master.get("health", {}).get("health_score", 100),
+            "timestamp": master.get("crawl", {}).get("timestamp", "N/A"),
+            "status": master.get("crawl", {}).get("status", "completed"),
+            "pages_crawled": master.get("crawl", {}).get("pages_crawled", 0),
+            "total_issues": len(master.get("problems", [])),
+            "evaluated_rules_count": master.get("checks", {}).get("evaluated_rules_count", 14),
+            "category_checks_table": master.get("health", {}).get("category_breakdown", [])
+        },
+        "audit_summary": master.get("health", {}).get("summary", {}),
+        "pages": master.get("affected_pages", []),
+        "issues": master.get("problems", []),
+        "internal_links": master.get("content_and_links", {}).get("internal_links", []),
+        "external_links": master.get("content_and_links", {}).get("outbound_links", []),
+        "keywords": master.get("keywords", []),
+        "opportunities": master.get("opportunities", []),
+        "ai_insights": master.get("ai_analysis", {}),
+        "competitors": master.get("competitors", []),
+        "inbound_backlinks": master.get("backlinks", {}).get("inbound_backlinks", []),
+        "outbound_links": master.get("content_and_links", {}).get("outbound_links", []),
+        "crawl_id": master.get("crawl", {}).get("crawl_id")
     }
 
 
@@ -254,7 +204,8 @@ def get_crawl_pdf_report(
         crawls=[],
         opportunities=report_data["opportunities"],
         ai_insights=report_data["ai_insights"],
-        outbound_links=report_data["outbound_links"]
+        outbound_links=report_data["outbound_links"],
+        master_report=report_data.get("master_report")
     )
     
     filename = build_export_filename(project.name or project.domain, "Full_Website_Health_Report", "pdf")
@@ -287,7 +238,8 @@ def get_master_xlsx_report(
         internal_links=report_data["internal_links"],
         outbound_links=report_data["outbound_links"],
         competitors=report_data["competitors"],
-        backlinks=report_data["inbound_backlinks"]
+        backlinks=report_data["inbound_backlinks"],
+        master_report=report_data.get("master_report")
     )
     filename = build_export_filename(project.name or project.domain, "SEO_Master_Export", "xlsx")
     record_report_generation(db, project, "Full Master Workbook XLSX", "xlsx", filename, report_data.get("crawl_id"), "AI Intelligence Layer")
@@ -319,7 +271,8 @@ def get_master_pptx_report(
         internal_links=report_data["internal_links"],
         outbound_links=report_data["outbound_links"],
         competitors=report_data["competitors"],
-        backlinks=report_data["inbound_backlinks"]
+        backlinks=report_data["inbound_backlinks"],
+        master_report=report_data.get("master_report")
     )
     filename = build_export_filename(project.name or project.domain, "SEO_Executive_Presentation", "pptx")
     record_report_generation(db, project, "Executive Presentation PPTX", "pptx", filename, report_data.get("crawl_id"), "AI Intelligence Layer")
@@ -725,7 +678,8 @@ def export_complete_project_zip(
         crawls=[],
         opportunities=report_data["opportunities"],
         ai_insights=report_data["ai_insights"],
-        outbound_links=report_data["outbound_links"]
+        outbound_links=report_data["outbound_links"],
+        master_report=report_data.get("master_report")
     )
 
     zip_bytes = ZIPExportService.generate_complete_zip_export(
@@ -744,7 +698,8 @@ def export_complete_project_zip(
         opportunities=report_data["opportunities"],
         crawls=[],
         audit_pdf_bytes=pdf_bytes,
-        ai_insights=report_data["ai_insights"]
+        ai_insights=report_data["ai_insights"],
+        master_report=report_data.get("master_report")
     )
 
     filename = build_export_filename(project.name or project.domain, "SEO_Master_Export", "zip")

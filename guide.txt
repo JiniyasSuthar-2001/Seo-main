@@ -1,63 +1,63 @@
 ================================================================================
-COMPLETE GUIDE: CONNECTING GOOGLE ACCOUNTS & APIS TO YOUR SEO WEB APP
+SEO INTELLIGENCE PLATFORM — COMPLETE SETUP & INTEGRATION GUIDE
 ================================================================================
 
-This guide explains step-by-step how to connect Google Accounts and services
-(Google Search Console, Google Keyword Planner / Ads, Google Calendar, Gmail,
-and Google Analytics) to your SEO website in development.
+This guide covers:
+  PART 1: GOOGLE CLOUD OAUTH & APIS SETUP
+  PART 2: AI / LLM PROVIDER API CONFIGURATION
+  PART 3: BUSINESS CONTEXT & PROJECT SETUP
+  PART 4: MASTER REPORT EXPORTS & DOWNLOADS
+  PART 5: LOCAL DEVELOPMENT & TESTING
 
---------------------------------------------------------------------------------
-STEP 1: CREATE A PROJECT IN GOOGLE CLOUD CONSOLE
---------------------------------------------------------------------------------
+================================================================================
+PART 1: GOOGLE CLOUD OAUTH & APIS SETUP
+================================================================================
+
+Follow these steps to connect Google Search Console, Google Analytics (GA4),
+Google Ads / Keyword Planner, Google Calendar, and Gmail to your platform:
+
+STEP 1: CREATE A GOOGLE CLOUD PROJECT
 1. Go to Google Cloud Console: https://console.cloud.google.com/
-2. In the top navigation bar dropdown, click "New Project".
-3. Name your project (e.g., "SEO Intelligence Platform") and click "Create".
-4. Ensure your new project is selected in the top project selector.
+2. In the top project selector dropdown, click "New Project".
+3. Enter Project Name: "SEO Intelligence Platform" and click "Create".
+4. Ensure the new project is selected in the top bar.
 
---------------------------------------------------------------------------------
 STEP 2: ENABLE REQUIRED GOOGLE APIS
---------------------------------------------------------------------------------
-1. Navigate to "APIs & Services" > "Library" from the left navigation menu.
-2. Search for and ENABLE each of the following APIs:
-   - Google Search Console API (For organic performance, clicks, impressions & keyword query positions)
-   - Google Analytics Data API (GA4) (For website traffic, pageviews & conversions)
-   - Google Ads API (Required for Google Keyword Planner search volume, CPC & keyword metrics)
-   - Google Calendar API (For content publishing schedules, SEO audit reminders & deadlines)
-   - Gmail API (For automated link-building outreach emails & SEO report alerts)
-   - Google My Business API (Optional: For Local SEO metrics & business profile tracking)
+1. Go to "APIs & Services" > "Library".
+2. Search and click "Enable" for each of the following:
+   - Google Search Console API (For clicks, impressions, keywords & average positions)
+   - Google Analytics Data API (GA4) (For traffic, users & conversion metrics)
+   - Google Ads API (For Keyword Planner search volumes and CPC metrics)
+   - Google Calendar API (For content publishing schedules & audit reminders)
+   - Gmail API (For automated outreach and notification emails)
 
---------------------------------------------------------------------------------
-STEP 3: CONFIGURE THE OAUTH CONSENT SCREEN
---------------------------------------------------------------------------------
+STEP 3: CONFIGURE OAUTH CONSENT SCREEN
 1. Go to "APIs & Services" > "OAuth consent screen".
 2. Select "External" user type and click "Create".
 3. App Information:
    - App name: SEO Intelligence App
    - User support email: Your Gmail address
-   - Developer contact information: Your email address
+   - Developer contact email: Your Gmail address
 4. Click "Save and Continue".
 5. Scopes: Click "Add or Remove Scopes" and select:
-   - .../auth/userinfo.email (Email address)
-   - .../auth/userinfo.profile (Basic Profile)
-   - .../auth/webmasters.readonly (Google Search Console)
-   - .../auth/analytics.readonly (Google Analytics)
+   - .../auth/userinfo.email (User Email)
+   - .../auth/userinfo.profile (Profile Information)
+   - .../auth/webmasters.readonly (Google Search Console Data)
+   - .../auth/analytics.readonly (Google Analytics 4 Data)
    - .../auth/calendar (Google Calendar)
-   - .../auth/gmail.send (Gmail sending capability for outreach)
+   - .../auth/gmail.send (Gmail Sending Capability)
    - .../auth/adwords (Google Ads / Keyword Planner)
-6. Test Users (CRUCIAL FOR DEVELOPMENT):
-   - Under the "Test Users" section, click "+ Add Users".
-   - Add your own Gmail address (and any team members' Gmail addresses).
-   - NOTE: While your app is in "Testing" status, only added test users can log in
-     via OAuth without needing official Google Verification.
+6. Test Users (MANDATORY FOR LOCAL TESTING):
+   - Under "Test Users", click "+ Add Users".
+   - Add your personal/work Gmail address.
+   - NOTE: In "Testing" status, only added test users can log in without Google verification.
 
---------------------------------------------------------------------------------
-STEP 4: GENERATE OAUTH 2.0 CREDENTIALS
---------------------------------------------------------------------------------
+STEP 4: GENERATE OAUTH 2.0 CLIENT CREDENTIALS
 1. Go to "APIs & Services" > "Credentials".
-2. Click "+ Create Credentials" at the top and select "OAuth client ID".
-3. Select "Web application" as the Application Type.
-4. Name: SEO Web App Local Credentials
-5. Fill in the authorized origins for your development environment:
+2. Click "+ Create Credentials" > "OAuth client ID".
+3. Application Type: Select "Web application".
+4. Name: "SEO Intelligence Local App".
+5. Fill in the exact URIs:
 
    AUTHORISED JAVASCRIPT ORIGINS:
    http://localhost:8030
@@ -67,59 +67,93 @@ STEP 4: GENERATE OAUTH 2.0 CREDENTIALS
    http://localhost:8020/api/integrations/google/callback
    http://127.0.0.1:8020/api/integrations/google/callback
 
-6. Click "Create". A popup will display your Client ID and Client Secret.
+6. Click "Create" and copy your Client ID and Client Secret.
 
---------------------------------------------------------------------------------
-STEP 5: CONFIGURE ENVIRONMENT VARIABLES IN YOUR PROJECT
---------------------------------------------------------------------------------
-Save your generated credentials in your backend environment variables (or .env file):
-
+STEP 5: CONFIGURE ENVIRONMENT VARIABLES
+Add these to `backend/.env`:
 GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
 GOOGLE_CLIENT_SECRET="your-client-secret"
 REDIRECT_BASE_URL="http://127.0.0.1:8020"
 
---------------------------------------------------------------------------------
-STEP 6: HOW THE OAUTH 2.0 AUTHENTICATION FLOW WORKS
---------------------------------------------------------------------------------
-1. User clicks "Connect Google Account" in the frontend.
-2. Frontend triggers GET /api/integrations/google/connect.
-3. Backend generates a signed OAuth authorization URL containing access_type=offline
-   and prompt=consent to ensure Google returns a Refresh Token.
-4. User completes Google consent on the browser window.
-5. Google redirects back to:
-   http://127.0.0.1:8020/api/integrations/google/callback?code=AUTH_CODE
-6. Backend exchanges the code for access_token and refresh_token, encrypts them,
-   and stores them in the database.
-7. Backend uses the access_token (and auto-refreshes it via refresh_token) to call
-   Search Console, Analytics, Calendar, Gmail, and Google Ads APIs.
+================================================================================
+PART 2: AI / LLM PROVIDER API CONFIGURATION
+================================================================================
 
---------------------------------------------------------------------------------
-STEP 7: API-SPECIFIC SETUP & USAGE NOTES
---------------------------------------------------------------------------------
-1. Google Keyword Planner (Google Ads API):
-   - Requires a Google Ads Manager Account (MCC).
-   - Apply for a Developer Token under Tools & Settings > API Center in Google Ads.
-   - During development, use a Google Ads Test Account for instant API testing.
+The platform uses AI as an intelligence layer on top of real crawl data.
+You can configure any of the following providers in the Web UI:
 
-2. Google Search Console & Analytics API:
-   - Your user must be an owner/verified user of the target domain in Search Console
-     or have viewer permissions in GA4.
-
-3. Google Calendar API:
-   - Scope: https://www.googleapis.com/auth/calendar
-   - Used for creating publication schedules, audit deadlines, and reminders.
-
-4. Gmail API:
-   - Scope: https://www.googleapis.com/auth/gmail.send
-   - Used for link-building outreach emails and automated reporting alerts.
+1. Open Web UI: http://localhost:8030/
+2. Navigate to "Settings" > "AI Settings" tab.
+3. Select your preferred provider:
+   - Groq (Ultra-fast cloud inference, e.g., llama-3.3-70b-versatile)
+     * Get API key: https://console.groq.com/keys
+   - Google Gemini (Gemini 1.5 Pro / Flash)
+     * Get API key: https://aistudio.google.com/
+   - OpenAI (GPT-4o, GPT-4o-mini)
+     * Get API key: https://platform.openai.com/api-keys
+   - Anthropic Claude (Claude 3.5 Sonnet / Haiku)
+     * Get API key: https://console.anthropic.com/
+   - Ollama (100% Local / Offline inference)
+     * Install Ollama: https://ollama.ai/
+     * Default Endpoint: http://localhost:11434 (e.g., llama3.1, mistral)
+4. Paste your key and click "Save & Test Connection".
+   The system securely encrypts your key using AES-256 Fernet.
 
 ================================================================================
-SUMMARY CHECKLIST FOR LOCAL TESTING:
+PART 3: BUSINESS CONTEXT & PROJECT SETUP
 ================================================================================
- [ ] Google Cloud Console project created.
- [ ] Search Console, Analytics, Ads, Calendar, and Gmail APIs enabled.
- [ ] Scopes & Test Users configured in OAuth Consent Screen.
- [ ] JavaScript origins set to http://localhost:8030
- [ ] Redirect URIs set to http://localhost:8020/api/integrations/google/callback
- [ ] GOOGLE_CLIENT_ID & GOOGLE_CLIENT_SECRET saved in backend environment.
+
+To ensure AI recommendations and reports are customized to the specific business:
+
+1. In the Web UI, select your active project from the top header dropdown.
+2. Go to "Settings" > "Workspace & Team" tab.
+3. Complete the Project Configuration fields:
+   - Industry / Business Niche: e.g. "Electrical Contracting & Solar Installation"
+   - Service Areas / Locations: e.g. "Sydney, Parramatta, Penrith, NSW"
+   - Core Services / Topic Focus: e.g. "Commercial Electrician, Solar Panel Installation, EV Charger Setup"
+4. Click "Save Project Settings".
+
+When generating reports, the AI will use this business context to deliver
+highly tailored, actionable recommendations without hallucinating irrelevant services.
+
+================================================================================
+PART 4: MASTER REPORT EXPORTS & DOWNLOADS
+================================================================================
+
+The reporting engine provides a single source of truth across all formats:
+
+1. FULL WEBSITE HEALTH MASTER REPORT:
+   - PDF Report (`report.pdf`):
+     Formatted multi-page executive audit report via ReportLab with issue tables,
+     evidence snippets, and AI solutions.
+   - XLSX Master Workbook (`export.xlsx`):
+     11 sheets including front 📊 Dashboard with live KPI cards + category sheets
+     (Technical SEO, On-Page SEO, Local SEO, Content & Links, Keywords, AEO, GEO,
+     AI Citations, Opportunities & Roadmap, Affected Pages, Data Limitations).
+   - PPTX Executive Presentation (`export.pptx`):
+     16:9 widescreen PowerPoint deck ready for stakeholder presentation.
+   - Complete ZIP Data Package (`complete-export.zip`):
+     Master PDF + XLSX + PPTX + all individual CSV datasets + README.txt.
+
+2. PAGE-SPECIFIC EXPORTS:
+   - Download buttons on specific views (Pages, Keywords, Technical Issues,
+     Opportunities) download CSV/XLSX files scoped strictly to that page's data.
+
+================================================================================
+PART 5: LOCAL DEVELOPMENT & TESTING
+================================================================================
+
+1. START LOCAL APP:
+   From the repository root:
+     python start_dev.py
+
+   - Frontend SPA: http://localhost:8030/
+   - Backend API:  http://127.0.0.1:8020/
+   - API Docs:     http://127.0.0.1:8020/docs
+
+2. RUN AUTOMATED TEST SUITE:
+   From the backend directory:
+     cd backend
+     python -m pytest tests/test_master_export_consistency.py tests/test_universal_master_reporting.py tests/test_page_specific_exports.py tests/test_full_master_health_report.py -v
+
 ================================================================================

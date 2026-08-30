@@ -178,22 +178,63 @@ export class Settings {
                 `;
 
             } else if (this.activeTab === 'workspace') {
+                const projIndustry = selectedProj ? (selectedProj.industry || '') : '';
+                const projServices = selectedProj ? (selectedProj.services || '') : '';
+                const projServiceAreas = selectedProj ? (selectedProj.service_areas || '') : '';
+
                 container.innerHTML = `
                     <div style="display: flex; flex-direction: column; gap: 20px; max-width: 840px;">
                         
-                        <!-- PROJECT DETAILS -->
+                        <!-- PROJECT DETAILS & BUSINESS CONTEXT -->
                         <div class="card" style="padding: 24px;">
-                            <h3 style="font-size: 16px; font-weight: 700; margin: 0 0 16px; color: var(--text-primary);">Selected Project Configuration</h3>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; font-size: 14px;">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
                                 <div>
-                                    <span style="color: var(--text-tertiary); font-size: 11px; font-weight: 700; text-transform: uppercase; display: block;">PROJECT NAME</span>
+                                    <h3 style="font-size: 16px; font-weight: 700; margin: 0 0 4px; color: var(--text-primary);">Selected Project & Business Context</h3>
+                                    <p style="font-size: 12.5px; color: var(--text-secondary); margin: 0;">
+                                        Provide business niche, core services, and service locations to tailor AI recommendations and executive report narratives.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; font-size: 14px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border);">
+                                <div>
+                                    <span style="color: var(--text-tertiary); font-size: 11px; font-weight: 700; text-transform: uppercase; display: block; margin-bottom: 4px;">PROJECT NAME</span>
                                     <strong style="font-size: 16px; color: var(--text-primary);">${projName}</strong>
                                 </div>
                                 <div>
-                                    <span style="color: var(--text-tertiary); font-size: 11px; font-weight: 700; text-transform: uppercase; display: block;">TARGET DOMAIN</span>
+                                    <span style="color: var(--text-tertiary); font-size: 11px; font-weight: 700; text-transform: uppercase; display: block; margin-bottom: 4px;">TARGET DOMAIN</span>
                                     <a href="${projDomain}" target="_blank" style="color: var(--primary); font-weight: 600; text-decoration: none;">${projDomain}</a>
                                 </div>
                             </div>
+
+                            <!-- BUSINESS CONTEXT FORM -->
+                            <form id="project-business-context-form" style="display: flex; flex-direction: column; gap: 14px;">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+                                    <div>
+                                        <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-secondary);">Industry / Business Niche</label>
+                                        <input type="text" id="ctx-industry" value="${this.escapeHtml(projIndustry)}" placeholder="e.g. Electrical & Solar Contracting" style="width: 100%; padding: 8px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-primary);"/>
+                                    </div>
+                                    <div>
+                                        <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-secondary);">Service Areas / Locations</label>
+                                        <input type="text" id="ctx-service-areas" value="${this.escapeHtml(projServiceAreas)}" placeholder="e.g. Sydney, Brisbane, Gold Coast, Regional QLD" style="width: 100%; padding: 8px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-primary);"/>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-secondary);">Core Services / Topic Focus (Comma Separated)</label>
+                                    <input type="text" id="ctx-services" value="${this.escapeHtml(projServices)}" placeholder="e.g. Level 2 Electrical, Solar Power Installation, Battery Storage, EV Chargers, Air Conditioning" style="width: 100%; padding: 8px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-primary);"/>
+                                </div>
+
+                                <div id="ctx-save-status" style="display: none; font-size: 12.5px; padding: 8px 12px; border-radius: 6px;"></div>
+
+                                ${isOwner ? `
+                                    <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
+                                        <button type="submit" id="btn-save-context" class="btn btn-primary btn-sm">Save Business Context</button>
+                                    </div>
+                                ` : `
+                                    <span style="font-size: 12px; color: var(--text-tertiary);">Only project owners can modify business context settings.</span>
+                                `}
+                            </form>
                         </div>
 
                         <!-- TEAM MANAGEMENT CONTAINER -->
@@ -201,6 +242,52 @@ export class Settings {
 
                     </div>
                 `;
+
+                const ctxForm = container.querySelector('#project-business-context-form');
+                if (ctxForm && isOwner && projectId) {
+                    ctxForm.addEventListener('submit', async (e) => {
+                        e.preventDefault();
+                        const statusBox = container.querySelector('#ctx-save-status');
+                        const saveBtn = container.querySelector('#btn-save-context');
+                        if (saveBtn) saveBtn.disabled = true;
+
+                        try {
+                            const indVal = (container.querySelector('#ctx-industry')?.value || '').trim();
+                            const servVal = (container.querySelector('#ctx-services')?.value || '').trim();
+                            const areasVal = (container.querySelector('#ctx-service-areas')?.value || '').trim();
+
+                            await apiClient.put(`/api/projects/${projectId}`, {
+                                industry: indVal,
+                                services: servVal,
+                                service_areas: areasVal
+                            });
+
+                            if (selectedProj) {
+                                selectedProj.industry = indVal;
+                                selectedProj.services = servVal;
+                                selectedProj.service_areas = areasVal;
+                            }
+
+                            if (statusBox) {
+                                statusBox.style.display = 'block';
+                                statusBox.style.background = 'rgba(34, 197, 94, 0.1)';
+                                statusBox.style.color = '#22c55e';
+                                statusBox.style.border = '1px solid rgba(34, 197, 94, 0.3)';
+                                statusBox.textContent = 'Business context saved successfully. Future reports will tailor AI recommendations with this context.';
+                            }
+                        } catch (err) {
+                            if (statusBox) {
+                                statusBox.style.display = 'block';
+                                statusBox.style.background = 'rgba(239, 68, 68, 0.1)';
+                                statusBox.style.color = '#ef4444';
+                                statusBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+                                statusBox.textContent = err.message || 'Failed to update business context.';
+                            }
+                        } finally {
+                            if (saveBtn) saveBtn.disabled = false;
+                        }
+                    });
+                }
 
                 const teamWrapper = container.querySelector('#settings-team-wrapper');
                 if (teamWrapper && projectId) {

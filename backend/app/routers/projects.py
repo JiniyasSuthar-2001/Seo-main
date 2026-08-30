@@ -180,6 +180,8 @@ def get_projects(
             "domain": p.domain,
             "description": p.description or "",
             "industry": p.industry or "",
+            "services": getattr(p, "services", "") or "",
+            "service_areas": getattr(p, "service_areas", "") or "",
             "notes": p.notes or "",
             "created_at": p.created_at.isoformat() if p.created_at else None,
             "updated_at": p.updated_at.isoformat() if p.updated_at else None,
@@ -206,6 +208,8 @@ def create_project(
     name_val = (payload.get('name') or 'New SEO Project').strip()
     description = payload.get('description', '').strip()
     industry = payload.get('industry', '').strip()
+    services = payload.get('services', '').strip()
+    service_areas = payload.get('service_areas', '').strip()
     notes = payload.get('notes', '').strip()
 
     if not url_val:
@@ -233,6 +237,9 @@ def create_project(
                     "name": proj.name,
                     "url": proj.url,
                     "domain": proj.domain,
+                    "industry": proj.industry or "",
+                    "services": getattr(proj, "services", "") or "",
+                    "service_areas": getattr(proj, "service_areas", "") or "",
                     "user_role": m.role,
                     "role_label": "Lead" if m.role == "OWNER" else "Team Member",
                     **get_project_metrics(proj.domain)
@@ -244,6 +251,8 @@ def create_project(
         url=url_val,
         description=description,
         industry=industry,
+        services=services,
+        service_areas=service_areas,
         notes=notes
     )
     db.add(new_proj)
@@ -270,6 +279,9 @@ def create_project(
             "url": new_proj.url,
             "domain": new_proj.domain,
             "description": new_proj.description or "",
+            "industry": new_proj.industry or "",
+            "services": getattr(new_proj, "services", "") or "",
+            "service_areas": getattr(new_proj, "service_areas", "") or "",
             "user_role": "OWNER",
             "role_label": "Lead",
             "created_at": new_proj.created_at.isoformat() if new_proj.created_at else None,
@@ -294,6 +306,8 @@ def get_project(
         "domain": p.domain,
         "description": p.description or "",
         "industry": p.industry or "",
+        "services": getattr(p, "services", "") or "",
+        "service_areas": getattr(p, "service_areas", "") or "",
         "notes": p.notes or "",
         "user_role": membership.role,
         "role_label": "Lead" if membership.role == "OWNER" else "Team Member",
@@ -621,6 +635,12 @@ def update_project(
         p.description = payload['description'].strip()
     if 'industry' in payload:
         p.industry = payload['industry'].strip()
+    if 'services' in payload:
+        p.services = payload['services'].strip()
+    if 'service_areas' in payload:
+        p.service_areas = payload['service_areas'].strip()
+    if 'notes' in payload:
+        p.notes = payload['notes'].strip()
 
     p.updated_at = datetime.utcnow()
     db.commit()
@@ -635,6 +655,10 @@ def update_project(
             "url": p.url,
             "domain": p.domain,
             "description": p.description or "",
+            "industry": p.industry or "",
+            "services": getattr(p, "services", "") or "",
+            "service_areas": getattr(p, "service_areas", "") or "",
+            "notes": p.notes or "",
             "updated_at": p.updated_at.isoformat() if p.updated_at else None,
             **m
         }

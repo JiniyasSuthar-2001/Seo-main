@@ -96,11 +96,16 @@ def get_rankings(
 # ==============================================================================
 
 @router.get("/tracking")
-def get_position_tracking_overview(project_id: str, db: Session = Depends(get_db)):
+def get_position_tracking_overview(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Returns Position Tracking KPIs: Visibility, Avg Position, Top 3, Top 10, Top 20, Top 100.
     Production rule: Never fabricates historical trend lines when only 1 snapshot exists.
     """
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
@@ -214,6 +219,8 @@ def get_winners_losers(
         return {
             "has_comparison": False,
             "message": "Trend data will appear after connecting a position provider and recording multiple snapshots.",
+            "improved": [],
+            "declined": [],
             "winners": [],
             "losers": [],
             "new_keywords": [],
@@ -226,6 +233,8 @@ def get_winners_losers(
         "snapshot_previous": sessions[1].completed_at.isoformat() if sessions[1].completed_at else "Previous",
         "improved": [],
         "declined": [],
+        "winners": [],
+        "losers": [],
         "new_keywords": [],
         "lost_keywords": []
     }

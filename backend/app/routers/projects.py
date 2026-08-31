@@ -45,7 +45,7 @@ def get_project_metrics(domain: str, project_id: Optional[str] = None) -> dict:
     metrics = {
         "last_crawl": None,
         "crawl_status": "Not Crawled",
-        "health_score": 100,
+        "health_score": None,
         "pages_count": 0,
         "issues_count": 0,
         "critical_issues": 0,
@@ -83,7 +83,7 @@ def get_project_metrics(domain: str, project_id: Optional[str] = None) -> dict:
                 with open(pages_path, "r") as pf:
                     pages_data = json.load(pf)
                 eval_res = evaluate_site_audit_rules(pages_data)
-                metrics["health_score"] = eval_res.get("health_score", 100)
+                metrics["health_score"] = eval_res.get("health_score")
                 metrics["issues_count"] = len(eval_res.get("issues", []))
                 metrics["critical_issues"] = eval_res.get("summary", {}).get("critical_errors", 0)
                 metrics["warnings"] = eval_res.get("summary", {}).get("warnings", 0)

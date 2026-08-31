@@ -98,7 +98,7 @@ export class Keywords {
         const projectId = projectStore.getSelectedProjectId();
         if (!projectId) return;
         try {
-            await apiClient.post(`/api/projects/${projectId}/keywords/cluster`, {});
+            await apiClient.post(`/api/projects/${projectId}/keywords/groups/auto-cluster`, {});
             alert("Keyword topics grouped successfully!");
             this.mounted();
         } catch (e) {
@@ -434,8 +434,8 @@ export class Keywords {
                 btn.innerText = 'Searching Google Suggestions...';
                 this.researchPage = 1;
                 try {
-                    const res = await apiClient.get(`/api/projects/${projectId}/keywords/research?seed=${encodeURIComponent(seed)}`);
-                    const suggestions = res.suggestions || res.keywords || [];
+                    const res = await apiClient.get(`/api/projects/${projectId}/keywords/research?q=${encodeURIComponent(seed)}&seed=${encodeURIComponent(seed)}`);
+                    const suggestions = res.results || res.suggestions || res.keywords || [];
                     this.researchResults = suggestions;
                     renderResearchTable(suggestions, seed);
                 } catch (err) {

@@ -16,6 +16,20 @@ from app.config.permissions import get_user_membership
 router = APIRouter()
 
 
+def normalize_link_url(url: Optional[str]) -> str:
+    if not url:
+        return ""
+    clean = url.split('#')[0].strip()
+    if clean.endswith('/') and clean not in ("https://", "http://", "https:///", "http:///"):
+        clean = clean.rstrip('/')
+    return clean
+
+
+def _is_homepage_url(url: str, clean_dom: str) -> bool:
+    c = normalize_link_url(url).lower().replace("https://", "").replace("http://", "").replace("www.", "")
+    return c == clean_dom or c == ""
+
+
 @router.get("")
 @router.get("/")
 def get_internal_links(
@@ -61,11 +75,11 @@ def get_internal_links(
     anchor_counter = Counter()
 
     for link in internal_links:
-        src = link.get("source")
-        tgt = (link.get("target") or "").rstrip('/')
+        src = normalize_link_url(link.get("source"))
+        tgt = normalize_link_url(link.get("target"))
         anc = (link.get("anchor_text") or "").strip()
         if src:
-            outgoing_map[src.rstrip('/')] += 1
+            outgoing_map[src] += 1
         if tgt:
             incoming_map[tgt] += 1
         if anc:
@@ -76,11 +90,10 @@ def get_internal_links(
     clean_domain = domain.lower().replace("https://", "").replace("http://", "").replace("www.", "").rstrip('/')
     orphan_pages = []
     for url in all_urls:
-        clean_url = url.rstrip('/')
-        clean_host = clean_url.replace("https://", "").replace("http://", "").replace("www.", "")
-        if clean_host == clean_domain:
-            continue # Exclude homepage variations
-        if incoming_map[clean_url] == 0:
+        norm_url = normalize_link_url(url)
+        if _is_homepage_url(norm_url, clean_domain):
+            continue  # Exclude homepage variations
+        if incoming_map[norm_url] == 0:
             orphan_pages.append(url)
 
     # 3. Anchor text frequency table
@@ -106,21 +119,25 @@ def get_internal_links(
 
 
 @router.get("/opportunities")
-def get_internal_link_opportunities(project_id: str, db: Session = Depends(get_db)):
+def get_internal_link_opportunities(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Identifies internal link growth opportunities from actual crawled graph structure.
     - Orphan pages
     - High-value pages with low incoming internal link depth
     - Pages with excessive outgoing links (> 100)
     """
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
         return {"opportunities": []}
 
     domain = project.domain
-    safe_domain = get_sanitized_domain(domain)
-    
-    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+    proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, project.id)
+    latest_path = os.path.join(proj_dir, "latest.json")
 
     pages = []
     internal_links = []
@@ -142,19 +159,23 @@ def get_internal_link_opportunities(project_id: str, db: Session = Depends(get_d
             from app.config.logger import get_logger
             get_logger("internal_links").warning(f"Failed to load crawl files for project {project.id}: {e}")
 
-
     incoming_map = defaultdict(int)
     for link in internal_links:
-        if link.get("target"):
-            incoming_map[link.get("target")] += 1
+        tgt = normalize_link_url(link.get("target"))
+        if tgt:
+            incoming_map[tgt] += 1
 
+    clean_domain = domain.lower().replace("https://", "").replace("http://", "").replace("www.", "").rstrip('/')
     opportunities = []
     for p in pages:
         url = p.get("url")
         if not url:
             continue
-        inc_count = incoming_map[url]
-        if inc_count == 0 and url.rstrip('/') != f"https://{domain}".rstrip('/'):
+        norm_url = normalize_link_url(url)
+        if _is_homepage_url(norm_url, clean_domain):
+            continue
+        inc_count = incoming_map[norm_url]
+        if inc_count == 0:
             opportunities.append({
                 "source_page": f"https://{domain}/",
                 "target_page": url,

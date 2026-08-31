@@ -44,35 +44,68 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
     ]
 
     categories = {
-        "Crawlability": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Indexability": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "HTTPS": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Metadata": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Content": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Headings": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Canonicals": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Images": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Internal Links": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "External Links": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Structured Data": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Mobile": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "International SEO": {"status": "Passed", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Security": {"status": "Passed", "evaluated": True, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
-        "Performance": {"status": "Not Analyzed", "evaluated": False, "reason": "Requires PageSpeed API key configured in Settings -> Integrations", "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Crawlability": {"status": "Passed" if total_pages > 0 else "Not Evaluated", "evaluated": total_pages > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Indexability": {"status": "Passed" if html_count > 0 else "Not Evaluated", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "HTTPS": {"status": "Passed" if total_pages > 0 else "Not Evaluated", "evaluated": total_pages > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Metadata": {"status": "Passed" if html_count > 0 else "Not Evaluated", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Content": {"status": "Passed" if html_count > 0 else "Not Evaluated", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Headings": {"status": "Passed" if html_count > 0 else "Not Evaluated", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Canonicals": {"status": "Passed" if html_count > 0 else "Not Evaluated", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Images": {"status": "Passed" if html_count > 0 else "Not Evaluated", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Internal Links": {"status": "Passed" if html_count > 0 else "Not Evaluated", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "External Links": {"status": "Passed" if html_count > 0 else "Not Evaluated", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Structured Data": {"status": "Passed" if html_count > 0 else "Not Evaluated", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Mobile": {"status": "Passed" if html_count > 0 else "Not Evaluated", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "International SEO": {"status": "Passed" if html_count > 0 else "Not Evaluated", "evaluated": html_count > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Security": {"status": "Passed" if total_pages > 0 else "Not Evaluated", "evaluated": total_pages > 0, "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
+        "Performance": {"status": "Not Evaluated", "evaluated": False, "reason": "Requires PageSpeed API key configured in Settings -> Integrations", "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0},
     }
 
     if total_pages == 0:
+        unevaluated_categories = {}
+        for k in categories:
+            unevaluated_categories[k] = {
+                "status": "Not Evaluated",
+                "evaluated": False,
+                "critical": 0, "error": 0, "warning": 0, "notice": 0, "passed": 0,
+                "reason": "No pages crawled or available for analysis."
+            }
+        category_table = [
+            {
+                "category": cat_name,
+                "evaluated": False,
+                "checks_performed": 0,
+                "passed": 0,
+                "issues_count": 0,
+                "critical": 0,
+                "error": 0,
+                "warning": 0,
+                "notice": 0,
+                "status": "Not Evaluated",
+                "reason": "No pages crawled or available for analysis."
+            }
+            for cat_name in categories
+        ]
         return {
-            "health_score": 100,
+            "health_score": None,
+            "score_available": False,
             "total_audited_pages": 0,
+            "successful_html_pages_count": 0,
+            "blocked_pages_count": 0,
+            "error_pages_count": 0,
+            "evaluated_rules_count": 0,
+            "total_evaluated_checks": 0,
+            "checks_explanation": "0 analyzed pages",
             "summary": {
                 "critical_errors": 0,
                 "errors": 0,
                 "warnings": 0,
                 "notices": 0,
-                "passed_checks": 0
+                "passed_checks": 0,
+                "total_checks": 0
             },
-            "category_breakdown": categories,
+            "category_breakdown": unevaluated_categories,
+            "category_checks_table": category_table,
             "issues": [],
             "provenance": {
                 "source": "Deterministic 15-Category Site Audit Engine",
@@ -382,6 +415,15 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
     category_table = []
     for cat_name, stats in categories.items():
         is_eval = stats.get("evaluated", False)
+        if not is_eval:
+            stats["status"] = "Not Evaluated"
+        else:
+            issues_count = stats.get("critical", 0) + stats.get("error", 0) + stats.get("warning", 0) + stats.get("notice", 0)
+            if issues_count > 0 or stats.get("status") == "Issues Found":
+                stats["status"] = "Issues Found"
+            else:
+                stats["status"] = "Passed"
+
         issues_count = stats.get("critical", 0) + stats.get("error", 0) + stats.get("warning", 0) + stats.get("notice", 0)
         checks_count = evaluated_pages_for_score if is_eval else 0
         passed_count = max(0, checks_count - issues_count) if is_eval else 0

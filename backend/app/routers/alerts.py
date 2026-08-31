@@ -140,6 +140,7 @@ def get_project_alerts(
                 "message": desc,
                 "description": desc,
                 "affected_count": issue.get("affected_count", 0),
+                "affected_urls": issue.get("affected_urls") or issue.get("sample_urls") or issue.get("affected_items") or [],
                 "recommendation": issue.get("recommendation"),
                 "timestamp": crawl_timestamp,
                 "target_link": "#/technical"
@@ -157,6 +158,7 @@ def get_project_alerts(
                 "message": "This website project has not completed a scan yet. Scan your website to detect active SEO alerts.",
                 "description": "This website project has not completed a scan yet. Scan your website to detect active SEO alerts.",
                 "affected_count": 0,
+                "affected_urls": [],
                 "recommendation": "Click 'Scan My Website' to start analyzing your pages.",
                 "timestamp": None,
                 "target_link": "#/technical"

@@ -113,19 +113,34 @@ export class HealthScoreDetailModal {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    ${(categoryTable || []).map(cat => `
-                                        <tr style="border-bottom: 1px solid var(--border);">
-                                            <td style="padding: 10px 14px; font-weight: 600;">${escapeHtml(cat.category)}</td>
-                                            <td style="padding: 10px 14px;">
-                                                <span class="badge ${cat.issues_count > 0 ? (cat.status === 'Critical' ? 'badge-critical' : 'badge-warning') : 'badge-success'}" style="font-size: 11px;">
-                                                    ${cat.issues_count > 0 ? `${cat.issues_count} Issue${cat.issues_count === 1 ? '' : 's'}` : 'Passed'}
-                                                </span>
-                                            </td>
-                                            <td style="padding: 10px 14px;">${cat.checks_performed || 0}</td>
-                                            <td style="padding: 10px 14px; color: var(--success); font-weight: 600;">${cat.passed || 0}</td>
-                                            <td style="padding: 10px 14px; color: ${cat.issues_count > 0 ? 'var(--critical)' : 'var(--text-tertiary)'}; font-weight: 600;">${cat.issues_count || 0}</td>
-                                        </tr>
-                                    `).join('')}
+                                    ${(categoryTable || []).map(cat => {
+                                        let badgeClass = 'badge-secondary';
+                                        let statusText = 'Not Evaluated';
+                                        if (cat.evaluated === false || cat.status === 'Not Evaluated' || cat.status === 'Not Analyzed') {
+                                            badgeClass = 'badge-secondary';
+                                            statusText = 'Not Evaluated';
+                                        } else if (cat.issues_count > 0 || cat.status === 'Issues Found') {
+                                            badgeClass = (cat.critical > 0 || cat.error > 0) ? 'badge-critical' : 'badge-warning';
+                                            statusText = `${cat.issues_count} Issue${cat.issues_count === 1 ? '' : 's'}`;
+                                        } else {
+                                            badgeClass = 'badge-success';
+                                            statusText = 'Passed';
+                                        }
+
+                                        return `
+                                            <tr style="border-bottom: 1px solid var(--border);">
+                                                <td style="padding: 10px 14px; font-weight: 600;">${escapeHtml(cat.category)}</td>
+                                                <td style="padding: 10px 14px;">
+                                                    <span class="badge ${badgeClass}" style="font-size: 11px;">
+                                                        ${statusText}
+                                                    </span>
+                                                </td>
+                                                <td style="padding: 10px 14px;">${cat.checks_performed || 0}</td>
+                                                <td style="padding: 10px 14px; color: ${cat.evaluated ? 'var(--success)' : 'var(--text-tertiary)'}; font-weight: 600;">${cat.passed || 0}</td>
+                                                <td style="padding: 10px 14px; color: ${cat.issues_count > 0 ? 'var(--critical)' : 'var(--text-tertiary)'}; font-weight: 600;">${cat.issues_count || 0}</td>
+                                            </tr>
+                                        `;
+                                    }).join('')}
                                 </tbody>
                             </table>
                         </div>

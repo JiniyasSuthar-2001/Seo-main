@@ -176,8 +176,8 @@ export class Technical {
 
             const auditData = await apiClient.get(`/api/projects/${projectId}/technical?limit=500&offset=0`);
 
-            const hasCrawl = auditData.crawl_status !== 'no_crawl' && auditData.score_available !== false && (auditData.total_audited_pages > 0 || (auditData.issues && auditData.issues.length > 0));
-            const health = auditData.health_score || 100;
+            const hasCrawl = auditData.crawl_status !== 'no_crawl' && auditData.score_available !== false && auditData.health_score !== null && auditData.health_score !== undefined && (auditData.total_audited_pages > 0 || (auditData.issues && auditData.issues.length > 0));
+            const health = (auditData.health_score !== undefined && auditData.health_score !== null) ? auditData.health_score : null;
             const allIssues = auditData.issues || [];
             const summary = auditData.summary || {};
             const categoryTable = auditData.category_checks_table || [];
@@ -228,13 +228,26 @@ export class Technical {
                 const isSelected = this.selectedCategoryFilter.toLowerCase() === c.category.toLowerCase() || 
                                    this.selectedCategoryFilter.toLowerCase() === plainCatName.toLowerCase();
 
-                let rightLineColor = 'var(--success, #10b981)';
-                if (c.issues_count > 0 || c.status === 'Issues Found') {
+                let rightLineColor = 'var(--text-tertiary, #94a3b8)';
+                let statusText = 'Not Evaluated';
+                let statusColor = 'var(--text-tertiary)';
+
+                if (c.evaluated === false || c.status === 'Not Evaluated' || c.status === 'Not Analyzed') {
+                    rightLineColor = 'var(--text-tertiary, #94a3b8)';
+                    statusText = 'Not Evaluated';
+                    statusColor = 'var(--text-tertiary)';
+                } else if (c.issues_count > 0 || c.status === 'Issues Found') {
                     if (c.critical > 0 || c.error > 0) {
                         rightLineColor = 'var(--critical, #ef4444)';
                     } else {
                         rightLineColor = 'var(--warning, #f59e0b)';
                     }
+                    statusText = `${c.issues_count} problem${c.issues_count === 1 ? '' : 's'}`;
+                    statusColor = (c.critical > 0 || c.error > 0) ? 'var(--critical)' : 'var(--warning)';
+                } else {
+                    rightLineColor = 'var(--success, #10b981)';
+                    statusText = '✓ Passed';
+                    statusColor = 'var(--success)';
                 }
 
                 return `
@@ -247,10 +260,10 @@ export class Technical {
                             </div>
                             <div style="display: flex; gap: 10px; font-size: 11.5px; color: var(--text-secondary);">
                                 <span><strong>${c.checks_performed || 0}</strong> checked</span>
-                                <span style="color: var(--success);"><strong>${c.passed || 0}</strong> passed</span>
+                                <span style="color: ${c.evaluated ? 'var(--success)' : 'var(--text-tertiary)'};"><strong>${c.passed || 0}</strong> passed</span>
                             </div>
-                            <div style="font-size: 11.5px; margin-top: 4px; font-weight: 600; color: ${c.issues_count > 0 ? (c.critical > 0 ? 'var(--critical)' : 'var(--warning)') : 'var(--text-tertiary)'};">
-                                ${c.issues_count > 0 ? `${c.issues_count} problem${c.issues_count === 1 ? '' : 's'}` : '✓ Passed'}
+                            <div style="font-size: 11.5px; margin-top: 4px; font-weight: 600; color: ${statusColor};">
+                                ${statusText}
                             </div>
                         </div>
                         <div style="position: absolute; right: 0; top: 0; bottom: 0; width: 5px; background: ${rightLineColor}; border-top-right-radius: 9px; border-bottom-right-radius: 9px;"></div>
@@ -302,13 +315,13 @@ export class Technical {
                             <span>Website Health Score ${renderTooltip('Overall technical health score for your website (0-100). Click to view full calculation breakdown.')}</span>
                             <span style="font-size: 10px; color: var(--primary); font-weight: 600;">Details ↗</span>
                         </div>
-                        ${hasCrawl ? `
+                        ${hasCrawl && health !== null ? `
                             <div style="font-size: 32px; font-weight: 700; color: ${health >= 85 ? 'var(--success)' : (health >= 70 ? 'var(--warning)' : 'var(--critical)')}; margin-top: 4px;">
                                 ${health} <span style="font-size: 16px; color: var(--text-tertiary);">/ 100</span>
                             </div>
                             <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 2px;">Click to view scoring breakdown</div>
                         ` : `
-                            <div style="font-size: 20px; font-weight: 700; color: var(--text-tertiary); margin-top: 6px;">Not available</div>
+                            <div style="font-size: 20px; font-weight: 700; color: var(--text-tertiary); margin-top: 6px;">Not yet scored</div>
                             <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 2px;">No website scan performed yet</div>
                         `}
                     </div>

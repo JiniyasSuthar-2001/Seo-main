@@ -44,11 +44,16 @@ def get_backlinks(
 
 
 @router.get("/gap-analysis")
-def get_backlink_gap_analysis(project_id: str, db: Session = Depends(get_db)):
+def get_backlink_gap_analysis(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Compares confirmed competitors to identify domains linking to competitors but NOT to target project domain.
     Production rule: Returns honest empty state if competitor backlink datasets are not configured.
     """
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")

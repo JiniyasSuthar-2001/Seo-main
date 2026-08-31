@@ -151,8 +151,8 @@ export class Integrations {
         if (!container) return;
 
         const googleConn = this.connections.find(c => c.provider === 'google');
-        const isConnected = !!(googleConn && googleConn.is_active);
-        const accountEmail = googleConn ? (googleConn.account_identifier || (authStore.user ? authStore.user.email : 'Google Account')) : null;
+        const isConnected = !!(googleConn && (googleConn.status === 'CONNECTED' || googleConn.status === 'ACTIVE' || googleConn.is_active));
+        const accountEmail = googleConn ? (googleConn.provider_email || googleConn.provider_account_name || googleConn.account_identifier || (authStore.user ? authStore.user.email : 'Google Account')) : null;
 
         container.innerHTML = `
             <div class="card" style="padding: 28px; background: var(--bg-card); border-left: 4px solid ${isConnected ? '#10b981' : 'var(--primary)'}; border-radius: 14px;">
@@ -229,7 +229,7 @@ export class Integrations {
                 if (!confirm("Are you sure you want to disconnect your Google account?")) return;
                 try {
                     btnDisconnect.disabled = true;
-                    await apiClient.post('/api/oauth/google/revoke', {});
+                    await apiClient.post('/api/integrations/google/disconnect', {});
                     await this.loadIntegrations();
                 } catch (err) {
                     alert("Disconnect error: " + err.message);

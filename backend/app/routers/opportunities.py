@@ -71,16 +71,14 @@ def get_project_opportunities(
             pages = [p.__dict__ for p in pages_records]
             has_crawl = True
 
-    # 2. Evaluate audit rules and generate central opportunities from crawl data
-    if has_crawl and pages:
+    # 2. Generate initial opportunities only if none exist in DB for this project
+    existing_opps = db.query(ActionOpportunity).filter(ActionOpportunity.project_id == project.id).all()
+    if has_crawl and pages and not existing_opps:
         kw_records = db.query(Keyword).filter(Keyword.project_id == project.id).all()
         keywords = [k.__dict__ for k in kw_records]
 
         audit_eval = evaluate_site_audit_rules(pages)
         generated = generate_central_opportunities(audit_eval, keywords, pages)
-
-        # Clear existing auto-generated opportunities for project to sync with latest crawl
-        db.query(ActionOpportunity).filter(ActionOpportunity.project_id == project.id).delete()
         
         for item in generated:
             new_opp = ActionOpportunity(
@@ -164,11 +162,14 @@ def get_project_opportunities(
 def update_opportunity_status(
     opportunity_id: str,
     payload: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     opp = db.query(ActionOpportunity).filter(ActionOpportunity.id == opportunity_id).first()
     if not opp:
         raise HTTPException(status_code=404, detail="Action opportunity not found.")
+
+    get_user_membership(db, user_id, opp.project_id)
 
     new_status = payload.get("status")
     if new_status not in ("Open", "In Progress", "Ignored", "Resolved"):
@@ -176,6 +177,7 @@ def update_opportunity_status(
 
     opp.status = new_status
     db.commit()
+    db.refresh(opp)
     return {"id": opp.id, "status": opp.status, "message": f"Opportunity status updated to '{new_status}'."}
 
 from app.routers.reports import export_opportunities_csv

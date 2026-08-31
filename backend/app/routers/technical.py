@@ -33,7 +33,7 @@ def get_technical_audit(
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project or not project.domain:
         return {
-            "health_score": 100,
+            "health_score": None,
             "total_audited_pages": 0,
             "summary": {"critical_errors": 0, "errors": 0, "warnings": 0, "notices": 0, "passed_checks": 0},
             "issues": [],

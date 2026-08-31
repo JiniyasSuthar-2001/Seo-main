@@ -325,6 +325,7 @@ from app.llm.llm_provider import (
 )
 
 @router.post("/{provider}/disconnect")
+@router.post("/{provider}/revoke")
 def disconnect_provider(
     provider: str,
     user_id: str = Depends(get_current_user_id),

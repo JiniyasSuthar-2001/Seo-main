@@ -95,7 +95,7 @@ export class Dashboard {
             }
 
             const totalSites = summary.total_websites || this.allProjects.length;
-            const avgHealth = summary.average_health_score !== undefined ? summary.average_health_score : 100;
+            const avgHealth = (summary.average_health_score !== undefined && summary.average_health_score !== null) ? summary.average_health_score : null;
             const totalCrawledPages = summary.total_crawled_pages || 0;
             const totalIssuesCount = summary.total_critical_issues || 0;
 
@@ -143,7 +143,11 @@ export class Dashboard {
                             </div>
                             ${renderSourceBadge('crawl')}
                         </div>
-                        <div style="font-size: 28px; font-weight: 800; color: ${avgHealth >= 80 ? '#10b981' : (avgHealth >= 60 ? '#f59e0b' : '#ef4444')};">${avgHealth}<span style="font-size: 16px; font-weight: 600;">/100</span></div>
+                        ${avgHealth !== null ? `
+                            <div style="font-size: 28px; font-weight: 800; color: ${avgHealth >= 80 ? '#10b981' : (avgHealth >= 60 ? '#f59e0b' : '#ef4444')};">${avgHealth}<span style="font-size: 16px; font-weight: 600;">/100</span></div>
+                        ` : `
+                            <div style="font-size: 20px; font-weight: 700; color: var(--text-secondary); margin-top: 4px;">Not yet scored</div>
+                        `}
                         <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Overall health across websites</div>
                     </div>
 
@@ -541,8 +545,8 @@ export class Dashboard {
         }
 
         const rows = list.map(p => {
-            const hScore = p.health_score !== undefined ? p.health_score : 100;
-            const healthColor = hScore >= 80 ? '#10b981' : (hScore >= 60 ? '#f59e0b' : '#ef4444');
+            const hScore = (p.health_score !== undefined && p.health_score !== null) ? p.health_score : null;
+            const healthColor = hScore !== null ? (hScore >= 80 ? '#10b981' : (hScore >= 60 ? '#f59e0b' : '#ef4444')) : 'var(--text-tertiary)';
             const st = p.status || 'Never Scanned';
             const badgeClass = st === 'Healthy' ? 'badge-success' : (st === 'Needs Attention' ? 'badge-warning' : (st === 'Critical' ? 'badge-critical' : 'badge-secondary'));
 
@@ -556,7 +560,11 @@ export class Dashboard {
                         <span class="badge ${badgeClass}" style="font-size: 11px;">${st}</span>
                     </td>
                     <td style="padding: 14px 20px;">
-                        <div style="font-size: 15px; font-weight: 800; color: ${healthColor};">${hScore}<span style="font-size: 11px; font-weight: 600; color: var(--text-tertiary);">/100</span></div>
+                        ${hScore !== null ? `
+                            <div style="font-size: 15px; font-weight: 800; color: ${healthColor};">${hScore}<span style="font-size: 11px; font-weight: 600; color: var(--text-tertiary);">/100</span></div>
+                        ` : `
+                            <span style="font-size: 12px; color: var(--text-tertiary); font-style: italic;">Not yet scored</span>
+                        `}
                     </td>
                     <td style="padding: 14px 20px; font-weight: 600;">${p.pages_crawled || 0}</td>
                     <td style="padding: 14px 20px;">

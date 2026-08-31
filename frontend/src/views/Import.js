@@ -120,6 +120,7 @@ export class Import {
 
         const formData = new FormData();
         formData.append('file', file);
+        formData.append('data_type', this.selectedDataType);
 
         try {
             const apiBase = getApiBaseUrl();
@@ -127,7 +128,7 @@ export class Import {
             const headers = {};
             if (token) headers['Authorization'] = `Bearer ${token}`;
 
-            const response = await fetch(`${apiBase}/api/projects/${projectId}/import/${this.selectedDataType}`, {
+            const response = await fetch(`${apiBase}/api/projects/${projectId}/import/upload`, {
                 method: 'POST',
                 headers: headers,
                 body: formData

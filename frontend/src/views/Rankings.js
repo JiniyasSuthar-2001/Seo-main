@@ -235,9 +235,114 @@ export class Rankings {
     async renderWinnersTab(container, projectId) {
         container.innerHTML = `
             <div class="card" style="padding: 32px; text-align: center; color: var(--text-secondary);">
-                Ranking changes will appear after connecting a search data source or importing ranking data.
+                Loading ranking changes...
             </div>
         `;
+
+        try {
+            const data = await apiClient.get(`/api/projects/${projectId}/rankings/winners-losers`);
+            
+            const hasComparison = data && data.has_comparison;
+            const improved = (data && data.improved) || [];
+            const declined = (data && data.declined) || [];
+            const newKws = (data && data.new_keywords) || [];
+            const lostKws = (data && data.lost_keywords) || [];
+            const totalChanges = improved.length + declined.length + newKws.length + lostKws.length;
+
+            if (!hasComparison || totalChanges === 0) {
+                container.innerHTML = `
+                    <div class="card" style="padding: 40px 28px; text-align: center; max-width: 580px; margin: 16px auto; background: var(--bg-subtle); border-radius: 12px; border: 1px dashed var(--border);">
+                        <div style="font-size: 36px; margin-bottom: 12px;">📈</div>
+                        <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">No Ranking Changes Detected</h3>
+                        <p style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.6;">
+                            ${this.escapeHtml(data && data.message ? data.message : 'Ranking changes will appear after recording multiple search ranking snapshots.')}
+                        </p>
+                        <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                            <a href="/integrations" data-link class="btn btn-primary btn-sm">Connect Data Source</a>
+                            <a href="/import" data-link class="btn btn-secondary btn-sm">Import Ranking Snapshot</a>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="card" style="padding: 24px; background: var(--bg-card); border-radius: 14px; border: 1px solid var(--border);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+                        <div>
+                            <h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">Ranking Movements</h3>
+                            <div style="font-size: 12px; color: var(--text-secondary);">
+                                Comparing snapshot <strong>${data.snapshot_previous || 'Previous'}</strong> vs <strong>${data.snapshot_current || 'Latest'}</strong>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px; font-size: 12px;">
+                            <span class="badge badge-success" style="padding: 4px 10px;">+${improved.length} Improved</span>
+                            <span class="badge badge-danger" style="padding: 4px 10px;">-${declined.length} Declined</span>
+                            <span class="badge badge-info" style="padding: 4px 10px;">${newKws.length} New</span>
+                            <span class="badge badge-secondary" style="padding: 4px 10px;">${lostKws.length} Lost</span>
+                        </div>
+                    </div>
+
+                    ${improved.length > 0 ? `
+                        <div style="margin-bottom: 24px;">
+                            <h4 style="font-size: 14px; font-weight: 700; color: var(--success, #10b981); margin: 0 0 10px 0;">✓ Improved Keywords (${improved.length})</h4>
+                            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                                <thead>
+                                    <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
+                                        <th style="padding: 10px 14px;">Keyword</th>
+                                        <th style="padding: 10px 14px;">Previous Rank</th>
+                                        <th style="padding: 10px 14px;">Current Rank</th>
+                                        <th style="padding: 10px 14px;">Movement</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${improved.map(item => `
+                                        <tr style="border-bottom: 1px solid var(--border);">
+                                            <td style="padding: 10px 14px; font-weight: 600;">${this.escapeHtml(item.keyword)}</td>
+                                            <td style="padding: 10px 14px; color: var(--text-secondary);">#${item.previous_position}</td>
+                                            <td style="padding: 10px 14px; font-weight: 700; color: var(--primary);">#${item.current_position}</td>
+                                            <td style="padding: 10px 14px; color: var(--success, #10b981); font-weight: 700;">+${item.change || (item.previous_position - item.current_position)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    ` : ''}
+
+                    ${declined.length > 0 ? `
+                        <div style="margin-bottom: 24px;">
+                            <h4 style="font-size: 14px; font-weight: 700; color: var(--critical, #ef4444); margin: 0 0 10px 0;">⚠ Declined Keywords (${declined.length})</h4>
+                            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                                <thead>
+                                    <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
+                                        <th style="padding: 10px 14px;">Keyword</th>
+                                        <th style="padding: 10px 14px;">Previous Rank</th>
+                                        <th style="padding: 10px 14px;">Current Rank</th>
+                                        <th style="padding: 10px 14px;">Movement</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${declined.map(item => `
+                                        <tr style="border-bottom: 1px solid var(--border);">
+                                            <td style="padding: 10px 14px; font-weight: 600;">${this.escapeHtml(item.keyword)}</td>
+                                            <td style="padding: 10px 14px; color: var(--text-secondary);">#${item.previous_position}</td>
+                                            <td style="padding: 10px 14px; font-weight: 700; color: var(--critical, #ef4444);">#${item.current_position}</td>
+                                            <td style="padding: 10px 14px; color: var(--critical, #ef4444); font-weight: 700;">-${Math.abs(item.change || (item.current_position - item.previous_position))}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        } catch (e) {
+            container.innerHTML = `
+                <div class="card" style="padding: 24px; color: var(--critical); text-align: center;">
+                    Failed to load ranking changes: ${this.escapeHtml(e.message || 'An unexpected error occurred.')}
+                </div>
+            `;
+        }
     }
 
     async renderCampaignConfigTab(container, projectId, project) {

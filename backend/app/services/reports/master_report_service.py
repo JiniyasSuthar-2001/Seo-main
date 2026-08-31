@@ -826,7 +826,7 @@ class MasterReportBuilder:
                 "has_crawl": False
             },
             "health": {
-                "health_score": 100,
+                "health_score": None,
                 "summary": {},
                 "category_breakdown": [],
                 "score_explanation": message
@@ -857,7 +857,7 @@ class MasterReportBuilder:
             "ai_analysis": {
                 "executive_assessment": message,
                 "health_score_explanation": message,
-                "health_score": 100,
+                "health_score": None,
                 "confidence": "none",
                 "priority_action_plan": []
             }

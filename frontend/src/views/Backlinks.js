@@ -368,13 +368,64 @@ export class Backlinks {
     }
 
     renderGapTab(container, gapData) {
+        const competitorsCount = (gapData && gapData.confirmed_competitors_count) || 0;
+        const gaps = (gapData && (gapData.backlink_gap || gapData.gaps)) || [];
+
+        let innerContent = '';
+        if (competitorsCount === 0) {
+            innerContent = `
+                <div style="padding: 32px 24px; text-align: center; background: var(--bg-subtle); border-radius: 10px; border: 1px dashed var(--border); color: var(--text-secondary); font-size: 13.5px;">
+                    <div style="font-size: 28px; margin-bottom: 8px;">⚔</div>
+                    <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">No confirmed competitors configured</div>
+                    <div style="margin-bottom: 16px;">Add competitor websites in <strong>Competitors</strong> to compare link profile opportunities.</div>
+                    <a href="/competitors" data-link class="btn btn-secondary btn-sm">Go to Competitors</a>
+                </div>
+            `;
+        } else if (gaps.length === 0) {
+            innerContent = `
+                <div style="padding: 32px 24px; text-align: center; background: var(--bg-subtle); border-radius: 10px; border: 1px dashed var(--border); color: var(--text-secondary); font-size: 13.5px;">
+                    <div style="font-size: 28px; margin-bottom: 8px;">🔗</div>
+                    <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">No Backlink Gap Data Available</div>
+                    <div style="margin-bottom: 16px;">${this.escapeHtml(gapData.message || 'Import competitor backlink CSV datasets in Import Data to compare domain intersections.')}</div>
+                    <a href="/import" data-link class="btn btn-primary btn-sm">Import Competitor Links</a>
+                </div>
+            `;
+        } else {
+            innerContent = `
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                        <thead>
+                            <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
+                                <th style="padding: 12px 18px;">Referring Domain</th>
+                                <th style="padding: 12px;">Competitor Linking To</th>
+                                <th style="padding: 12px;">Target Status</th>
+                                <th style="padding: 12px 18px;">Opportunity</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${gaps.map(g => `
+                                <tr style="border-bottom: 1px solid var(--border);">
+                                    <td style="padding: 12px 18px; font-weight: 700; color: var(--primary);">${this.escapeHtml(g.referring_domain || g.domain || '-')}</td>
+                                    <td style="padding: 12px; color: var(--text-primary);">${this.escapeHtml(g.competitor_domain || g.competitor || '-')}</td>
+                                    <td style="padding: 12px;">
+                                        <span class="badge badge-warning" style="font-size: 11px;">${this.escapeHtml(g.status || 'Competitor Only')}</span>
+                                    </td>
+                                    <td style="padding: 12px 18px; font-size: 12px; color: var(--text-secondary);">${this.escapeHtml(g.recommendation || 'Outreach target')}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
         container.innerHTML = `
             <div class="card" style="padding: 24px; border-radius: 14px; background: var(--bg-card);">
-                <h3 style="font-size: 16px; font-weight: 700; margin: 0 0 8px 0; color: var(--text-primary);">Competitor Link Comparison</h3>
-                <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 16px 0;">Compare websites linking to your competitors against websites linking to your business.</p>
-                <div style="padding: 24px; text-align: center; background: var(--bg-subtle); border-radius: 10px; border: 1px dashed var(--border); color: var(--text-secondary); font-size: 13.5px;">
-                    Add competitor websites in <strong>Competitors</strong> to compare link profile opportunities.
+                <div style="margin-bottom: 18px;">
+                    <h3 style="font-size: 16px; font-weight: 700; margin: 0 0 4px 0; color: var(--text-primary);">Competitor Link Comparison</h3>
+                    <p style="font-size: 13px; color: var(--text-secondary); margin: 0;">Compare websites linking to your competitors against websites linking to your business.</p>
                 </div>
+                ${innerContent}
             </div>
         `;
     }

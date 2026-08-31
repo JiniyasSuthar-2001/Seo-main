@@ -253,10 +253,17 @@ def auto_cluster_keywords(
 
 
 @router.put("/groups/{group_id}")
-def rename_keyword_group(group_id: str, payload: dict = Body(...), db: Session = Depends(get_db)):
+def rename_keyword_group(
+    group_id: str,
+    payload: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     group = db.query(KeywordGroup).filter(KeywordGroup.id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="Keyword group not found.")
+
+    get_user_membership(db, user_id, group.project_id)
 
     new_name = (payload.get("name") or "").strip()
     if not new_name:
@@ -268,10 +275,16 @@ def rename_keyword_group(group_id: str, payload: dict = Body(...), db: Session =
 
 
 @router.delete("/groups/{group_id}")
-def delete_keyword_group(group_id: str, db: Session = Depends(get_db)):
+def delete_keyword_group(
+    group_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     group = db.query(KeywordGroup).filter(KeywordGroup.id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="Keyword group not found.")
+
+    get_user_membership(db, user_id, group.project_id)
 
     # Unassign keywords
     db.query(Keyword).filter(Keyword.group_id == group.id).update({Keyword.group_id: None})
@@ -281,10 +294,17 @@ def delete_keyword_group(group_id: str, db: Session = Depends(get_db)):
 
 
 @router.put("/{keyword_id}/group")
-def assign_keyword_to_group(keyword_id: str, payload: dict = Body(...), db: Session = Depends(get_db)):
+def assign_keyword_to_group(
+    keyword_id: str,
+    payload: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     kw = db.query(Keyword).filter(Keyword.id == keyword_id).first()
     if not kw:
         raise HTTPException(status_code=404, detail="Keyword not found.")
+
+    get_user_membership(db, user_id, kw.project_id)
 
     group_id = payload.get("group_id")
     kw.group_id = group_id
@@ -299,20 +319,22 @@ def assign_keyword_to_group(keyword_id: str, payload: dict = Body(...), db: Sess
 @router.get("/research")
 @router.get("/autocomplete")
 def get_keyword_research(
-    q: str = Query(...),
+    q: Optional[str] = Query(None),
+    seed: Optional[str] = Query(None),
     country: str = Query("US"),
     language: str = Query("en"),
-    device: str = Query("desktop")
+    device: str = Query("desktop"),
+    user_id: str = Depends(get_current_user_id)
 ):
     """
     Returns real keyword research suggestions via Google Autocomplete API.
     Production rule: Metrics without a verified source (Search Volume, CPC, Difficulty) MUST return 'Unavailable'.
     """
-    clean_q = (q or "").strip()
-    if not clean_q:
-        return {"query": clean_q, "suggestions": [], "data_source": "Google Autocomplete"}
+    query_term = (q or seed or "").strip()
+    if not query_term:
+        return {"query": "", "suggestions_count": 0, "results": [], "suggestions": [], "data_source": "Google Autocomplete"}
 
-    raw_suggestions = autocomplete_provider.get_suggestions(clean_q)
+    raw_suggestions = autocomplete_provider.get_suggestions(query_term)
 
     results = []
     for sug in raw_suggestions:
@@ -329,9 +351,10 @@ def get_keyword_research(
         })
 
     return {
-        "query": clean_q,
+        "query": query_term,
         "suggestions_count": len(results),
         "results": results,
+        "suggestions": results,
         "data_source": "Google Autocomplete API",
         "notice": "Search Volume, CPC, and Difficulty metrics require a connected Google Keyword Planner or SEM API provider."
     }
@@ -342,7 +365,11 @@ def get_keyword_research(
 # ==============================================================================
 
 @router.get("/opportunities")
-def get_keyword_opportunities(project_id: str, db: Session = Depends(get_db)):
+def get_keyword_opportunities(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Identifies real keyword opportunities from project database & crawl snapshot.
     Evaluates:
@@ -351,6 +378,7 @@ def get_keyword_opportunities(project_id: str, db: Session = Depends(get_db)):
       - Missing Dedicated Landing Pages
       - Keyword Cannibalization Candidates
     """
+    get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")

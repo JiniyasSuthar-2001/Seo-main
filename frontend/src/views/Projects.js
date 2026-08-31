@@ -274,6 +274,9 @@ export class Projects {
                 const isSelected = String(p.id) === String(selectedId);
                 const createdDate = p.created_at ? new Date(p.created_at).toLocaleDateString() : 'N/A';
                 const lastCrawlDate = p.last_crawl ? new Date(p.last_crawl).toLocaleDateString() : 'No Crawls';
+                const healthScoreVal = (p.health_score !== undefined && p.health_score !== null) ? p.health_score : null;
+                const healthScoreDisplay = healthScoreVal !== null ? `${healthScoreVal} / 100` : 'Not yet scored';
+                const healthScoreColor = healthScoreVal !== null ? (healthScoreVal >= 80 ? 'var(--success)' : (healthScoreVal >= 60 ? 'var(--warning)' : 'var(--critical)')) : 'var(--text-secondary)';
 
                 return `
                     <div class="card" style="padding: 24px; display: flex; flex-direction: column; justify-content: space-between; border: 1px solid ${isSelected ? 'var(--primary)' : 'var(--border)'}; ${isSelected ? 'box-shadow: 0 0 0 2px var(--primary-bg);' : ''}">
@@ -298,24 +301,24 @@ export class Projects {
                             <!-- METRICS GRID FOR PROJECT -->
                             <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0; background: var(--bg-subtle); padding: 12px; border-radius: 8px;">
                                 <div>
+                                    <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase;">Health Score</div>
+                                    <div style="font-size: 13.5px; font-weight: 700; color: ${healthScoreColor};">${healthScoreDisplay}</div>
+                                </div>
+                                <div>
                                     <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase;">Pages</div>
-                                    <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">${p.pages_count}</div>
+                                    <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">${p.pages_count || 0}</div>
                                 </div>
                                 <div>
                                     <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase;">Issues</div>
-                                    <div style="font-size: 16px; font-weight: 700; color: ${p.issues_count > 0 ? 'var(--critical)' : 'var(--text-primary)'};">${p.issues_count}</div>
+                                    <div style="font-size: 16px; font-weight: 700; color: ${(p.issues_count || 0) > 0 ? 'var(--critical)' : 'var(--text-primary)'};">${p.issues_count || 0}</div>
                                 </div>
                                 <div>
                                     <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase;">Keywords</div>
-                                    <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">${p.keywords_count}</div>
+                                    <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">${p.keywords_count || 0}</div>
                                 </div>
                                 <div>
                                     <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase;">Links</div>
-                                    <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">${p.internal_links_count}</div>
-                                </div>
-                                <div>
-                                    <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase;">Backlinks</div>
-                                    <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">${p.backlinks_count}</div>
+                                    <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">${p.internal_links_count || 0}</div>
                                 </div>
                                 <div>
                                     <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase;">Last Crawl</div>

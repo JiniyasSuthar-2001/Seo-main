@@ -117,6 +117,47 @@ export class Reports {
                         <button id="btn-quick-pages-csv" class="btn btn-secondary btn-sm" style="width: 100%; text-align: center;">Download CSV</button>
                     </div>
                 </div>
+
+                <!-- GENERATED REPORT HISTORY -->
+                <div class="card" style="padding: 0; overflow: hidden; border-radius: 14px; background: var(--bg-card); border: 1px solid var(--border); margin-bottom: 24px;">
+                    <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                        <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--text-primary);">Report Generation History (${this.historyRecords.length})</h3>
+                    </div>
+                    ${this.historyRecords.length === 0 ? `
+                        <div style="padding: 32px; text-align: center; color: var(--text-secondary); font-size: 13.5px;">
+                            No generated report history recorded yet. Use the downloads above to generate and export website reports.
+                        </div>
+                    ` : `
+                        <div style="overflow-x: auto;">
+                            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                                <thead>
+                                    <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
+                                        <th style="padding: 12px 18px;">Report Type</th>
+                                        <th style="padding: 12px;">Format</th>
+                                        <th style="padding: 12px;">Filename</th>
+                                        <th style="padding: 12px;">Generated Date</th>
+                                        <th style="padding: 12px 18px;">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${this.historyRecords.map(r => `
+                                        <tr style="border-bottom: 1px solid var(--border);">
+                                            <td style="padding: 12px 18px; font-weight: 600; color: var(--text-primary);">${this.escapeHtml(r.report_type || 'Full Report')}</td>
+                                            <td style="padding: 12px;">
+                                                <span class="badge badge-info" style="font-size: 11px;">${this.escapeHtml((r.file_type || 'PDF').toUpperCase())}</span>
+                                            </td>
+                                            <td style="padding: 12px; font-family: monospace; font-size: 12px; color: var(--text-secondary);">${this.escapeHtml(r.filename || '-')}</td>
+                                            <td style="padding: 12px; font-size: 12.5px; color: var(--text-secondary);">${r.generated_at ? new Date(r.generated_at).toLocaleString() : 'Recent'}</td>
+                                            <td style="padding: 12px 18px;">
+                                                <span class="badge badge-success" style="font-size: 11px;">${this.escapeHtml(r.status || 'Completed')}</span>
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    `}
+                </div>
             `;
 
             // Bind download buttons with standardized filenames

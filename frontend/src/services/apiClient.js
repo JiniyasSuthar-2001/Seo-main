@@ -34,19 +34,26 @@ class ApiClient {
         }
     }
 
+    getToken() {
+        return localStorage.getItem('seo_auth_token') || 
+               localStorage.getItem('auth_token') || 
+               localStorage.getItem('jwt_token') || 
+               sessionStorage.getItem('seo_auth_token') || 
+               sessionStorage.getItem('auth_token') || null;
+    }
+
     async request(endpoint, options = {}) {
         const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
         
         const defaultHeaders = {
-            'Content-Type': 'application/json',
             'Accept': 'application/json',
         };
 
-        const token = localStorage.getItem('seo_auth_token') || 
-                      localStorage.getItem('auth_token') || 
-                      localStorage.getItem('jwt_token') || 
-                      sessionStorage.getItem('seo_auth_token') || 
-                      sessionStorage.getItem('auth_token');
+        if (!(options.body instanceof FormData)) {
+            defaultHeaders['Content-Type'] = 'application/json';
+        }
+
+        const token = this.getToken();
                       
         if (token && token.trim()) {
             defaultHeaders['Authorization'] = `Bearer ${token.trim()}`;
@@ -133,6 +140,14 @@ class ApiClient {
         return this.request(endpoint, { ...options, method: 'DELETE' });
     }
 
+    upload(endpoint, formData, options = {}) {
+        return this.request(endpoint, {
+            ...options,
+            method: 'POST',
+            body: formData
+        });
+    }
+
     async downloadFile(endpoint, fallbackFilename = 'export.file', triggerButton = null, options = {}) {
         if (!endpoint || endpoint.includes('/projects/undefined') || endpoint.includes('/projects/null') || endpoint.includes('/projects/{project_id}')) {
             const err = new Error("Invalid Download Request: Project ID is unresolvable.");
@@ -142,11 +157,7 @@ class ApiClient {
         }
 
         const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
-        const token = localStorage.getItem('seo_auth_token') || 
-                      localStorage.getItem('auth_token') || 
-                      localStorage.getItem('jwt_token') || 
-                      sessionStorage.getItem('seo_auth_token') || 
-                      sessionStorage.getItem('auth_token');
+        const token = this.getToken();
 
         const headers = { ...options.headers };
         if (token && token.trim()) {

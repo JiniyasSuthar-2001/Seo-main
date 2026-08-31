@@ -479,8 +479,8 @@ export class Competitors {
                                     <h3 style="font-size: 16px; font-weight: 600; margin: 0 0 4px 0;">${this.escapeHtml(c.name)}</h3>
                                     <a href="${this.escapeHtml(c.url)}" target="_blank" style="color: var(--accent-primary, #3b82f6); font-size: 13px; text-decoration: none;">${this.escapeHtml(c.domain)} &rarr;</a>
                                 </div>
-                                <span style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 20px;">
-                                    ${c.relevance_score}% Relevance
+                                <span style="background: ${c.relevance_score != null ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.08)'}; color: ${c.relevance_score != null ? '#60a5fa' : 'var(--text-secondary)'}; font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 20px;">
+                                    ${c.relevance_score != null ? `${c.relevance_score}% Relevance` : 'Relevance: Not available'}
                                 </span>
                             </div>
 

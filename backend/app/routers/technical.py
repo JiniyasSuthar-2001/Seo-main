@@ -81,6 +81,7 @@ def get_technical_audit(
         "project_id": project.id,
         "domain": domain,
         "health_score": audit_data["health_score"],
+        "score_available": audit_data.get("score_available", True if audit_data.get("health_score") is not None else False),
         "total_audited_pages": audit_data["total_audited_pages"],
         "successful_html_pages_count": audit_data.get("successful_html_pages_count", 0),
         "blocked_pages_count": audit_data.get("blocked_pages_count", 0),

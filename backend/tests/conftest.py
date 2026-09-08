@@ -8,6 +8,8 @@ if backend_dir not in sys.path:
     sys.path.insert(0, backend_dir)
 
 # Set critical test environment variables
+os.environ.setdefault("ENVIRONMENT", "test")
+os.environ.setdefault("ALLOW_DEV_USER_HEADER", "true")
 os.environ.setdefault("ENCRYPTION_KEY", "test-encryption-key-for-unit-audit-suite-32b")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-for-signing-session-32b")
 os.environ.setdefault("OAUTH_STATE_SECRET", "test-oauth-state-secret-signing-32b")

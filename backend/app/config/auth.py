@@ -1,3 +1,8 @@
+"""
+Authentication and JWT token management module.
+Enforces cryptographically signed JWT sessions with configurable expiration.
+Strictly prevents X-User-ID header authentication bypass in production environments.
+"""
 import os
 import time
 import jwt
@@ -44,14 +49,31 @@ def decode_access_token(token: str) -> Dict[str, Any]:
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid authentication token.")
 
+def is_dev_user_header_allowed() -> bool:
+    """
+    Determines whether X-User-ID header authentication is permitted.
+    STRICT SECURITY RULES:
+    1. NEVER allowed in production (settings.is_production == True).
+    2. Disabled by default in all environments.
+    3. Requires explicit ALLOW_DEV_USER_HEADER=true in non-production environments.
+    """
+    env = (os.environ.get("ENVIRONMENT") or os.environ.get("APP_ENV") or settings.ENVIRONMENT or "development").strip().lower()
+    if env == "production" or settings.is_production:
+        return False
+    
+    dev_flag = os.environ.get("ALLOW_DEV_USER_HEADER")
+    if dev_flag is not None:
+        return dev_flag.strip().lower() in ("true", "1")
+    return getattr(settings, "ALLOW_DEV_USER_HEADER", False)
+
 def get_current_user_id(
     authorization: Optional[str] = Header(None),
     x_user_id: Optional[str] = Header(None)
 ) -> str:
     """
     FastAPI dependency that extracts and validates the authenticated application user ID.
-    First checks Authorization: Bearer <token> header.
-    Falls back to X-User-ID header if present (for local single-user desktop workflow / unit tests).
+    Primary authentication: Authorization: Bearer <token> header with cryptographically verified JWT.
+    Development-only fallback: X-User-ID is only accepted when ALLOW_DEV_USER_HEADER=true and NOT in production.
     Raises HTTP 401 Unauthorized if no valid identity is present.
     """
     if authorization and authorization.startswith("Bearer "):
@@ -62,11 +84,12 @@ def get_current_user_id(
             if user_id:
                 return user_id
 
+    # Strictly gated development / test fallback
     clean_header_user = (x_user_id or "").strip()
-    if clean_header_user and clean_header_user != "undefined" and clean_header_user != "null":
+    if clean_header_user and clean_header_user not in ("undefined", "null") and is_dev_user_header_allowed():
         return clean_header_user
 
     raise HTTPException(
         status_code=401,
-        detail="Authentication required. Please provide a valid Authorization Bearer token or authenticated user session."
+        detail="Authentication required. Please provide a valid Authorization Bearer token."
     )

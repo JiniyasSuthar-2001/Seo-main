@@ -10,6 +10,7 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     name = Column(String)
     picture = Column(String, nullable=True)
+    password_hash = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -21,5 +22,7 @@ class User(Base):
             "masked_email": self.email,
             "name": self.name,
             "picture": self.picture,
+            "has_password": bool(self.password_hash),
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
+

@@ -60,6 +60,14 @@ class TestFullMasterHealthReport(unittest.TestCase):
         token = create_access_token({"sub": cls.user.id})
         cls.headers = {"Authorization": f"Bearer {token}"}
 
+    @classmethod
+    def tearDownClass(cls):
+        app.dependency_overrides.clear()
+        if hasattr(cls, 'db'):
+            cls.db.close()
+        if hasattr(cls, 'engine'):
+            cls.engine.dispose()
+
     def test_01_master_pdf_generation(self):
         pdf_gen = PDFReportGenerator()
         metadata = {

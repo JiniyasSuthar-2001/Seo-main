@@ -177,7 +177,18 @@ class SEOAnalystAgent:
                     "has_data": context.get("has_data", False)
                 }
             }
-        except AIProviderException:
+        except AIProviderException as e:
+            if e.status_code == 401 or getattr(e, "code", "") == "AUTH_FAILED":
+                return {
+                    "status": "AI_TEMPORARILY_UNAVAILABLE",
+                    "provider": "none",
+                    "is_llm_generated": False,
+                    "query": query,
+                    "answer": "AI provider authentication is currently unavailable. Your deterministic SEO analysis is still available.",
+                    "context_used": {
+                        "domain": domain,
+                        "pages_analyzed": context.get("pages_count", 0),
+                        "has_data": context.get("has_data", False)
+                    }
+                }
             raise
-        except Exception as e:
-            raise AIProviderException(f"Failed to process AI chat: {e}", status_code=502, code="LLM_EXECUTION_FAILED")

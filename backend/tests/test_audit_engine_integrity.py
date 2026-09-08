@@ -108,7 +108,7 @@ class TestAuditEngineIntegrity(unittest.TestCase):
         Test 5: Two projects with different crawl data produce independently calculated audit results.
         """
         project_a_data = [
-            {"url": "https://site-a.com/", "status_code": 200, "is_success": True, "title": "Site A", "h1": "Welcome", "meta_description": "Desc A", "canonical": "https://site-a.com/", "word_count": 300, "internal_links_count": 2}
+            {"url": "https://site-a.com/", "status_code": 200, "is_success": True, "title": "Site A", "h1": "Welcome", "meta_description": "Desc A", "canonical": "https://site-a.com/", "word_count": 300, "internal_links_count": 2, "schema_types": ["Organization"]}
         ]
         
         project_b_data = [

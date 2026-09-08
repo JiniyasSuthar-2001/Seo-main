@@ -1,3 +1,7 @@
+"""
+Cryptographic encryption and decryption service for sensitive credentials (OAuth tokens, API keys).
+Uses AES-256 Fernet symmetric encryption strictly derived from the configured ENCRYPTION_KEY.
+"""
 import base64
 import os
 import hashlib
@@ -5,13 +9,6 @@ from typing import Optional
 from cryptography.fernet import Fernet, InvalidToken
 
 _primary_fernet: Optional[Fernet] = None
-_legacy_fernet: Optional[Fernet] = None
-
-# Purpose Documentation:
-# SECRET_KEY    = Used strictly for application session/JWT/HMAC state signing.
-# ENCRYPTION_KEY = Used strictly for AES-256 Fernet encryption of stored OAuth tokens, API keys, and provider credentials.
-
-LEGACY_FALLBACK_SECRET = "seo-platform-secure-default-encryption-secret-key-32b"
 
 def get_encryption_key() -> str:
     """
@@ -35,18 +32,10 @@ def _get_primary_fernet() -> Fernet:
         _primary_fernet = Fernet(derived_key)
     return _primary_fernet
 
-def _get_legacy_fernet() -> Fernet:
-    global _legacy_fernet
-    if _legacy_fernet is None:
-        derived_key = base64.urlsafe_b64encode(hashlib.sha256(LEGACY_FALLBACK_SECRET.encode("utf-8")).digest())
-        _legacy_fernet = Fernet(derived_key)
-    return _legacy_fernet
-
 def reset_fernet_cache():
     """Resets cached Fernet instances (useful for testing configuration changes)."""
-    global _primary_fernet, _legacy_fernet
+    global _primary_fernet
     _primary_fernet = None
-    _legacy_fernet = None
 
 def encrypt_secret(plain_text: Optional[str]) -> Optional[str]:
     """
@@ -61,30 +50,36 @@ def encrypt_secret(plain_text: Optional[str]) -> Optional[str]:
 
 def decrypt_secret(cipher_text: Optional[str]) -> Optional[str]:
     """
-    Decrypts ciphertext string back to plain text.
-    First attempts primary decryption using ENCRYPTION_KEY.
-    If decryption fails, falls back to legacy fallback key for reading pre-existing database credentials.
+    Decrypts ciphertext string back to plain text using ENCRYPTION_KEY.
+    Raises no uncaught exceptions on malformed ciphertexts, returning None.
     """
     if not cipher_text:
         return None
     
-    # 1. Primary Decryption Attempt
     try:
         f = _get_primary_fernet()
         decrypted_bytes = f.decrypt(cipher_text.encode("utf-8"))
         return decrypted_bytes.decode("utf-8")
     except InvalidToken:
-        # 2. Legacy Read Fallback Attempt for backward compatibility
-        try:
-            lf = _get_legacy_fernet()
-            decrypted_bytes = lf.decrypt(cipher_text.encode("utf-8"))
-            print("[CRYPTO RECOVERY] Decrypted stored credential using legacy key. Consider re-saving.", flush=True)
-            return decrypted_bytes.decode("utf-8")
-        except Exception:
-            print("[CRYPTO ERROR] Failed to decrypt secret with primary or legacy key.", flush=True)
-            return None
+        return None
     except Exception as e:
-        print(f"[CRYPTO ERROR] Unexpected decryption failure: {e}", flush=True)
+        return None
+
+def migrate_legacy_encrypted_secret(cipher_text: str, old_key: str, new_key: str) -> Optional[str]:
+    """
+    Explicit migration utility to re-encrypt data from an old/compromised key to a new secure key.
+    Does not store or hardcode any key in source code.
+    """
+    if not cipher_text or not old_key or not new_key:
+        return None
+    try:
+        old_derived = base64.urlsafe_b64encode(hashlib.sha256(old_key.encode("utf-8")).digest())
+        new_derived = base64.urlsafe_b64encode(hashlib.sha256(new_key.encode("utf-8")).digest())
+        old_f = Fernet(old_derived)
+        new_f = Fernet(new_derived)
+        decrypted = old_f.decrypt(cipher_text.encode("utf-8"))
+        return new_f.encrypt(decrypted).decode("utf-8")
+    except Exception:
         return None
 
 def mask_secret(plain_text: Optional[str], prefix_len: int = 3, suffix_len: int = 4) -> str:

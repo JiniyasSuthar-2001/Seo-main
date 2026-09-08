@@ -50,7 +50,9 @@ def extract_schema_types(raw_data: Any) -> List[str]:
                 parsed = json.loads(node)
                 _process_node(parsed)
             except Exception:
-                pass
+                cleaned = _clean_type_name(node)
+                if cleaned and cleaned not in types:
+                    types.append(cleaned)
             return
         if isinstance(node, list):
             for item in node:
@@ -429,7 +431,7 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
         total_schemas_count = 0
 
         for p in html_pages:
-            raw_sd = p.get("structured_data", [])
+            raw_sd = p.get("structured_data") or p.get("schema_types") or []
             detected_types = extract_schema_types(raw_sd)
             has_sd = len(detected_types) > 0
             
@@ -536,7 +538,7 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
     EVALUATED_RULE_COUNT = sum(1 for c in categories.values() if c.get("evaluated", False))
     evaluated_pages_for_score = html_count if html_count > 0 else total_pages
     total_evaluated_checks = evaluated_pages_for_score * EVALUATED_RULE_COUNT
-    total_weighted_penalty = (crit_cnt * 3.0) + (err_cnt * 2.0) + (warn_cnt * 1.0) + (not_cnt * 0.25)
+    total_weighted_penalty = (crit_cnt * 3.0) + (err_cnt * 2.0) + (warn_cnt * 1.0)
     
     if total_evaluated_checks > 0:
         score_deduction = (total_weighted_penalty / total_evaluated_checks) * 100

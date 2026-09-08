@@ -8,6 +8,7 @@ from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
 from typing import Set, Dict, Any, List, Optional, Callable
 from app.crawler.broken_link_checker import BrokenLinkChecker
+from app.crawler.ssrf_protection import validate_url_ssrf, create_ssrf_safe_client, SSRFBlockedError
 
 STATIC_ASSET_EXTENSIONS = (
     ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".bmp", ".tiff",
@@ -36,6 +37,11 @@ class SEOCrawler:
     ):
         if not start_url or not start_url.startswith(("http://", "https://")):
             raise ValueError("Crawler requires a valid HTTP or HTTPS start URL.")
+
+        # Strict SSRF validation on target URL
+        is_safe, ssrf_err = validate_url_ssrf(start_url)
+        if not is_safe:
+            raise ValueError(f"Prohibited crawl start URL (SSRF Protection): {ssrf_err}")
 
         self.raw_start_url = start_url
         self.ignore_utm_params = ignore_utm_params
@@ -403,6 +409,10 @@ class SEOCrawler:
                 response = await client.get(url, headers=headers, timeout=self.request_timeout, follow_redirects=True)
                 elapsed_ms = int((time.time() - start_time) * 1000)
                 break
+            except SSRFBlockedError as sbe:
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                fetch_status = "BLOCKED"
+                fetch_error = f"SSRF Protection: {str(sbe)}"
             except httpx.TimeoutException:
                 elapsed_ms = int((time.time() - start_time) * 1000)
                 fetch_status = "TIMEOUT"
@@ -619,7 +629,7 @@ class SEOCrawler:
         self.is_running = True
         print(f"[CRAWL] Starting real Internet crawl for {self.start_url}", flush=True)
         
-        async with httpx.AsyncClient(verify=self.verify_ssl) as client:
+        async with create_ssrf_safe_client(verify=self.verify_ssl, timeout=self.request_timeout) as client:
             await self.fetch_robots_txt(client)
             await self.fetch_sitemap_xml(client)
 

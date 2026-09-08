@@ -353,6 +353,7 @@ export class Login {
           this.isRegisterMode = !this.isRegisterMode;
 
           if (errorBox) errorBox.style.display = 'none';
+          const pwdInput = document.getElementById('login-password');
           if (this.isRegisterMode) {
             titleEl.innerText = "Create your SEO Account";
             subtitleEl.innerText = "Register a new account to start auditing and managing SEO projects.";
@@ -360,6 +361,7 @@ export class Login {
             togglePrompt.innerText = "Already have an account?";
             toggleModeBtn.innerText = "Sign In";
             if (nameGroup) nameGroup.style.display = "block";
+            if (pwdInput) pwdInput.placeholder = "At least 8 characters";
           } else {
             titleEl.innerText = "Sign in to your SEO Platform";
             subtitleEl.innerText = "Enter your email and password to access your SEO workspace.";
@@ -367,6 +369,7 @@ export class Login {
             togglePrompt.innerText = "Don't have an account?";
             toggleModeBtn.innerText = "Create Account";
             if (nameGroup) nameGroup.style.display = "none";
+            if (pwdInput) pwdInput.placeholder = "••••••••";
           }
         });
       }

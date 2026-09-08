@@ -54,10 +54,13 @@ class SolveRequest(BaseModel):
     force_regenerate: Optional[bool] = False
 
 def _get_project_or_404(project_id: str, db: Session, user_id: str) -> Project:
+    from app.config.utils import get_sanitized_domain
     get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    if not project.domain:
+        project.domain = get_sanitized_domain(project.url)
     if not project.domain:
         raise HTTPException(status_code=400, detail="This project has no website URL configured.")
     return project

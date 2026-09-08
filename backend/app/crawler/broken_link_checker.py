@@ -5,6 +5,8 @@ import socket
 from urllib.parse import urlparse, urljoin
 from typing import List, Dict, Any, Optional, Callable, Set
 
+from app.crawler.ssrf_protection import validate_url_ssrf, create_ssrf_safe_client, SSRFBlockedError
+
 STATIC_OR_SPECIAL_SCHEMES = ("mailto:", "tel:", "javascript:", "data:", "#")
 
 def is_private_ip(hostname: str) -> bool:
@@ -14,29 +16,8 @@ def is_private_ip(hostname: str) -> bool:
     """
     if not hostname:
         return True
-    
-    clean_host = hostname.strip().lower()
-    if clean_host in ("localhost", "0.0.0.0", "127.0.0.1", "::1", "169.254.169.254"):
-        return True
-    
-    try:
-        ip = ipaddress.ip_address(clean_host)
-        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
-    except ValueError:
-        pass
-
-    try:
-        addr_info = socket.getaddrinfo(clean_host, None)
-        for entry in addr_info:
-            ip_str = entry[4][0]
-            ip = ipaddress.ip_address(ip_str)
-            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
-                return True
-    except (socket.gaierror, socket.herror, Exception):
-        # If DNS cannot resolve, let httpx handle it or consider safe for regular request failure
-        pass
-
-    return False
+    is_safe, _ = validate_url_ssrf(f"http://{hostname}")
+    return not is_safe
 
 
 def normalize_link_url(url: Optional[str]) -> str:
@@ -81,13 +62,13 @@ async def check_single_link(
             "final_url": url
         }
 
-    parsed = urlparse(url)
-    if is_private_ip(parsed.hostname or ""):
+    is_safe, ssrf_reason = validate_url_ssrf(url)
+    if not is_safe:
         return {
             "url": url,
             "status_code": 0,
             "is_broken": True,
-            "error": "Blocked (Private or Loopback IP Address)",
+            "error": f"Blocked (SSRF Protection: {ssrf_reason})",
             "final_url": url
         }
 
@@ -193,9 +174,8 @@ async def check_links_status(
     completed_count = 0
     headers = {"User-Agent": user_agent} if user_agent else None
 
-    # Use a shared AsyncClient with connection limits
-    limits = httpx.Limits(max_connections=concurrency + 5, max_keepalive_connections=concurrency)
-    async with httpx.AsyncClient(limits=limits, verify=False) as client:
+    # Use an SSRF-protected shared AsyncClient
+    async with create_ssrf_safe_client(verify=False, timeout=timeout) as client:
         
         async def _worker(url: str):
             nonlocal completed_count

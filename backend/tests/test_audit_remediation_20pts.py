@@ -117,7 +117,7 @@ def test_20_point_remediation_suite():
         
         import asyncio
         asyncio.run(crawler.start())
-        mock_httpx.assert_called_with(verify=True)
+        assert mock_httpx.call_args.kwargs.get("verify") is True
         print("       [PASS] SEOCrawler instantiates AsyncClient(verify=True).\n", flush=True)
 
 

@@ -214,6 +214,32 @@ def _migrate_single_file(db_file: str):
             "data_json": "TEXT",
             "created_at": "DATETIME",
             "read_at": "DATETIME"
+        },
+        "users": {
+            "id": "TEXT",
+            "google_id": "TEXT",
+            "email": "TEXT",
+            "name": "TEXT",
+            "picture": "TEXT",
+            "password_hash": "TEXT",
+            "created_at": "DATETIME",
+            "updated_at": "DATETIME"
+        },
+        "external_connections": {
+            "id": "TEXT",
+            "user_id": "TEXT",
+            "provider": "TEXT",
+            "provider_account_id": "TEXT",
+            "provider_account_name": "TEXT",
+            "provider_email": "TEXT",
+            "status": "TEXT",
+            "scopes": "TEXT",
+            "access_token_encrypted": "TEXT",
+            "refresh_token_encrypted": "TEXT",
+            "token_expires_at": "DATETIME",
+            "last_used_at": "DATETIME",
+            "created_at": "DATETIME",
+            "updated_at": "DATETIME"
         }
     }
 

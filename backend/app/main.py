@@ -8,12 +8,12 @@ from app.config.database import engine, Base
 
 from app.config.migration import run_schema_migrations
 
-# Run startup configuration validation & schema migrations
-validate_startup_config(strict=False)
+# Run startup configuration validation & schema migrations (fails closed in production)
+validate_startup_config()
 run_schema_migrations(engine)
 
 # Import all models to ensure they are registered with Base
-from app.models import project, dataset, page, keyword, keyword_group, crawl_session, competitor, external_connection, audit_issue, action_opportunity, notification
+from app.models import project, dataset, page, keyword, keyword_group, crawl_session, competitor, external_connection, audit_issue, action_opportunity, notification, user
 
 Base.metadata.create_all(bind=engine)
 
@@ -21,18 +21,18 @@ from fastapi.responses import JSONResponse
 import traceback
 
 app = FastAPI(title="SEO Intelligence API")
-# Reload router registry & oauth routes
 
+# Configure CORS: Strict explicit allowlist in production; localhost/LAN allowed in development
+cors_kwargs = {
+    "allow_origins": settings.cors_origins_list,
+    "allow_credentials": True,
+    "allow_methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    "allow_headers": ["Content-Type", "Authorization", "Accept"],
+}
 
-
-# Configure CORS dynamically from settings with regex fallback for private LAN development origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}):(8030|3000)$",
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "Accept"],
+    **cors_kwargs
 )
 
 @app.exception_handler(Exception)

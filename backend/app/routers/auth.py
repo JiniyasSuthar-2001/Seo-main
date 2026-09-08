@@ -19,6 +19,7 @@ from app.models.notification import Notification
 from app.models.external_connection import ExternalConnection
 from app.config.utils import get_sanitized_domain
 from app.config.settings import settings, build_frontend_redirect
+from app.config.security import get_password_hash, verify_password, validate_password_strength
 from app.services.oauth_provider_service import (
     build_authorization_url,
     validate_oauth_state,
@@ -840,6 +841,8 @@ def logout(user_id: str = Depends(get_current_user_id)):
 def platform_login(payload: dict = Body(...), db: Session = Depends(get_db)):
     """
     Authenticates SEO Intelligence platform user with email and password.
+    Enforces secure bcrypt password verification against stored password_hash.
+    Returns generic 401 error on invalid credentials without revealing account existence.
     """
     email = (payload.get("email") or "").strip().lower()
     password = payload.get("password") or ""
@@ -850,18 +853,18 @@ def platform_login(payload: dict = Body(...), db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Password is required.")
 
     user = db.query(User).filter(User.email == email).first()
-    if not user:
-        user_name = email.split("@")[0].capitalize()
-        user = User(
-            id=email,
-            email=email,
-            name=f"{user_name}",
-            created_at=datetime.utcnow()
+    
+    # Secure password verification:
+    # 1. User must exist
+    # 2. User must have a password_hash set (accounts without password hashes cannot log in with arbitrary passwords)
+    # 3. Supplied password must match stored bcrypt hash
+    if not user or not user.password_hash or not verify_password(password, user.password_hash):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password."
         )
-        db.add(user)
-        db.commit()
 
-    token = create_access_token(user_id=email)
+    token = create_access_token(user_id=user.id or user.email)
 
     return {
         "status": "success",
@@ -873,7 +876,8 @@ def platform_login(payload: dict = Body(...), db: Session = Depends(get_db)):
 @router.post("/register")
 def platform_register(payload: dict = Body(...), db: Session = Depends(get_db)):
     """
-    Registers a new SEO Intelligence platform user account.
+    Registers a new SEO Intelligence platform user account with bcrypt password hashing.
+    Enforces platform password policy (minimum 8 characters).
     """
     email = (payload.get("email") or "").strip().lower()
     password = payload.get("password") or ""
@@ -881,22 +885,36 @@ def platform_register(payload: dict = Body(...), db: Session = Depends(get_db)):
 
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="A valid email address is required.")
-    if not password or len(password) < 4:
-        raise HTTPException(status_code=400, detail="Password must be at least 4 characters long.")
+    
+    is_valid, err_msg = validate_password_strength(password)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=err_msg)
 
     user = db.query(User).filter(User.email == email).first()
-    if not user:
+    if user:
+        if user.password_hash:
+            raise HTTPException(status_code=400, detail="An account with this email address already exists.")
+        # If user existed via OAuth but had no password set, set their password securely
+        user.password_hash = get_password_hash(password)
+        if name and not user.name:
+            user.name = name
+        user.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(user)
+    else:
         display_name = name or email.split("@")[0].capitalize()
         user = User(
             id=email,
             email=email,
             name=display_name,
+            password_hash=get_password_hash(password),
             created_at=datetime.utcnow()
         )
         db.add(user)
         db.commit()
+        db.refresh(user)
 
-    token = create_access_token(user_id=email)
+    token = create_access_token(user_id=user.id or user.email)
 
     return {
         "status": "success",

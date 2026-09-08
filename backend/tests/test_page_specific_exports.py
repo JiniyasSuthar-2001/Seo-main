@@ -23,42 +23,35 @@ class TestPageSpecificExports(unittest.TestCase):
         cls.db = SessionLocal()
         cls.client = TestClient(app)
 
-        cls.user = cls.db.query(User).filter(User.email == "page_export@example.com").first()
-        if not cls.user:
-            cls.user = User(
-                id="usr_page_export_test",
-                email="page_export@example.com",
-                name="Page Export Tester"
-            )
-            cls.db.add(cls.user)
-            cls.db.commit()
+        import uuid
+        uid = uuid.uuid4().hex[:6]
+        user_email = f"page_export_{uid}@example.com"
+        cls.user = User(id=user_email, email=user_email, name="Page Export Tester")
+        cls.db.add(cls.user)
+        cls.db.commit()
 
-        cls.project = cls.db.query(Project).filter(Project.id == "proj_page_export_123").first()
-        if not cls.project:
-            cls.project = Project(
-                id="proj_page_export_123",
-                name="Queenshine Electricals",
-                domain="queenshine.com.au",
-                url="https://queenshine.com.au"
-            )
-            cls.db.add(cls.project)
-            cls.db.commit()
+        cls.project = Project(
+            id=f"proj_page_export_{uid}",
+            name="Queenshine Electricals",
+            domain=f"queenshine_{uid}.com.au",
+            url=f"https://queenshine_{uid}.com.au"
+        )
+        cls.db.add(cls.project)
+        cls.db.commit()
 
-        cls.membership = cls.db.query(ProjectMembership).filter(ProjectMembership.project_id == cls.project.id, ProjectMembership.user_id == cls.user.id).first()
-        if not cls.membership:
-            cls.membership = ProjectMembership(
-                id="tm_page_export_123",
-                user_id=cls.user.id,
-                project_id=cls.project.id,
-                role="owner"
-            )
-            cls.db.add(cls.membership)
-            cls.db.commit()
+        cls.membership = ProjectMembership(
+            id=f"tm_page_export_{uid}",
+            user_id=cls.user.id,
+            project_id=cls.project.id,
+            role="owner"
+        )
+        cls.db.add(cls.membership)
+        cls.db.commit()
 
         from app.services.crawl_storage import CrawlStorage
         storage = CrawlStorage()
-        results = {"pages": [{"url": "https://queenshine.com.au", "status_code": 200, "title": "Home", "word_count": 300}], "issues": [], "internal_links": [], "external_links": []}
-        storage.save_crawl_snapshot(key="queenshine.com.au", session_id="sess_export_test", results=results, domain="queenshine.com.au", project_id=cls.project.id)
+        results = {"pages": [{"url": f"https://queenshine_{uid}.com.au", "status_code": 200, "title": "Home", "word_count": 300}], "issues": [], "internal_links": [], "external_links": []}
+        storage.save_crawl_snapshot(key=f"queenshine_{uid}.com.au", session_id=f"sess_export_{uid}", results=results, domain=f"queenshine_{uid}.com.au", project_id=cls.project.id)
 
         token = create_access_token(cls.user.id)
         cls.headers = {"Authorization": f"Bearer {token}"}
@@ -128,6 +121,17 @@ class TestPageSpecificExports(unittest.TestCase):
         resp = self.client.get(f"/api/projects/{self.project.id}/pages/export.xlsx", headers=self.headers)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.headers.get("content-type"), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            cls.db.query(ProjectMembership).filter(ProjectMembership.project_id == cls.project.id).delete(synchronize_session=False)
+            cls.db.query(Project).filter(Project.id == cls.project.id).delete(synchronize_session=False)
+            cls.db.query(User).filter(User.id == cls.user.id).delete(synchronize_session=False)
+            cls.db.commit()
+        except Exception:
+            pass
+        cls.db.close()
 
 if __name__ == "__main__":
     unittest.main()

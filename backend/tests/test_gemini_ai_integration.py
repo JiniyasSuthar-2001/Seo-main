@@ -100,5 +100,16 @@ class TestGeminiAIIntegration(unittest.TestCase):
         res = self.client.post(f"/api/projects/{self.project_a.id}/ai/analyze", headers=self.headers_b)
         self.assertEqual(res.status_code, 403)
 
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            cls.db.query(ProjectMembership).filter(ProjectMembership.project_id == cls.project_a.id).delete(synchronize_session=False)
+            cls.db.query(Project).filter(Project.id == cls.project_a.id).delete(synchronize_session=False)
+            cls.db.query(User).filter(User.id.in_([cls.user_a.id, cls.user_b.id])).delete(synchronize_session=False)
+            cls.db.commit()
+        except Exception:
+            pass
+        cls.db.close()
+
 if __name__ == '__main__':
     unittest.main()

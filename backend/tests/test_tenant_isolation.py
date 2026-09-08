@@ -194,6 +194,18 @@ class TestTenantIsolation(unittest.TestCase):
         res_report = self.client.get(f"/api/projects/{self.proj_a.id}/report.pdf", headers=self.headers_b)
         self.assertEqual(res_report.status_code, 403)
 
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            cls.db.query(ProjectMembership).filter(ProjectMembership.project_id.in_([cls.proj_a.id, cls.proj_b.id])).delete(synchronize_session=False)
+            cls.db.query(Project).filter(Project.id.in_([cls.proj_a.id, cls.proj_b.id])).delete(synchronize_session=False)
+            cls.db.query(User).filter(
+                (User.id.in_([cls.user_a_email, cls.user_b_email])) | (User.email.in_([cls.user_a_email, cls.user_b_email]))
+            ).delete(synchronize_session=False)
+            cls.db.commit()
+        except Exception:
+            pass
+        cls.db.close()
 
 if __name__ == "__main__":
     unittest.main()

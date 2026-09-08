@@ -102,6 +102,18 @@ class TestKeywordAndCompetitorEngine(unittest.TestCase):
         self.assertIn("Data unavailable", res["comparison"]["measured_traffic"])
         self.assertIn("Data unavailable", res["comparison"]["measured_backlinks"])
 
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            cls.db.query(Page).filter(Page.project_id == cls.proj.id).delete(synchronize_session=False)
+            cls.db.query(Competitor).filter(Competitor.project_id == cls.proj.id).delete(synchronize_session=False)
+            cls.db.query(ProjectMembership).filter(ProjectMembership.project_id == cls.proj.id).delete(synchronize_session=False)
+            cls.db.query(Project).filter(Project.id == cls.proj.id).delete(synchronize_session=False)
+            cls.db.query(User).filter(User.id == cls.user.id).delete(synchronize_session=False)
+            cls.db.commit()
+        except Exception:
+            pass
+        cls.db.close()
 
 if __name__ == '__main__':
     unittest.main()

@@ -7,7 +7,7 @@ from app.config.database import get_db
 from app.models.project import Project
 from app.models.crawl_session import CrawlSession
 from app.services.audit_rules import evaluate_site_audit_rules
-from app.config.utils import get_sanitized_domain, normalize_stored_path
+from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 from app.config.settings import settings
 
 from app.config.auth import get_current_user_id
@@ -35,8 +35,7 @@ def get_project_alerts(
     alerts = []
     
     # 1. Check for latest completed crawl session & pages
-    safe_domain = get_sanitized_domain(project.domain or project.url or "")
-    domain_dir = os.path.join(settings.CRAWL_DATA_DIR, safe_domain)
+    domain_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, project.domain or project.url, project.id)
     latest_path = os.path.join(domain_dir, "latest.json")
     pages = []
     crawl_timestamp = None

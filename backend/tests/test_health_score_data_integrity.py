@@ -20,58 +20,59 @@ from app.config.settings import settings
 
 class TestHealthScoreDataIntegrity(unittest.TestCase):
 
-    def setUp(self):
-        self.client = TestClient(app)
-        self.db = SessionLocal()
-        self.user_email = "user_health_integrity@example.com"
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(app)
+        cls.db = SessionLocal()
+        cls.user_email = "user_health_integrity@example.com"
 
         # Create User
-        user = self.db.query(User).filter(User.email == self.user_email).first()
+        user = cls.db.query(User).filter(User.email == cls.user_email).first()
         if not user:
-            user = User(id="usr_health_int", email=self.user_email, name="Health User")
-            self.db.add(user)
-            self.db.commit()
+            user = User(id=cls.user_email, email=cls.user_email, name="Health User")
+            cls.db.add(user)
+            cls.db.commit()
 
         # Create Project
-        self.proj_id = "proj_health_int_777"
-        self.domain = "healthtestsite.com"
-        proj = self.db.query(Project).filter(Project.id == self.proj_id).first()
+        cls.proj_id = "proj_health_int_777"
+        cls.domain = "healthtestsite.com"
+        proj = cls.db.query(Project).filter(Project.id == cls.proj_id).first()
         if not proj:
-            proj = Project(id=self.proj_id, name="Health Test Site", url=f"https://{self.domain}")
-            self.db.add(proj)
-            self.db.commit()
+            proj = Project(id=cls.proj_id, name="Health Test Site", url=f"https://{cls.domain}", domain=cls.domain)
+            cls.db.add(proj)
+            cls.db.commit()
 
-        mem = self.db.query(ProjectMembership).filter(
-            ProjectMembership.user_id == self.user_email,
-            ProjectMembership.project_id == self.proj_id
+        mem = cls.db.query(ProjectMembership).filter(
+            ProjectMembership.user_id == cls.user_email,
+            ProjectMembership.project_id == cls.proj_id
         ).first()
         if not mem:
-            mem = ProjectMembership(id="mem_health_int", user_id=self.user_email, project_id=self.proj_id, role="OWNER", status="ACTIVE")
-            self.db.add(mem)
-            self.db.commit()
+            mem = ProjectMembership(id="mem_health_int", user_id=cls.user_email, project_id=cls.proj_id, role="OWNER", status="ACTIVE")
+            cls.db.add(mem)
+            cls.db.commit()
 
-        token = create_access_token(user_id=self.user_email)
-        self.headers = {"Authorization": f"Bearer {token}"}
+        token = create_access_token(user_id=cls.user_email)
+        cls.headers = {"Authorization": f"Bearer {token}"}
 
         # Setup mock crawl dataset with 5 pages (4 HTML 200, 1 HTTP 404)
-        self.storage_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, self.domain, self.proj_id)
-        os.makedirs(self.storage_dir, exist_ok=True)
-        self.crawl_dir = os.path.join(self.storage_dir, "crawls", "2026-08-29_120000")
-        os.makedirs(self.crawl_dir, exist_ok=True)
+        cls.storage_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, cls.domain, cls.proj_id)
+        os.makedirs(cls.storage_dir, exist_ok=True)
+        cls.crawl_dir = os.path.join(cls.storage_dir, "crawls", "2026-08-29_120000")
+        os.makedirs(cls.crawl_dir, exist_ok=True)
 
-        self.mock_pages = [
-            {"url": f"https://{self.domain}/", "status_code": 200, "is_success": True, "title": "Home", "meta_description": "Welcome", "h1": ["Home"], "canonical": f"https://{self.domain}/", "word_count": 450},
-            {"url": f"https://{self.domain}/about", "status_code": 200, "is_success": True, "title": "", "meta_description": "", "h1": [], "canonical": "", "word_count": 200}, # Missing title, desc, h1, canon
-            {"url": f"https://{self.domain}/services", "status_code": 200, "is_success": True, "title": "Services", "meta_description": "Our services", "h1": ["Services"], "canonical": f"https://{self.domain}/services", "word_count": 300},
-            {"url": f"https://{self.domain}/contact", "status_code": 200, "is_success": True, "title": "Contact", "meta_description": "Contact us", "h1": ["Contact"], "canonical": f"https://{self.domain}/contact", "word_count": 180},
-            {"url": f"https://{self.domain}/broken-page", "status_code": 404, "is_success": False, "title": "", "meta_description": "", "h1": [], "canonical": "", "word_count": 0} # 404 Error page
+        cls.mock_pages = [
+            {"url": f"https://{cls.domain}/", "status_code": 200, "is_success": True, "title": "Home", "meta_description": "Welcome", "h1": ["Home"], "canonical": f"https://{cls.domain}/", "word_count": 450},
+            {"url": f"https://{cls.domain}/about", "status_code": 200, "is_success": True, "title": "", "meta_description": "", "h1": [], "canonical": "", "word_count": 200}, # Missing title, desc, h1, canon
+            {"url": f"https://{cls.domain}/services", "status_code": 200, "is_success": True, "title": "Services", "meta_description": "Our services", "h1": ["Services"], "canonical": f"https://{cls.domain}/services", "word_count": 300},
+            {"url": f"https://{cls.domain}/contact", "status_code": 200, "is_success": True, "title": "Contact", "meta_description": "Contact us", "h1": ["Contact"], "canonical": f"https://{cls.domain}/contact", "word_count": 180},
+            {"url": f"https://{cls.domain}/broken-page", "status_code": 404, "is_success": False, "title": "", "meta_description": "", "h1": [], "canonical": "", "word_count": 0} # 404 Error page
         ]
 
-        with open(os.path.join(self.crawl_dir, "pages.json"), "w") as f:
-            json.dump(self.mock_pages, f)
+        with open(os.path.join(cls.crawl_dir, "pages.json"), "w") as f:
+            json.dump(cls.mock_pages, f)
 
-        with open(os.path.join(self.storage_dir, "latest.json"), "w") as f:
-            json.dump({"path": self.crawl_dir, "status": "completed"}, f)
+        with open(os.path.join(cls.storage_dir, "latest.json"), "w") as f:
+            json.dump({"path": cls.crawl_dir, "status": "completed"}, f)
 
     def tearDown(self):
         self.db.close()
@@ -117,6 +118,17 @@ class TestHealthScoreDataIntegrity(unittest.TestCase):
 
         self.assertEqual(target_proj["health_score"], tech_data["health_score"])
         self.assertEqual(target_proj["issues_count"], tech_data["total_issues"])
+
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            cls.db.query(ProjectMembership).filter(ProjectMembership.project_id == cls.proj_id).delete(synchronize_session=False)
+            cls.db.query(Project).filter(Project.id == cls.proj_id).delete(synchronize_session=False)
+            cls.db.query(User).filter((User.id == cls.user_email) | (User.email == cls.user_email)).delete(synchronize_session=False)
+            cls.db.commit()
+        except Exception:
+            pass
+        cls.db.close()
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,7 @@ from app.llm.ollama_adapter import OllamaProviderAdapter
 from app.llm.ai_service import AIService
 from app.services.keyword_discovery import KeywordDiscoveryService
 from app.services.competitor_engine import CompetitorEngineService
+from app.services.ai_solution_service import AISolutionService
 
 router = APIRouter()
 
@@ -40,6 +41,17 @@ class ProblemSolutionRequest(BaseModel):
     recommendation: Optional[str] = None
     affected_urls: Optional[List[str]] = []
     evidence_text: Optional[str] = None
+
+class SolveRequest(BaseModel):
+    rule_id: Optional[str] = None
+    title: str
+    category: Optional[str] = "Website Health"
+    severity: Optional[str] = "Notice"
+    description: Optional[str] = None
+    recommendation: Optional[str] = None
+    affected_url: str
+    evidence_text: Optional[str] = None
+    force_regenerate: Optional[bool] = False
 
 def _get_project_or_404(project_id: str, db: Session, user_id: str) -> Project:
     get_user_membership(db, user_id, project_id)
@@ -375,6 +387,38 @@ def chat_with_project_ai(
 
 PROBLEM_SOLUTION_CACHE: Dict[str, Dict[str, Any]] = {}
 
+@router.post("/{project_id}/ai/solve")
+def solve_problem_with_ai(
+    project_id: str,
+    payload: SolveRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Dedicated endpoint for the interactive 'Solve with AI' action.
+    Analyzes the actual detected problem and affected page to generate an actionable,
+    evidence-grounded replacement and implementation code.
+    """
+    project = _get_project_or_404(project_id, db, user_id)
+    solution = AISolutionService.get_or_generate_solution(
+        project=project,
+        rule_id=payload.rule_id,
+        problem_title=payload.title,
+        category=payload.category,
+        severity=payload.severity,
+        description=payload.description,
+        recommendation=payload.recommendation,
+        affected_url=payload.affected_url,
+        evidence_text=payload.evidence_text,
+        db=db,
+        user_id=user_id,
+        force_regenerate=bool(payload.force_regenerate)
+    )
+    return {
+        "status": "success",
+        "solution": solution
+    }
+
 @router.post("/{project_id}/ai/problem-solution")
 def get_problem_ai_solution(
     project_id: str,
@@ -390,92 +434,47 @@ def get_problem_ai_solution(
         return PROBLEM_SOLUTION_CACHE[cache_key]
 
     affected_urls = payload.affected_urls or []
-    first_url = affected_urls[0] if affected_urls else None
-
-    # 2. Get active AI provider via provider selection cascade
-    provider = AIService.get_provider(user_id=user_id, db=db)
+    first_url = affected_urls[0] if affected_urls else f"https://{project.domain}"
 
     page_solutions: Dict[str, str] = {}
     default_solution = None
 
-    if provider:
-        try:
-            sys_instructions = (
-                "You are an expert SEO Technical Advisor. Analyze the provided website audit issue and affected URLs "
-                "to generate concise, page-specific, 1-3 sentence evidence-grounded AI solutions for each affected page. "
-                "Do NOT invent unverified evidence, HTTP status codes, or fake metadata. "
-                "Respond ONLY with a valid JSON object matching this schema:\n"
-                "{\n"
-                '  "page_solutions": {\n'
-                '     "URL_HERE": "Concise 1-3 sentence solution tailored specifically to this page URL and finding"\n'
-                '  },\n'
-                '  "default_solution": "Short concise solution applicable to pages missing specific URL entries"\n'
-                "}"
-            )
+    # Generate or retrieve solution for each affected URL via AISolutionService
+    for url in affected_urls[:20]:
+        sol = AISolutionService.get_or_generate_solution(
+            project=project,
+            rule_id=payload.rule_id,
+            problem_title=payload.title,
+            category=payload.category,
+            severity=payload.severity,
+            description=payload.description,
+            recommendation=payload.recommendation,
+            affected_url=url,
+            evidence_text=payload.evidence_text,
+            db=db,
+            user_id=user_id
+        )
+        if sol and sol.get("ai_solution"):
+            page_solutions[url] = sol["ai_solution"]
 
-            user_prompt = (
-                f"Website Domain: {project.domain}\n"
-                f"Problem Title: {payload.title}\n"
-                f"Rule ID: {payload.rule_id or 'N/A'}\n"
-                f"Category: {payload.category or 'Website Check'}\n"
-                f"Severity: {payload.severity or 'Notice'}\n"
-                f"Description: {payload.description or 'No description'}\n"
-                f"Recommended Action: {payload.recommendation or 'N/A'}\n"
-                f"Evidence Text: {payload.evidence_text or 'N/A'}\n"
-                f"Affected URLs List: {json.dumps(affected_urls[:15])}"
-            )
+    def_sol = AISolutionService.get_or_generate_solution(
+        project=project,
+        rule_id=payload.rule_id,
+        problem_title=payload.title,
+        category=payload.category,
+        severity=payload.severity,
+        description=payload.description,
+        recommendation=payload.recommendation,
+        affected_url=first_url,
+        evidence_text=payload.evidence_text,
+        db=db,
+        user_id=user_id
+    )
+    default_solution = def_sol.get("ai_solution") if def_sol else payload.recommendation
 
-            context_data = {
-                "website_domain": project.domain,
-                "title": payload.title,
-                "rule_id": payload.rule_id,
-                "category": payload.category,
-                "severity": payload.severity,
-                "description": payload.description,
-                "recommendation": payload.recommendation,
-                "affected_urls": affected_urls[:15],
-                "evidence_text": payload.evidence_text
-            }
-
-            ai_res = provider.analyze(sys_instructions, user_prompt, context_data, timeout=20.0)
-            if isinstance(ai_res, dict):
-                raw_sol = ai_res.get("page_solutions")
-                if isinstance(raw_sol, dict):
-                    page_solutions = {str(k): str(v) for k, v in raw_sol.items() if v}
-                default_solution = ai_res.get("default_solution")
-        except Exception as ai_err:
-            print(f"[AI PROBLEM SOLUTION ERROR] Provider execution error: {ai_err}", flush=True)
-
-    # Evidence-grounded fallback generator per URL if provider errored out or missed entries
-    title_lower = (payload.title or "").lower()
-    
-    def generate_url_fallback(url_str: str) -> str:
-        if "broken" in title_lower or "4xx" in title_lower or "5xx" in title_lower or "404" in title_lower:
-            return "Restore this page if it should exist, or implement a relevant 301 redirect to the closest valid destination. Verify the final URL returns HTTP 200."
-        elif "title" in title_lower:
-            return "Add a unique, relevant <title> tag (50–60 characters) that accurately describes this page's content and primary topic."
-        elif "description" in title_lower:
-            return "Add a unique meta description (150–160 characters) summarizing the specific content on this page with a clear call to action."
-        elif "h1" in title_lower:
-            return "Add one clear <h1> heading that accurately represents the primary topic of this page. Avoid adding multiple competing H1 headings."
-        elif "alt" in title_lower or "image" in title_lower:
-            return "Add descriptive alt attributes to content images on this page explaining their visual purpose and topic relevance."
-        elif "schema" in title_lower or "structured data" in title_lower or "json-ld" in title_lower:
-            return "Add structured data appropriate to this page's type (e.g. Organization, Product, or Article) matching its real content."
-        elif "canonical" in title_lower:
-            return "Add a canonical link element pointing to the preferred indexable URL for this page."
-        elif "link" in title_lower:
-            return "Update the source page to point to the correct live URL, or restore the destination page if it was removed intentionally."
-        else:
-            return payload.recommendation or f"Review page HTML and server headers to resolve {payload.title}."
-
-    if not default_solution:
-        default_solution = generate_url_fallback(first_url or project.domain)
-
-    # Ensure every affected URL has a page solution
     for u in affected_urls:
-        if u not in page_solutions or not page_solutions[u]:
-            page_solutions[u] = generate_url_fallback(u)
+        if u not in page_solutions:
+            page_solutions[u] = default_solution
 
     res_body = {
         "status": "success",

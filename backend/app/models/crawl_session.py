@@ -19,6 +19,7 @@ class CrawlSession(Base):
     blocked_pages_count = Column(Integer, default=0)
     assets_crawled_count = Column(Integer, default=0)
     issues_found = Column(Integer, default=0)
+    status_message = Column(String, nullable=True)
     
     started_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)

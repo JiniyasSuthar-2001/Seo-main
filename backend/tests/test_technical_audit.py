@@ -52,6 +52,13 @@ class TestTechnicalAuditAPI(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        try:
+            cls.db.query(ProjectMembership).filter(ProjectMembership.project_id == cls.project.id).delete(synchronize_session=False)
+            cls.db.query(Project).filter(Project.id == cls.project.id).delete(synchronize_session=False)
+            cls.db.query(User).filter(User.id.in_([cls.user.id, cls.other.id])).delete(synchronize_session=False)
+            cls.db.commit()
+        except Exception:
+            pass
         cls.db.close()
 
     def test_01_get_technical_audit_success(self):

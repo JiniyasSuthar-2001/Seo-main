@@ -159,10 +159,19 @@ def get_projects(
     Categorizes role into OWNER ('Lead') and MEMBER ('Team Member').
     """
     email = user_id.strip().lower()
+    user = db.query(User).filter((User.id == user_id) | (User.email == user_id)).first()
+    user_ids = [email, user_id]
+    if user:
+        if user.id:
+            user_ids.append(user.id)
+            user_ids.append(user.id.lower())
+        if user.email:
+            user_ids.append(user.email)
+            user_ids.append(user.email.lower())
     
     # Query active memberships for this user
     memberships = db.query(ProjectMembership).filter(
-        ProjectMembership.user_id == email,
+        ProjectMembership.user_id.in_(list(set(user_ids))),
         ProjectMembership.status == "ACTIVE"
     ).all()
 
@@ -337,12 +346,13 @@ def get_project_team(
 
     members = []
     for m in memberships:
-        u = db.query(User).filter(User.email == m.user_id).first()
-        masked = m.user_id[0] + "***" + m.user_id[m.user_id.find("@"):] if "@" in m.user_id else "user***@gmail.com"
+        u = db.query(User).filter((User.email == m.user_id) | (User.id == m.user_id)).first()
+        email_val = u.email if (u and u.email) else m.user_id
+        masked = email_val[0] + "***" + email_val[email_val.find("@"):] if "@" in email_val else "user***@gmail.com"
         members.append({
             "membership_id": m.id,
             "user_id": m.user_id,
-            "email": m.user_id,
+            "email": email_val,
             "masked_email": masked,
             "name": u.name if u else "SEO Team Member",
             "picture": u.picture if u else None,
@@ -545,28 +555,69 @@ def remove_teammate(
     """
     require_project_owner(db, user_id, project_id)
 
-    target_user_id = (payload.get("user_id") or payload.get("email") or "").strip().lower()
-    if not target_user_id:
+    target_input = (payload.get("user_id") or payload.get("email") or "").strip().lower()
+    if not target_input:
         raise HTTPException(status_code=400, detail="Target user email is required.")
 
-    if target_user_id == user_id.strip().lower():
+    if target_input == user_id.strip().lower():
         raise HTTPException(status_code=400, detail="Project Owner access cannot be removed. Transfer ownership first if needed.")
+
+    # Match target user by id or email
+    target_user = db.query(User).filter((User.id.ilike(target_input)) | (User.email.ilike(target_input))).first()
+    target_ids = [target_input]
+    if target_user:
+        if target_user.id:
+            target_ids.append(target_user.id.lower())
+        if target_user.email:
+            target_ids.append(target_user.email.lower())
 
     m = db.query(ProjectMembership).filter(
         ProjectMembership.project_id == project_id,
-        ProjectMembership.user_id == target_user_id,
+        ProjectMembership.user_id.in_(target_ids),
         ProjectMembership.status == "ACTIVE"
     ).first()
 
     if not m:
         raise HTTPException(status_code=404, detail="Active membership for this user was not found on this project.")
 
+    if m.role == "OWNER":
+        raise HTTPException(status_code=400, detail="Project Owner access cannot be removed.")
+
     m.status = "REVOKED"
     db.commit()
 
     return {
         "status": "success",
-        "message": f"Project access for '{target_user_id}' has been revoked cleanly."
+        "message": f"Project access for '{target_input}' has been revoked cleanly."
+    }
+
+
+@router.post("/{project_id}/team/leave")
+@router.post("/{project_id}/leave")
+def leave_project(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Allows an active Team Member (MEMBER) to leave their project membership.
+    Project Owners (OWNER) cannot leave their own project through this action.
+    Does NOT delete the project or its SEO data.
+    """
+    membership = get_user_membership(db, user_id, project_id)
+
+    if membership.role == "OWNER":
+        raise HTTPException(
+            status_code=400,
+            detail="Project Owners cannot leave their own project. Transfer ownership or manage the project from Project settings."
+        )
+
+    membership.status = "REVOKED"
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": "You have successfully left the project team."
     }
 
 
@@ -679,7 +730,7 @@ def delete_project(
     db.delete(p)
     db.commit()
 
-    website_dir = os.path.join(settings.CRAWL_DATA_DIR, safe_domain)
+    website_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, project_id)
     if os.path.exists(website_dir):
         try:
             shutil.rmtree(website_dir)
@@ -697,8 +748,8 @@ def get_project_summary(
     get_user_membership(db, user_id, project_id)
     p = db.query(Project).filter(Project.id == project_id).first()
 
-    safe_domain = get_sanitized_domain(p.domain)
-    latest_path = os.path.join(settings.CRAWL_DATA_DIR, safe_domain, "latest.json")
+    website_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, p.domain, p.id)
+    latest_path = os.path.join(website_dir, "latest.json")
     if not os.path.exists(latest_path):
         return {"status": "empty", "message": "No crawl data available yet."}
         

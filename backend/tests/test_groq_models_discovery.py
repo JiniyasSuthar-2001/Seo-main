@@ -31,6 +31,11 @@ class TestGroqModelsDiscovery(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        try:
+            cls.db.query(User).filter(User.id == cls.user.id).delete(synchronize_session=False)
+            cls.db.commit()
+        except Exception:
+            pass
         cls.db.close()
 
     def test_01_fetch_available_models_filters_non_chat_models(self):

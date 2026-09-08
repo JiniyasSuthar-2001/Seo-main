@@ -27,21 +27,45 @@ def test_deep_endpoint_audit():
         db.refresh(project)
 
     project_id = project.id
+    from app.config.auth import create_access_token
+    from app.models.project_membership import ProjectMembership
+    import uuid
+
+    user_email = "audit_tester@example.com"
+    token = create_access_token(user_id=user_email)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Ensure user has membership on project
+    mem = db.query(ProjectMembership).filter(
+        ProjectMembership.project_id == project_id,
+        ProjectMembership.user_id == user_email
+    ).first()
+    if not mem:
+        mem = ProjectMembership(
+            id=str(uuid.uuid4()),
+            project_id=project_id,
+            user_id=user_email,
+            role="OWNER",
+            status="ACTIVE"
+        )
+        db.add(mem)
+        db.commit()
+
     db.close()
 
     res = client.get("/api/health")
     assert res.status_code == 200
 
-    res_projects = client.get("/api/projects")
+    res_projects = client.get("/api/projects", headers=headers)
     assert res_projects.status_code == 200
 
-    res_proj = client.get(f"/api/projects/{project_id}")
+    res_proj = client.get(f"/api/projects/{project_id}", headers=headers)
     assert res_proj.status_code == 200
 
-    res_tech = client.get(f"/api/projects/{project_id}/technical")
+    res_tech = client.get(f"/api/projects/{project_id}/technical", headers=headers)
     assert res_tech.status_code == 200
 
-    res_opps = client.get(f"/api/projects/{project_id}/opportunities")
+    res_opps = client.get(f"/api/projects/{project_id}/opportunities", headers=headers)
     assert res_opps.status_code == 200
 
 if __name__ == "__main__":

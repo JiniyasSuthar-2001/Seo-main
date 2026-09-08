@@ -13,6 +13,7 @@ from app.services.audit_rules import evaluate_site_audit_rules
 from app.services.opportunity_engine import generate_central_opportunities
 from app.services.backlink_service import BacklinkDataService
 from app.providers.nlp_keywords import NLPKeywordExtractor
+from app.services.ai_solution_service import AISolutionService
 
 nlp_extractor = NLPKeywordExtractor()
 
@@ -51,12 +52,38 @@ class MasterReportBuilder:
             issues_path = os.path.join(crawl_dir, "issues.json")
             links_path = os.path.join(crawl_dir, "internal_links.json")
             ext_path = os.path.join(crawl_dir, "external_links.json")
+            broken_path = os.path.join(crawl_dir, "broken_links.json")
 
-            metadata = json.load(open(meta_path, encoding="utf-8")) if os.path.exists(meta_path) else {}
-            pages = json.load(open(pages_path, encoding="utf-8")) if os.path.exists(pages_path) else []
-            raw_issues = json.load(open(issues_path, encoding="utf-8")) if os.path.exists(issues_path) else []
-            internal_links = json.load(open(links_path, encoding="utf-8")) if os.path.exists(links_path) else []
-            outbound_links = json.load(open(ext_path, encoding="utf-8")) if os.path.exists(ext_path) else []
+            metadata = {}
+            if os.path.exists(meta_path):
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    metadata = json.load(f)
+
+            pages = []
+            if os.path.exists(pages_path):
+                with open(pages_path, "r", encoding="utf-8") as f:
+                    pages = json.load(f)
+
+            raw_issues = []
+            if os.path.exists(issues_path):
+                with open(issues_path, "r", encoding="utf-8") as f:
+                    raw_issues = json.load(f)
+
+            internal_links = []
+            if os.path.exists(links_path):
+                with open(links_path, "r", encoding="utf-8") as f:
+                    internal_links = json.load(f)
+
+            outbound_links = []
+            if os.path.exists(ext_path):
+                with open(ext_path, "r", encoding="utf-8") as f:
+                    outbound_links = json.load(f)
+
+            broken_links = []
+            if os.path.exists(broken_path):
+                with open(broken_path, "r", encoding="utf-8") as f:
+                    broken_links = json.load(f)
+
             crawl_id = metadata.get("crawl_id") or latest_pointer.get("crawl_id")
             crawl_timestamp = metadata.get("timestamp") or latest_pointer.get("timestamp") or datetime.now().strftime("%Y-%m-%d")
         except Exception as e:
@@ -74,8 +101,18 @@ class MasterReportBuilder:
         health_score = audit_eval.get("health_score", 100)
         evaluated_issues = audit_eval.get("issues", raw_issues)
 
-        # 3. Normalized Problems & Indicator System (🔴 Critical, 🟠 High, 🟡 Warning, 🔵 Informational)
-        normalized_problems = cls._normalize_problems(evaluated_issues, pages)
+        # 3. Batch Enrich Problems with Evidence-Grounded Actionable AI Solutions
+        enriched_issues = AISolutionService.batch_enrich_issues(
+            project=project,
+            issues=evaluated_issues,
+            pages=pages,
+            db=db,
+            user_id=user_id,
+            max_ai_pages=20
+        )
+
+        # 4. Normalized Problems & Indicator System (🔴 Critical, 🟠 High, 🟡 Warning, 🔵 Informational)
+        normalized_problems = cls._normalize_problems(enriched_issues, pages)
 
         # 4. Extract Keywords
         keywords = nlp_extractor.extract_content_keywords(pages)
@@ -214,8 +251,12 @@ class MasterReportBuilder:
             "content_and_links": {
                 "internal_links": internal_links,
                 "outbound_links": outbound_links,
+                "broken_links": broken_links,
                 "internal_links_count": len(internal_links),
-                "outbound_links_count": len(outbound_links)
+                "outbound_links_count": len(outbound_links),
+                "broken_links_count": len(broken_links),
+                "internal_broken_links_count": sum(1 for b in broken_links if b.get("link_type") == "internal"),
+                "external_broken_links_count": sum(1 for b in broken_links if b.get("link_type") == "external")
             },
             "keywords": keywords,
             "rankings": {
@@ -264,30 +305,64 @@ class MasterReportBuilder:
                 indicator = "🔵"
                 clean_sev = "Informational"
 
-            issue_name = iss.get("issue") or iss.get("title") or "SEO Problem"
+            issue_id = iss.get("issue_id") or iss.get("rule_id") or f"RULE_{idx}"
+            issue_name = iss.get("issue") or iss.get("title") or iss.get("problem") or "SEO Problem"
             url = iss.get("url") or iss.get("affected_url") or "Website Level"
-            evidence = iss.get("evidence") or iss.get("details") or iss.get("description") or "Observed in crawl data"
+            evidence = iss.get("what_was_found") or iss.get("evidence") or iss.get("details") or iss.get("description") or "Observed in crawl data"
             rec = iss.get("recommendation") or iss.get("recommended_action") or f"Resolve {issue_name} on {url}"
             ai_sol = iss.get("ai_solution") or cls._generate_default_ai_solution(issue_name, url, evidence, pages)
+            rec_fix = iss.get("recommended_fix") or ai_sol
+            rep_val = iss.get("replacement_value") or iss.get("suggested_change") or ""
+            char_count = iss.get("character_count", len(rep_val) if isinstance(rep_val, str) else 0)
+            impl = iss.get("implementation") or rep_val or ""
+            why_fix = iss.get("why_this_fix") or cls._explain_why_it_matters(issue_name)
+            prio = iss.get("priority") or clean_sev
+            crawl_dt = iss.get("crawl_date") or datetime.now().strftime("%Y-%m-%d")
+            status_val = iss.get("status") or "Open"
+
+            what_wrong = iss.get("what_is_wrong") or evidence
+            what_change = iss.get("what_should_change") or iss.get("what_needs_to_change") or rec
+            where_change = iss.get("where_to_change") or "Inside page HTML or server configuration."
+            why_better = iss.get("why_this_version_is_better") or iss.get("why_this_fixes_problem") or why_fix
+            verif_steps = iss.get("verification") or f"Re-crawl the website to verify resolution of {issue_name}."
 
             normalized.append({
                 "id": f"prob_{idx}",
+                "issue_id": issue_id,
                 "problem": issue_name,
                 "severity": clean_sev,
                 "indicator": indicator,
                 "category": iss.get("category") or ("Technical" if "status" in issue_name.lower() or "404" in issue_name else "On-Page"),
                 "affected_url": url,
                 "affected_pages_count": iss.get("affected_pages_count", 1),
-                "what_was_found": evidence,
+                "what_is_wrong": what_wrong,
+                "what_we_found": what_wrong,
+                "what_was_found": what_wrong,
                 "current_value": iss.get("current_value") or ("Non-200 Status Code" if "404" in issue_name else "Empty / Incomplete"),
                 "expected_value": iss.get("expected_value") or ("HTTP 200 OK" if "404" in issue_name else "Unique, complete metadata"),
                 "evidence": evidence,
                 "why_it_matters": cls._explain_why_it_matters(issue_name),
+                "what_should_change": what_change,
+                "what_needs_to_change": what_change,
                 "recommended_action": rec,
                 "ai_solution": ai_sol,
-                "suggested_change": iss.get("suggested_change") or ai_sol,
-                "future_improvement": cls._suggest_future_prevention(issue_name),
-                "source": "Automatic Website Check + AI Analysis"
+                "recommended_fix": rec_fix,
+                "recommended_replacement": rep_val,
+                "recommended_change": rep_val,
+                "replacement_value": rep_val,
+                "character_count": char_count,
+                "where_to_change": where_change,
+                "implementation": impl,
+                "why_this_version_is_better": why_better,
+                "why_this_fixes_problem": why_better,
+                "why_this_fix": why_better,
+                "verification": verif_steps,
+                "priority": prio,
+                "crawl_date": crawl_dt,
+                "status": status_val,
+                "suggested_change": rep_val or ai_sol,
+                "future_improvement": iss.get("future_improvement") or cls._suggest_future_prevention(issue_name),
+                "source": iss.get("source") or "Automatic Website Check + AI Analysis"
             })
         return normalized
 

@@ -26,8 +26,19 @@ def get_workspace_overview(
     Aggregates metrics, crawl history, and technical issues across authorized websites.
     """
     email = user_id.strip().lower()
+    from app.models.user import User
+    user = db.query(User).filter((User.id == user_id) | (User.email == user_id)).first()
+    user_ids = [email, user_id]
+    if user:
+        if user.id:
+            user_ids.append(user.id)
+            user_ids.append(user.id.lower())
+        if user.email:
+            user_ids.append(user.email)
+            user_ids.append(user.email.lower())
+
     memberships = db.query(ProjectMembership).filter(
-        ProjectMembership.user_id == email,
+        ProjectMembership.user_id.in_(list(set(user_ids))),
         ProjectMembership.status == "ACTIVE"
     ).all()
     project_ids = [m.project_id for m in memberships]

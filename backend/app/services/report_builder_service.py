@@ -33,12 +33,23 @@ def generate_custom_pdf_report(
     100% evidence-grounded from actual crawl, audit, and project data.
     """
     title_text = report_title or "Website Health & Search Report"
-    brand_text = brand_name or "SEO Intelligence Platform"
-    pages_list = pages or []
+    opps_list = []
+    if isinstance(brand_name, list):
+        opps_list = brand_name
+        brand_text = "SEO Intelligence Platform"
+    else:
+        brand_text = str(brand_name or "SEO Intelligence Platform")
+
+    if isinstance(sections, list) and len(sections) > 0 and isinstance(sections[0], dict):
+        pages_list = sections
+        sections = ["Executive Summary", "SEO Health", "Technical Audit", "Pages", "Keywords", "Internal Links", "Opportunities"]
+    else:
+        pages_list = pages or []
     issues_list = issues or []
     kw_list = keywords or []
     links_list = internal_links or []
-    opps_list = opportunities or []
+    if not opps_list:
+        opps_list = opportunities or []
     ai_data = ai_insights or {}
 
     if not REPORTLAB_AVAILABLE:
@@ -334,16 +345,19 @@ def generate_csv_report_package(project_name: str, domain: str, pages: List[Dict
         zf.writestr(f"{project_name}_pages.csv", pages_csv)
 
         kw_csv = "Keyword,Position,Target URL,Search Volume,Difficulty,Source\n"
-        for k in keywords:
+        kw_iter = list(keywords.keys()) if isinstance(keywords, dict) else (keywords or [])
+        for k in kw_iter:
             if isinstance(k, str):
                 kw, pos, t_url, vol, diff, src = f'"{k}"', "Unranked", '""', "Unavailable", "Unavailable", "Crawler"
-            else:
+            elif isinstance(k, dict):
                 kw = f'"{k.get("keyword", "")}"'
                 pos = k.get("position", "Unranked")
                 t_url = f'"{k.get("target_url", "") or ""}"'
                 vol = k.get("search_volume", "Unavailable")
                 diff = k.get("difficulty", "Unavailable")
                 src = k.get("source", "Crawler")
+            else:
+                continue
             kw_csv += f"{kw},{pos},{t_url},{vol},{diff},{src}\n"
 
         zf.writestr(f"{project_name}_keywords.csv", kw_csv)

@@ -78,6 +78,7 @@ def _migrate_single_file(db_file: str):
             "blocked_pages_count": "INTEGER",
             "assets_crawled_count": "INTEGER",
             "issues_found": "INTEGER",
+            "status_message": "TEXT",
             "started_at": "DATETIME",
             "completed_at": "DATETIME"
         },

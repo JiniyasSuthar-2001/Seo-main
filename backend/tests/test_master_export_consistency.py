@@ -146,18 +146,18 @@ def test_master_report_builder_and_export_consistency(db_session, sample_project
     import openpyxl
     wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes))
     sheet_names = wb.sheetnames
+    assert len(sheet_names) == 11
     assert "📊 Dashboard" in sheet_names
-    assert "Technical SEO" in sheet_names
-    assert "On-Page SEO" in sheet_names
-    assert "Local SEO" in sheet_names
-    assert "Content & Links" in sheet_names
-    assert "Keywords" in sheet_names
-    assert "AEO" in sheet_names
-    assert "GEO" in sheet_names
-    assert "AI Citations" in sheet_names
-    assert "Opportunities & Roadmap" in sheet_names
-    assert "Affected Pages" in sheet_names
-    assert "Data Limitations" in sheet_names
+    assert "🔧 Technical SEO" in sheet_names
+    assert "📝 On-Page SEO" in sheet_names
+    assert "📍 Local SEO" in sheet_names
+    assert "🔗 Content & Links" in sheet_names
+    assert "📈 Keywords" in sheet_names
+    assert "🤖 AEO" in sheet_names
+    assert "🌐 GEO" in sheet_names
+    assert "🔍 AI Citations" in sheet_names
+    assert "📈 Keyword Research" in sheet_names
+    assert "📅 Monthly Review" in sheet_names
 
     # 4. PPTX Export
     pptx_bytes = PPTXExportService.generate_presentation(master_report=master_report)

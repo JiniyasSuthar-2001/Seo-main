@@ -19,38 +19,47 @@ from app.services.crawl_storage import CrawlStorage
 
 class TestMaxPagesCeiling5000Plus(unittest.TestCase):
 
-    def setUp(self):
-        self.client = TestClient(app)
-        self.db = SessionLocal()
-        self.user_email = "user_max_pages_5000@example.com"
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(app)
+        cls.db = SessionLocal()
+        cls.user_email = "user_max_pages_5000@example.com"
 
-        user = self.db.query(User).filter(User.email == self.user_email).first()
+        user = cls.db.query(User).filter(User.email == cls.user_email).first()
         if not user:
-            user = User(id="usr_max_pages_5000", email=self.user_email, name="Max Pages User")
-            self.db.add(user)
-            self.db.commit()
+            user = User(id=cls.user_email, email=cls.user_email, name="Max Pages User")
+            cls.db.add(user)
+            cls.db.commit()
 
-        self.proj_id = "proj_max_pages_5000_plus"
-        proj = self.db.query(Project).filter(Project.id == self.proj_id).first()
+        cls.proj_id = "proj_max_pages_5000_plus"
+        proj = cls.db.query(Project).filter(Project.id == cls.proj_id).first()
         if not proj:
-            proj = Project(id=self.proj_id, name="5000 Plus Test Site", url="https://maxpages5000plus.com")
-            self.db.add(proj)
-            self.db.commit()
+            proj = Project(id=cls.proj_id, name="5000 Plus Test Site", url="https://maxpages5000plus.com")
+            cls.db.add(proj)
+            cls.db.commit()
 
-        mem = self.db.query(ProjectMembership).filter(
-            ProjectMembership.user_id == self.user_email,
-            ProjectMembership.project_id == self.proj_id
+        mem = cls.db.query(ProjectMembership).filter(
+            ProjectMembership.user_id == cls.user_email,
+            ProjectMembership.project_id == cls.proj_id
         ).first()
         if not mem:
-            mem = ProjectMembership(id="mem_max_pages_5000", user_id=self.user_email, project_id=self.proj_id, role="OWNER", status="ACTIVE")
-            self.db.add(mem)
-            self.db.commit()
+            mem = ProjectMembership(id="mem_max_pages_5000", user_id=cls.user_email, project_id=cls.proj_id, role="OWNER", status="ACTIVE")
+            cls.db.add(mem)
+            cls.db.commit()
 
-        token = create_access_token(user_id=self.user_email)
-        self.headers = {"Authorization": f"Bearer {token}"}
+        token = create_access_token(user_id=cls.user_email)
+        cls.headers = {"Authorization": f"Bearer {token}"}
 
-    def tearDown(self):
-        self.db.close()
+    @classmethod
+    def tearDownClass(cls):
+        try:
+            cls.db.query(ProjectMembership).filter(ProjectMembership.project_id == cls.proj_id).delete(synchronize_session=False)
+            cls.db.query(Project).filter(Project.id == cls.proj_id).delete(synchronize_session=False)
+            cls.db.query(User).filter((User.id == cls.user_email) | (User.email == cls.user_email)).delete(synchronize_session=False)
+            cls.db.commit()
+        except Exception:
+            pass
+        cls.db.close()
 
     def test_1_numeric_max_pages_ceiling_stops_at_limit(self):
         """Test numeric max_pages (e.g. 3) enforces a hard stopping limit."""

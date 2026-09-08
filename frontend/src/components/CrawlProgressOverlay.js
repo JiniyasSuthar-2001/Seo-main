@@ -173,14 +173,22 @@ class CrawlProgressOverlayManager {
                     if (percentEl) percentEl.innerText = `Unlimited Scope`;
                     if (barEl) barEl.style.width = `100%`;
                     if (crawled > 0 && statusTextEl && statusData.status !== 'cancelling' && statusData.status !== 'cancelled') {
-                        statusTextEl.innerText = `Crawling HTML... Continuing until crawl scope is exhausted.`;
+                        if (statusData.status_message) {
+                            statusTextEl.innerText = statusData.status_message;
+                        } else {
+                            statusTextEl.innerText = `Crawling HTML... Continuing until crawl scope is exhausted.`;
+                        }
                     }
                 } else {
                     if (statsEl) statsEl.innerText = `${crawled.toLocaleString()} / ${discovered.toLocaleString()} pages`;
                     if (percentEl) percentEl.innerText = `${pct}%`;
                     if (barEl) barEl.style.width = `${pct}%`;
                     if (crawled > 0 && statusTextEl && statusData.status !== 'cancelling' && statusData.status !== 'cancelled') {
-                        statusTextEl.innerText = `Crawling HTML, extracting links & meta tags...`;
+                        if (statusData.status_message) {
+                            statusTextEl.innerText = statusData.status_message;
+                        } else {
+                            statusTextEl.innerText = `Crawling HTML, extracting links & meta tags...`;
+                        }
                     }
                 }
 

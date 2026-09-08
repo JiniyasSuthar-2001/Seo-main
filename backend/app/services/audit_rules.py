@@ -1,6 +1,83 @@
 import json
 from typing import List, Dict, Any, Optional
 
+def extract_schema_types(raw_data: Any) -> List[str]:
+    """
+    Extracts authentic Schema.org @type values from crawled JSON-LD structured data.
+    Supports:
+    - Standard dict with @type: {"@type": "Organization"}
+    - @type arrays: {"@type": ["Organization", "LocalBusiness"]}
+    - @graph collections: {"@graph": [{"@type": "WebSite"}, {"@type": "Organization"}]}
+    - Multiple JSON-LD script blocks: list of dicts/lists/strings
+    - JSON-encoded strings
+    - Schema.org URI prefixes normalization (https://schema.org/Product -> Product)
+    Deduplicates and returns types in order of detection.
+    """
+    if not raw_data:
+        return []
+    
+    types = []
+    
+    def _clean_type_name(val: str) -> Optional[str]:
+        if not val or not isinstance(val, str):
+            return None
+        t = val.strip()
+        if not t:
+            return None
+        # Remove Schema.org URI / namespace prefixes
+        if "schema.org/" in t:
+            t = t.split("schema.org/")[-1].strip("/")
+        elif "schema.org#" in t:
+            t = t.split("schema.org#")[-1].strip("#")
+        elif t.startswith("http://") or t.startswith("https://"):
+            t = t.rstrip("/").split("/")[-1]
+        
+        # Remove any leading hash or colon if present (e.g., #Organization, schema:Organization)
+        if ":" in t and not t.startswith("http"):
+            t = t.split(":")[-1]
+        t = t.lstrip("#")
+        
+        # Validate that it looks like a valid schema identifier
+        if t and len(t) < 100:
+            return t
+        return None
+
+    def _process_node(node: Any):
+        if not node:
+            return
+        if isinstance(node, str):
+            try:
+                parsed = json.loads(node)
+                _process_node(parsed)
+            except Exception:
+                pass
+            return
+        if isinstance(node, list):
+            for item in node:
+                _process_node(item)
+            return
+        if isinstance(node, dict):
+            # Check for @graph
+            graph_items = node.get("@graph")
+            if graph_items is not None:
+                _process_node(graph_items)
+            
+            # Check @type
+            raw_type = node.get("@type")
+            if raw_type:
+                if isinstance(raw_type, list):
+                    for t in raw_type:
+                        cleaned = _clean_type_name(t)
+                        if cleaned and cleaned not in types:
+                            types.append(cleaned)
+                elif isinstance(raw_type, str):
+                    cleaned = _clean_type_name(raw_type)
+                    if cleaned and cleaned not in types:
+                        types.append(cleaned)
+
+    _process_node(raw_data)
+    return types
+
 def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Evaluates Technical Site Audit Rule Categories across crawled website pages.
@@ -106,6 +183,16 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             },
             "category_breakdown": unevaluated_categories,
             "category_checks_table": category_table,
+            "structured_data_summary": {
+                "evaluated": False,
+                "total_pages_checked": 0,
+                "total_pages_with_schema": 0,
+                "total_pages_missing_schema": 0,
+                "total_schemas_detected": 0,
+                "unique_schema_types_count": 0,
+                "schema_types_found": {},
+                "pages_detail": []
+            },
             "issues": [],
             "provenance": {
                 "source": "Deterministic 15-Category Site Audit Engine",
@@ -336,20 +423,65 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
         categories["External Links"]["passed"] += html_count
 
         # 11. Structured Data
-        missing_schema_pages = [p for p in html_pages if "structured_data" in p and (not p.get("structured_data") or len(p.get("structured_data", [])) == 0)]
+        structured_data_pages_detail = []
+        schema_type_page_counts = {}
+        total_pages_with_schema = 0
+        total_schemas_count = 0
+
+        for p in html_pages:
+            raw_sd = p.get("structured_data", [])
+            detected_types = extract_schema_types(raw_sd)
+            has_sd = len(detected_types) > 0
+            
+            if has_sd:
+                total_pages_with_schema += 1
+                total_schemas_count += len(detected_types)
+                for st in detected_types:
+                    schema_type_page_counts[st] = schema_type_page_counts.get(st, 0) + 1
+            
+            structured_data_pages_detail.append({
+                "url": p.get("url", ""),
+                "has_structured_data": has_sd,
+                "schema_count": len(detected_types),
+                "detected_schema_types": detected_types,
+                "raw_json_ld": raw_sd if isinstance(raw_sd, list) else ([raw_sd] if raw_sd else [])
+            })
+
+        missing_schema_pages = [p for p in structured_data_pages_detail if not p["has_structured_data"]]
+        missing_count = len(missing_schema_pages)
+
+        # Sort schema_types_found by count descending
+        sorted_schema_types_found = dict(sorted(schema_type_page_counts.items(), key=lambda item: item[1], reverse=True))
+
+        structured_data_summary = {
+            "evaluated": html_count > 0,
+            "total_pages_checked": html_count,
+            "total_pages_with_schema": total_pages_with_schema,
+            "total_pages_missing_schema": missing_count,
+            "total_schemas_detected": total_schemas_count,
+            "unique_schema_types_count": len(sorted_schema_types_found),
+            "schema_types_found": sorted_schema_types_found,
+            "pages_detail": structured_data_pages_detail
+        }
+
+        categories["Structured Data"]["structured_data_summary"] = structured_data_summary
+        categories["Structured Data"]["schema_types_found"] = sorted_schema_types_found
+        categories["Structured Data"]["total_pages_with_schema"] = total_pages_with_schema
+        categories["Structured Data"]["total_pages_missing_schema"] = missing_count
+
         if missing_schema_pages:
             issues.append({
                 "rule_id": "SCHEMA_001",
                 "category": "Structured Data",
                 "severity": "notice",
                 "title": "Pages Missing Schema.org Structured Data",
-                "description": f"{len(missing_schema_pages)} pages lack JSON-LD structured data markups.",
+                "description": f"{missing_count} pages lack JSON-LD structured data markups.",
                 "evidence": f"URLs: {', '.join([p.get('url', '') for p in missing_schema_pages[:3]])}",
                 "affected_urls": [p.get("url") for p in missing_schema_pages],
-                "affected_count": len(missing_schema_pages),
+                "affected_count": missing_count,
                 "recommendation": "Implement JSON-LD structured data (Article, Organization, Product) for rich snippet eligibility."
             })
-            categories["Structured Data"]["notice"] += len(missing_schema_pages)
+            categories["Structured Data"]["notice"] += missing_count
             categories["Structured Data"]["status"] = "Issues Found"
         else:
             categories["Structured Data"]["passed"] += html_count
@@ -427,7 +559,7 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
         issues_count = stats.get("critical", 0) + stats.get("error", 0) + stats.get("warning", 0) + stats.get("notice", 0)
         checks_count = evaluated_pages_for_score if is_eval else 0
         passed_count = max(0, checks_count - issues_count) if is_eval else 0
-        category_table.append({
+        cat_entry = {
             "category": cat_name,
             "evaluated": is_eval,
             "checks_performed": checks_count,
@@ -439,7 +571,13 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             "notice": stats.get("notice", 0),
             "status": stats.get("status", "Not Evaluated"),
             "reason": stats.get("reason", "")
-        })
+        }
+        if cat_name == "Structured Data" and "structured_data_summary" in stats:
+            cat_entry["structured_data_summary"] = stats["structured_data_summary"]
+            cat_entry["schema_types_found"] = stats.get("schema_types_found", {})
+            cat_entry["total_pages_with_schema"] = stats.get("total_pages_with_schema", 0)
+            cat_entry["total_pages_missing_schema"] = stats.get("total_pages_missing_schema", 0)
+        category_table.append(cat_entry)
 
     return {
         "health_score": health_score,
@@ -461,6 +599,7 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
         },
         "category_breakdown": categories,
         "category_checks_table": category_table,
+        "structured_data_summary": categories.get("Structured Data", {}).get("structured_data_summary"),
         "issues": issues,
         "provenance": {
             "source": "Deterministic 15-Category Site Audit Engine",

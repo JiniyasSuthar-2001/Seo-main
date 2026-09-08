@@ -53,6 +53,8 @@ export function renderErrorState(container, errorObj, onRetry = null) {
 export function renderBackendOfflineState(container, message = null, onRetry = null) {
     if (!container) return;
 
+    const displayMessage = message || "The service is temporarily unavailable. Please try again.";
+
     container.innerHTML = `
         <div class="card" style="padding: 40px 24px; text-align: center; max-width: 520px; margin: 32px auto; background: var(--bg-card); border-radius: 14px; border: 1px solid var(--border);">
             <div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(239, 68, 68, 0.15); color: #ef4444; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
@@ -60,7 +62,7 @@ export function renderBackendOfflineState(container, message = null, onRetry = n
             </div>
             <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">We couldn't load this information</h3>
             <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 20px; line-height: 1.5;">
-                The service is temporarily unavailable. Please try again.
+                ${escapeHtml(displayMessage)}
             </p>
             <div style="display: flex; gap: 12px; justify-content: center;">
                 <button id="btn-retry-connection" class="btn btn-primary">Try Again</button>

@@ -90,7 +90,7 @@ def get_project_opportunities(
                 priority_level=item["priority_level"],
                 impact=item["impact"],
                 evidence=item["evidence"],
-                affected_urls_json=json_dumps(item.get("affected_urls", [])),
+                affected_urls_json=json.dumps(item.get("affected_urls", [])),
                 affected_count=item.get("affected_count", 1),
                 recommendation=item["recommendation"],
                 status="Open"

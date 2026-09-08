@@ -239,5 +239,52 @@ class TestLiveVerificationFlows(unittest.TestCase):
         self.assertIsNone(self.db.query(ExternalConnection).filter(ExternalConnection.user_id == self.user_email, ExternalConnection.provider == "google").first())
 
 
+    def test_11_project_team_and_search(self):
+        """11. Project team retrieval, user search, and invitation management."""
+        # 1. Fetch team
+        res = self.client.get(f"/api/projects/{self.proj.id}/team", headers=self.headers)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["project_id"], self.proj.id)
+        self.assertTrue(data["is_owner"])
+        self.assertEqual(data["caller_role"], "OWNER")
+        self.assertEqual(len(data["members"]), 1)
+        self.assertEqual(data["members"][0]["email"], self.user_email)
+
+        # 2. Search users
+        res_search = self.client.get(f"/api/projects/users/search?q={self.user_email[:6]}", headers=self.headers)
+        self.assertEqual(res_search.status_code, 200)
+        search_data = res_search.json()
+        self.assertTrue(len(search_data["users"]) >= 1)
+
+        # 3. Create second user and invite
+        invitee_email = f"teammate_{uuid.uuid4().hex[:6]}@example.com"
+        invitee = User(id=invitee_email, email=invitee_email, name="Teammate User")
+        self.db.add(invitee)
+        self.db.commit()
+
+        res_invite = self.client.post(
+            f"/api/projects/{self.proj.id}/team/invite",
+            json={"email": invitee_email, "role": "MEMBER", "permissions": {"can_view": True, "can_edit": True, "can_crawl": False}},
+            headers=self.headers
+        )
+        self.assertEqual(res_invite.status_code, 200)
+        inv_id = res_invite.json().get("invitation", {}).get("id")
+
+        # 4. Check team pending invitations
+        res_team_after = self.client.get(f"/api/projects/{self.proj.id}/team", headers=self.headers)
+        self.assertEqual(res_team_after.status_code, 200)
+        self.assertEqual(len(res_team_after.json()["pending_invitations"]), 1)
+
+        # 5. Cancel invitation
+        res_cancel = self.client.post(
+            f"/api/projects/{self.proj.id}/team/cancel-invite",
+            json={"invitation_id": inv_id},
+            headers=self.headers
+        )
+        self.assertEqual(res_cancel.status_code, 200)
+
+
 if __name__ == '__main__':
     unittest.main()
+

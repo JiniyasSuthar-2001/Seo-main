@@ -4,8 +4,10 @@ import { renderBackendOfflineState, renderFeatureErrorState } from '../component
 import { apiClient } from '../services/apiClient.js';
 import { renderAIBadge, renderSourceBadge } from '../components/AIBadge.js';
 import { AuditEvidenceModal } from '../components/AuditEvidenceModal.js';
+import { SolveWithAIModal } from '../components/SolveWithAIModal.js';
 import { HealthScoreDetailModal } from '../components/HealthScoreDetailModal.js';
 import { ChecksPerformedDetailModal } from '../components/ChecksPerformedDetailModal.js';
+import { StructuredDataDetailModal } from '../components/StructuredDataDetailModal.js';
 import { renderTooltip } from '../components/Tooltip.js';
 import { Pagination } from '../components/Pagination.js';
 
@@ -187,6 +189,7 @@ export class Technical {
             const totalChecks = auditData.total_evaluated_checks || summary.total_checks || (htmlPagesCount * 14);
             const checksExplanation = auditData.checks_explanation || `${htmlPagesCount} analyzed pages × ${auditData.evaluated_rules_count || 14} evaluated rules`;
             const crawlTimestamp = auditData.crawl_timestamp ? new Date(auditData.crawl_timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recent Scan';
+            const sdSummary = auditData.structured_data_summary || (auditData.category_breakdown && auditData.category_breakdown["Structured Data"] ? auditData.category_breakdown["Structured Data"].structured_data_summary : null);
 
             // Category Translations for Beginner Usability
             const catTranslations = {
@@ -250,22 +253,97 @@ export class Technical {
                     statusColor = 'var(--success)';
                 }
 
+                let extraContentHtml = '';
+                let footerActionHtml = '';
+
+                if (c.category === 'Structured Data' && c.evaluated) {
+                    const sdData = c.structured_data_summary || sdSummary || {};
+                    const typesMap = sdData.schema_types_found || c.schema_types_found || {};
+                    const typeEntries = Object.entries(typesMap);
+                    
+                    if (typeEntries.length > 0) {
+                        const top3 = typeEntries.slice(0, 3);
+                        const remaining = typeEntries.length - top3.length;
+                        const topTypesStr = top3.map(([t, count]) => `${t} (${count})`).join(', ') + 
+                                           (remaining > 0 ? ` +${remaining} more` : '');
+                        extraContentHtml = `
+                            <div style="font-size: 11px; color: var(--text-secondary); margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border); line-height: 1.35;">
+                                <div style="font-size: 10px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 2px;">🏷️ Schema Types:</div>
+                                <div style="color: var(--primary); font-weight: 600; font-size: 11px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;" title="${this.escapeHtml(typeEntries.map(([t, count]) => `${t} (${count})`).join(', '))}">
+                                    ${this.escapeHtml(topTypesStr)}
+                                </div>
+                            </div>
+                        `;
+                        footerActionHtml = `
+                            <button class="btn btn-secondary btn-sm btn-open-sd-modal" 
+                                    style="width: 100%; font-size: 11px; font-weight: 700; padding: 4px 8px; color: var(--primary); border-color: rgba(37, 99, 235, 0.3); background: rgba(37, 99, 235, 0.06); display: flex; align-items: center; justify-content: center; gap: 4px; border-radius: 6px; cursor: pointer;">
+                                <span>Inspect Schema Evidence</span>
+                                <span style="font-size: 10px;">↗</span>
+                            </button>
+                        `;
+                    } else if (c.checks_performed > 0) {
+                        extraContentHtml = `
+                            <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border);">
+                                <em>No Schema.org markup found on any page.</em>
+                            </div>
+                        `;
+                        footerActionHtml = `
+                            <button class="btn btn-secondary btn-sm btn-open-sd-modal" 
+                                    style="width: 100%; font-size: 11px; font-weight: 700; padding: 4px 8px; color: var(--text-secondary); border-color: var(--border); background: var(--bg-subtle); display: flex; align-items: center; justify-content: center; gap: 4px; border-radius: 6px; cursor: pointer;">
+                                <span>Inspect Scanned Pages</span>
+                                <span style="font-size: 10px;">↗</span>
+                            </button>
+                        `;
+                    }
+                } else if (c.status === 'Not Evaluated' || c.status === 'Not Analyzed' || c.evaluated === false) {
+                    footerActionHtml = `
+                        <div style="font-size: 11px; color: var(--text-tertiary); display: flex; align-items: center; gap: 4px;">
+                            <span style="font-size: 8px;">⚪</span>
+                            <span>Not Analyzed</span>
+                        </div>
+                    `;
+                } else if (c.issues_count > 0) {
+                    footerActionHtml = `
+                        <div style="font-size: 11px; font-weight: 600; color: ${statusColor}; display: flex; align-items: center; gap: 4px;">
+                            <span>See findings</span>
+                            <span style="font-size: 10px;">↓</span>
+                        </div>
+                    `;
+                } else {
+                    footerActionHtml = `
+                        <div style="font-size: 11px; color: var(--text-tertiary); display: flex; align-items: center; gap: 4px;">
+                            <span style="color: var(--success); font-size: 10px;">✓</span>
+                            <span>All checks passed</span>
+                        </div>
+                    `;
+                }
+
                 return `
                     <div class="category-card-item" 
                          data-category="${this.escapeHtml(c.category)}"
-                         style="position: relative; padding: 14px 18px 14px 14px; background: var(--bg-card); border-radius: 10px; border: ${isSelected ? '2px solid var(--primary)' : '1px solid var(--border)'}; cursor: pointer; transition: all 0.18s ease; overflow: hidden; display: flex; justify-content: space-between; align-items: center; box-shadow: ${isSelected ? '0 0 0 1px var(--primary)' : 'none'};">
-                        <div style="flex: 1; padding-right: 10px;">
-                            <div style="font-size: 13.5px; font-weight: 700; color: ${isSelected ? 'var(--primary)' : 'var(--text-primary)'}; margin-bottom: 6px;">
+                         style="border: ${isSelected ? '2px solid var(--primary)' : '1px solid var(--border)'}; box-shadow: ${isSelected ? '0 0 0 1px var(--primary)' : 'none'};">
+                        
+                        <!-- CARD CONTENT TOP & MIDDLE -->
+                        <div style="flex: 1; padding-right: 6px; display: flex; flex-direction: column;">
+                            <div style="font-size: 13.5px; font-weight: 700; color: ${isSelected ? 'var(--primary)' : 'var(--text-primary)'}; line-height: 1.3; min-height: 34px; display: flex; align-items: center;">
                                 ${plainCatName}
                             </div>
-                            <div style="display: flex; gap: 10px; font-size: 11.5px; color: var(--text-secondary);">
+                            <div style="display: flex; gap: 8px; font-size: 11.5px; color: var(--text-secondary); margin-top: 4px;">
                                 <span><strong>${c.checks_performed || 0}</strong> checked</span>
                                 <span style="color: ${c.evaluated ? 'var(--success)' : 'var(--text-tertiary)'};"><strong>${c.passed || 0}</strong> passed</span>
                             </div>
                             <div style="font-size: 11.5px; margin-top: 4px; font-weight: 600; color: ${statusColor};">
                                 ${statusText}
                             </div>
+                            ${extraContentHtml}
                         </div>
+
+                        <!-- CARD FOOTER ACTION (PINNED TO BOTTOM VIA MARGIN-TOP AUTO) -->
+                        <div style="margin-top: auto; padding-top: 8px; padding-right: 6px;">
+                            ${footerActionHtml}
+                        </div>
+
+                        <!-- ACCENT COLOR LINE -->
                         <div style="position: absolute; right: 0; top: 0; bottom: 0; width: 5px; background: ${rightLineColor}; border-top-right-radius: 9px; border-bottom-right-radius: 9px;"></div>
                     </div>
                 `;
@@ -291,15 +369,17 @@ export class Technical {
                             <div style="font-weight: 700; color: var(--text-primary); margin-bottom: 2px;">${this.escapeHtml(iss.title)}</div>
                             <div style="font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 6px;">${this.escapeHtml(iss.description || '')}</div>
                             <button class="btn btn-secondary btn-sm btn-open-evidence-modal" 
-                                    data-idx="${globalIdx}"
-                                    style="font-size: 11.5px; font-weight: 600; padding: 4px 12px;">
+                                     data-idx="${globalIdx}"
+                                     style="font-size: 11.5px; font-weight: 600; padding: 4px 12px;">
                                 See What We Found (${urlsList.length} affected page${urlsList.length === 1 ? '' : 's'})
                             </button>
                         </td>
                         <td style="padding: 12px 16px; font-size: 12px;">
                             <span class="badge badge-secondary" style="font-size: 11px;">${urlsList.length} Affected</span>
                         </td>
-                        <td style="padding: 12px 16px; font-size: 12.5px; color: var(--text-secondary);">${this.escapeHtml(iss.recommendation || 'Fix identified issue.')}</td>
+                        <td style="padding: 12px 16px; font-size: 12.5px; color: var(--text-secondary);">
+                            <div style="line-height: 1.4;">${this.escapeHtml(iss.recommendation || 'Fix identified issue.')}</div>
+                        </td>
                     </tr>
                 `;
             }).join('');
@@ -388,7 +468,7 @@ export class Technical {
                         </div>
                         ${renderSourceBadge('crawl')}
                     </div>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px;">
+                    <div class="what-we-checked-grid">
                         ${categoryCardsHtml}
                     </div>
                 </div>
@@ -532,6 +612,18 @@ export class Technical {
                             scanDate: crawlTimestamp
                         });
                     }
+                });
+            });
+
+            // Bind Structured Data Detail Modal Triggers
+            container.querySelectorAll('.btn-open-sd-modal').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    StructuredDataDetailModal.open({
+                        structuredDataSummary: sdSummary,
+                        domain: selectedProj ? selectedProj.domain : 'Target Site',
+                        crawlTimestamp: crawlTimestamp
+                    });
                 });
             });
 

@@ -470,8 +470,27 @@ def export_backlinks_csv(
     return Response(content=csv_str.encode("utf-8"), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
 
 
+@router.get("/backlinks/export.xlsx")
+@router.get("/reports/backlinks.xlsx")
+def export_backlinks_xlsx(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    report_data = get_shared_project_report_data(project, db, user_id)
+    xlsx_bytes = XLSXExportService.generate_backlinks_xlsx(report_data["inbound_backlinks"])
+    filename = build_export_filename(project.domain, "backlinks", "xlsx")
+    record_report_generation(db, project, "Backlinks XLSX Export", "xlsx", filename, None, "Backlink Engine")
+    return Response(content=xlsx_bytes, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
+
+
 # ------------------------------------------------------------------------------
-# 7. INTERNAL LINKS REPORT (PDF & CSV)
+# 7. INTERNAL LINKS REPORT (PDF & CSV & XLSX)
 # ------------------------------------------------------------------------------
 @router.get("/internal-links/report.pdf")
 @router.get("/reports/internal-links")
@@ -510,6 +529,19 @@ def get_internal_links_pdf_report(
 @router.get("/reports/internal-links.csv")
 def export_internal_links_csv(
     project_id: str,
+    section: str = Query("graph"),
+    type: Optional[str] = Query(None),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    from app.routers.internal_links import internal_links_export_csv as handle_internal_links_csv
+    return handle_internal_links_csv(project_id=project_id, section=section, type=type, user_id=user_id, db=db)
+
+
+@router.get("/internal-links/export.xlsx")
+@router.get("/reports/internal-links.xlsx")
+def export_internal_links_xlsx(
+    project_id: str,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
@@ -519,14 +551,14 @@ def export_internal_links_csv(
         raise HTTPException(status_code=404, detail="Project not found")
 
     report_data = get_shared_project_report_data(project, db, user_id)
-    csv_str = CSVExportService.generate_internal_links_csv(report_data["internal_links"])
-    filename = build_export_filename(project.domain, "internal-links", "csv")
-    record_report_generation(db, project, "Internal Links CSV", "csv", filename, report_data.get("crawl_id"), "Website Scan")
-    return Response(content=csv_str.encode("utf-8"), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
+    xlsx_bytes = XLSXExportService.generate_internal_links_xlsx(report_data["internal_links"])
+    filename = build_export_filename(project.domain, "internal-links", "xlsx")
+    record_report_generation(db, project, "Internal Links XLSX", "xlsx", filename, report_data.get("crawl_id"), "Website Scan")
+    return Response(content=xlsx_bytes, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
 
 
 # ------------------------------------------------------------------------------
-# 8. COMPETITORS REPORT (CSV)
+# 8. COMPETITORS REPORT (CSV & XLSX)
 # ------------------------------------------------------------------------------
 @router.get("/competitors/export.csv")
 @router.get("/reports/competitors.csv")
@@ -547,8 +579,48 @@ def export_competitors_csv(
     return Response(content=csv_str.encode("utf-8"), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
 
 
+@router.get("/competitors/export.xlsx")
+@router.get("/reports/competitors.xlsx")
+def export_competitors_xlsx(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    report_data = get_shared_project_report_data(project, db, user_id)
+    xlsx_bytes = XLSXExportService.generate_competitors_xlsx(report_data["competitors"])
+    filename = build_export_filename(project.domain, "competitors", "xlsx")
+    record_report_generation(db, project, "Competitors XLSX Export", "xlsx", filename, None, "User Specified / SERP Discovery")
+    return Response(content=xlsx_bytes, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
+
+
 # ------------------------------------------------------------------------------
-# 9. TECHNICAL SEO REPORT (PDF & CSV)
+# 8b. RANKINGS REPORT (CSV & XLSX)
+# ------------------------------------------------------------------------------
+@router.get("/rankings/export.xlsx")
+@router.get("/reports/rankings.xlsx")
+def export_rankings_xlsx(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    xlsx_bytes = XLSXExportService.generate_rankings_xlsx([])
+    filename = build_export_filename(project.domain, "rankings", "xlsx")
+    record_report_generation(db, project, "Rankings XLSX Export", "xlsx", filename, None, "Rank Tracking Engine")
+    return Response(content=xlsx_bytes, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
+
+
+# ------------------------------------------------------------------------------
+# 9. TECHNICAL SEO REPORT (PDF & CSV & XLSX)
 # ------------------------------------------------------------------------------
 @router.get("/technical/report.pdf")
 @router.get("/reports/technical")
@@ -622,7 +694,7 @@ def export_technical_xlsx(
 
 
 # ------------------------------------------------------------------------------
-# 10. OPPORTUNITIES REPORT (CSV)
+# 10. OPPORTUNITIES REPORT (CSV & XLSX)
 # ------------------------------------------------------------------------------
 @router.get("/opportunities/export.csv")
 @router.get("/reports/opportunities.csv")
@@ -641,6 +713,25 @@ def export_opportunities_csv(
     filename = build_export_filename(project.domain, "recommended-actions", "csv")
     record_report_generation(db, project, "Recommended Actions CSV", "csv", filename, report_data.get("crawl_id"), "Opportunity Engine")
     return Response(content=csv_str.encode("utf-8"), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
+
+
+@router.get("/opportunities/export.xlsx")
+@router.get("/reports/opportunities.xlsx")
+def export_opportunities_xlsx(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    report_data = get_shared_project_report_data(project, db, user_id)
+    xlsx_bytes = XLSXExportService.generate_opportunities_xlsx(report_data["opportunities"])
+    filename = build_export_filename(project.domain, "recommended-actions", "xlsx")
+    record_report_generation(db, project, "Recommended Actions XLSX", "xlsx", filename, report_data.get("crawl_id"), "Opportunity Engine")
+    return Response(content=xlsx_bytes, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f"attachment; filename=\"{filename}\""})
 
 
 # ------------------------------------------------------------------------------

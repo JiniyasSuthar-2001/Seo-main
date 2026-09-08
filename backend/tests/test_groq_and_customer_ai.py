@@ -39,6 +39,12 @@ class TestGroqAndCustomerAI(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        try:
+            cls.db.query(ExternalConnection).filter(ExternalConnection.user_id.in_([cls.user_a.id, cls.user_b.id])).delete(synchronize_session=False)
+            cls.db.query(User).filter(User.id.in_([cls.user_a.id, cls.user_b.id])).delete(synchronize_session=False)
+            cls.db.commit()
+        except Exception:
+            pass
         cls.db.close()
 
     def test_01_groq_status_endpoint(self):

@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from app.models.project import Project
 from app.models.project_membership import ProjectMembership
 
+from app.models.user import User
+
 def get_user_membership(db: Session, user_id: str, project_id: str) -> ProjectMembership:
     """
     Enforces project isolation and access control.
@@ -12,10 +14,18 @@ def get_user_membership(db: Session, user_id: str, project_id: str) -> ProjectMe
     if not project_id or project_id == "all":
         return None
 
+    user = db.query(User).filter((User.id == user_id) | (User.email == user_id)).first()
+    user_ids = [user_id]
+    if user:
+        if user.id:
+            user_ids.append(user.id)
+        if user.email:
+            user_ids.append(user.email)
+
     # Check existing membership
     membership = db.query(ProjectMembership).filter(
         ProjectMembership.project_id == project_id,
-        ProjectMembership.user_id == user_id,
+        ProjectMembership.user_id.in_(user_ids),
         ProjectMembership.status == "ACTIVE"
     ).first()
 

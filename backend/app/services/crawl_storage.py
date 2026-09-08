@@ -23,6 +23,7 @@ class CrawlStorage:
         issues = results.get("issues", [])
         internal_links = results.get("internal_links", [])
         external_links = results.get("external_links", [])
+        broken_links = results.get("broken_links", [])
 
         # 1. Check for previous crawl to run diff comparison
         latest_pointer_path = os.path.join(website_dir, "latest.json")
@@ -39,6 +40,9 @@ class CrawlStorage:
         critical_count = sum(1 for i in issues if i.get("severity") == "Critical")
         warning_count = sum(1 for i in issues if i.get("severity") == "Warning")
         notice_count = sum(1 for i in issues if i.get("severity") == "Notice")
+
+        internal_broken_count = sum(1 for b in broken_links if b.get("link_type") == "internal")
+        external_broken_count = sum(1 for b in broken_links if b.get("link_type") == "external")
 
         raw_max = results.get("max_pages", 5000)
         is_5000_plus = (raw_max == "5000+" or raw_max == 0 or raw_max is None or str(raw_max).strip() == "5000+")
@@ -57,7 +61,10 @@ class CrawlStorage:
             "warning_issues": warning_count,
             "notice_issues": notice_count,
             "internal_links_count": len(internal_links),
-            "external_links_count": len(external_links)
+            "external_links_count": len(external_links),
+            "broken_links_count": len(broken_links),
+            "internal_broken_links_count": internal_broken_count,
+            "external_broken_links_count": external_broken_count
         }
 
         # Write files
@@ -67,6 +74,7 @@ class CrawlStorage:
             "issues.json": issues,
             "internal_links.json": internal_links,
             "external_links.json": external_links,
+            "broken_links.json": broken_links,
             "summary.json": metadata
         }
 
@@ -76,13 +84,13 @@ class CrawlStorage:
                 json.dump(content, f, indent=4)
 
         # Storage Verification Step
-        required_artifacts = ["metadata.json", "pages.json", "issues.json", "internal_links.json", "external_links.json", "summary.json"]
+        required_artifacts = ["metadata.json", "pages.json", "issues.json", "internal_links.json", "external_links.json", "broken_links.json", "summary.json"]
         missing_artifacts = [f for f in required_artifacts if not os.path.exists(os.path.join(crawl_dir, f))]
         
         if missing_artifacts:
             raise RuntimeError(f"Storage Verification Failed. Missing artifacts: {missing_artifacts}")
 
-        print(f"[STORAGE VERIFIED] All 6 snapshot artifacts written successfully to {crawl_dir}", flush=True)
+        print(f"[STORAGE VERIFIED] All 7 snapshot artifacts written successfully to {crawl_dir}", flush=True)
 
         # 3. Generate Crawl Comparison if previous snapshot exists
         if prev_snapshot_path and os.path.exists(prev_snapshot_path):

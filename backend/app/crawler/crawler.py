@@ -7,6 +7,7 @@ import json
 from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
 from typing import Set, Dict, Any, List, Optional, Callable
+from app.crawler.broken_link_checker import BrokenLinkChecker
 
 STATIC_ASSET_EXTENSIONS = (
     ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".ico", ".bmp", ".tiff",
@@ -70,6 +71,7 @@ class SEOCrawler:
         self.progress_callback = progress_callback
         self.cancellation_checker = cancellation_checker
         self.is_cancelled = False
+        self.verify_ssl = True
 
         parsed_url = urlparse(self.start_url)
         self.domain = parsed_url.netloc.lower()
@@ -92,6 +94,7 @@ class SEOCrawler:
         self.issues: List[Dict[str, Any]] = []
         self.internal_links: List[Dict[str, Any]] = []
         self.external_links: List[Dict[str, Any]] = []
+        self.broken_links: List[Dict[str, Any]] = []
         self.asset_checks: List[Dict[str, Any]] = []
         
         self.is_running = False
@@ -616,7 +619,7 @@ class SEOCrawler:
         self.is_running = True
         print(f"[CRAWL] Starting real Internet crawl for {self.start_url}", flush=True)
         
-        async with httpx.AsyncClient(verify=False) as client:
+        async with httpx.AsyncClient(verify=self.verify_ssl) as client:
             await self.fetch_robots_txt(client)
             await self.fetch_sitemap_xml(client)
 
@@ -634,6 +637,40 @@ class SEOCrawler:
                 await asyncio.sleep(0.2)
 
         self.is_running = False
+
+        # Run Broken-Link Checking on all discovered internal and external links
+        if not self.is_cancelled:
+            print(f"[CRAWL] Checking broken links for {len(self.internal_links)} internal and {len(self.external_links)} external link references...", flush=True)
+            link_checker = BrokenLinkChecker(
+                concurrency=20,
+                request_timeout=10.0,
+                user_agent=self.user_agent
+            )
+            
+            def _link_progress(current: int, total: int, msg: str = ""):
+                if self.progress_callback:
+                    try:
+                        self.progress_callback(len(self.visited), max(len(self.queue_status), len(self.visited)), msg)
+                    except TypeError:
+                        try:
+                            self.progress_callback(len(self.visited), max(len(self.queue_status), len(self.visited)))
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+
+            try:
+                self.broken_links = await link_checker.check_all_links(
+                    internal_links=self.internal_links,
+                    external_links=self.external_links,
+                    crawled_pages=self.pages,
+                    progress_callback=_link_progress,
+                    cancellation_checker=self.cancellation_checker
+                )
+                print(f"[CRAWL] Broken-link verification complete: Found {len(self.broken_links)} broken links.", flush=True)
+            except Exception as link_err:
+                print(f"[CRAWL] Optional broken-link check error: {link_err}", flush=True)
+                self.broken_links = []
 
         successful_pages = [p for p in self.pages if p.get("is_success") and p.get("status_code") == 200]
         failed_pages = [p for p in self.pages if not p.get("is_success") or (p.get("status_code") or 0) >= 400]
@@ -653,7 +690,7 @@ class SEOCrawler:
         else:
             overall_status = "failed"
 
-        print(f"[CRAWL FINISHED] Status: '{overall_status}'. Total Pages Saved: {len(self.pages)}, Successful: {len(successful_pages)}, Failed/Blocked: {len(failed_pages)}, Issues: {len(self.issues)}", flush=True)
+        print(f"[CRAWL FINISHED] Status: '{overall_status}'. Total Pages Saved: {len(self.pages)}, Successful: {len(successful_pages)}, Failed/Blocked: {len(failed_pages)}, Broken Links: {len(self.broken_links)}, Issues: {len(self.issues)}", flush=True)
         
         return {
             "status": overall_status,
@@ -665,5 +702,6 @@ class SEOCrawler:
             "issues": self.issues,
             "internal_links": self.internal_links,
             "external_links": self.external_links,
+            "broken_links": self.broken_links,
             "asset_checks": self.asset_checks
         }

@@ -177,6 +177,67 @@ class CSVExportService:
         return CSVExportService.generate_csv_string(headers, rows)
 
     @staticmethod
+    def generate_orphan_pages_csv(orphan_pages: List[Any]) -> str:
+        """Generates CSV for orphan pages (pages with 0 incoming internal links)."""
+        headers = ["Page URL", "Link Status", "Recommended Action"]
+        rows = []
+        for item in orphan_pages:
+            url = item if isinstance(item, str) else (item.get("url") or item.get("page_url") or str(item)) if isinstance(item, dict) else str(item)
+            rows.append([
+                url,
+                "0 Links Pointing to This Page",
+                "Add a link from your homepage or main menu to help visitors find this page."
+            ])
+        return CSVExportService.generate_csv_string(headers, rows)
+
+    @staticmethod
+    def generate_anchor_texts_csv(anchor_texts: List[Dict[str, Any]]) -> str:
+        """Generates CSV for anchor text frequency usage across internal links."""
+        headers = ["Link Text", "Times Used"]
+        rows = []
+        for a in anchor_texts:
+            if isinstance(a, dict):
+                anc = a.get("anchor_text") or a.get("text") or "(No text)"
+                freq = a.get("frequency") or a.get("count") or a.get("times_used") or 0
+                rows.append([anc, freq])
+            elif isinstance(a, (list, tuple)) and len(a) >= 2:
+                rows.append([a[0], a[1]])
+        return CSVExportService.generate_csv_string(headers, rows)
+
+    @staticmethod
+    def generate_link_opportunities_csv(opportunities: List[Dict[str, Any]]) -> str:
+        """Generates CSV for internal link growth recommendations."""
+        headers = ["Source Page", "Target Page", "Suggested Link Text", "Reason", "Priority"]
+        rows = []
+        for o in opportunities:
+            if isinstance(o, dict):
+                rows.append([
+                    o.get("source_page", "") or o.get("source", ""),
+                    o.get("target_page", "") or o.get("target", ""),
+                    o.get("suggested_anchor", "") or o.get("suggested_anchor_text", "") or o.get("suggested_link_text", ""),
+                    o.get("reason", "") or o.get("details", ""),
+                    o.get("priority", "") or o.get("priority_level", "Medium")
+                ])
+        return CSVExportService.generate_csv_string(headers, rows)
+
+    @staticmethod
+    def generate_broken_links_csv(broken_links: List[Dict[str, Any]]) -> str:
+        """Generates CSV for internal and external broken links."""
+        headers = ["Source Page", "Broken URL", "Link Type", "Status Code", "Link Text", "Error"]
+        rows = []
+        for b in broken_links:
+            if isinstance(b, dict):
+                rows.append([
+                    b.get("source", "") or b.get("source_url", ""),
+                    b.get("target", "") or b.get("broken_url", "") or b.get("target_url", ""),
+                    b.get("link_type", "internal"),
+                    b.get("status_code", 0) or "Failed",
+                    b.get("anchor_text", "") or b.get("anchor", "") or b.get("link_text", ""),
+                    b.get("error", "") or "Broken Link"
+                ])
+        return CSVExportService.generate_csv_string(headers, rows)
+
+    @staticmethod
     def generate_outbound_links_csv(outbound_links: List[Dict[str, Any]]) -> str:
         headers = ["Source Page URL", "External Destination URL", "Anchor Text", "Classification", "Where This Data Came From"]
         rows = []
@@ -189,6 +250,28 @@ class CSVExportService:
                 "Automatic Website Check"
             ])
         return CSVExportService.generate_csv_string(headers, rows)
+
+    @staticmethod
+    def generate_rankings_csv(rankings: List[Dict[str, Any]]) -> str:
+        headers = ["Keyword", "URL", "Position", "Previous Position", "Location", "Search Engine", "Device", "Where This Data Came From"]
+        rows = []
+        for r in rankings:
+            loc = r.get("location") or "Unknown"
+            rows.append([
+                r.get("keyword", ""),
+                r.get("url") or r.get("target_url") or "",
+                r.get("position", "Unranked"),
+                r.get("previous_position", "N/A"),
+                loc,
+                r.get("search_engine", "Google"),
+                r.get("device", "Desktop"),
+                r.get("source") or "Rank Tracker"
+            ])
+        return CSVExportService.generate_csv_string(headers, rows)
+
+    @staticmethod
+    def generate_backlinks_csv(backlinks: List[Dict[str, Any]]) -> str:
+        return CSVExportService.generate_inbound_backlinks_csv(backlinks)
 
     @staticmethod
     def generate_inbound_backlinks_csv(backlinks: List[Dict[str, Any]]) -> str:

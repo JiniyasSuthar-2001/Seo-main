@@ -33,13 +33,15 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
     db = SessionLocal()
     opts = options or {}
 
-    def update_db_progress(crawled: int, discovered: int):
+    def update_db_progress(crawled: int, discovered: int, status_msg: Optional[str] = None):
         try:
             db_progress = SessionLocal()
             cs = db_progress.query(CrawlSession).filter(CrawlSession.id == session_id).first()
             if cs:
                 cs.pages_crawled = crawled
                 cs.pages_discovered = max(discovered, crawled, 1)
+                if status_msg is not None:
+                    cs.status_message = status_msg
                 db_progress.commit()
             db_progress.close()
         except Exception as p_err:
@@ -117,8 +119,12 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
                 if pages:
                     audit_eval = evaluate_site_audit_rules(pages)
                     generated = generate_central_opportunities(audit_eval, [], pages)
+                    existing_status_map = {
+                        o.title: o.status for o in db.query(ActionOpportunity).filter(ActionOpportunity.project_id == project.id).all()
+                    }
                     db.query(ActionOpportunity).filter(ActionOpportunity.project_id == project.id).delete()
                     for item in generated:
+                        saved_status = existing_status_map.get(item["title"], "Open")
                         new_opp = ActionOpportunity(
                             id=str(uuid.uuid4()),
                             project_id=project.id,
@@ -131,7 +137,7 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
                             affected_urls_json=json.dumps(item.get("affected_urls", [])),
                             affected_count=item.get("affected_count", 1),
                             recommendation=item["recommendation"],
-                            status="Open"
+                            status=saved_status
                         )
                         db.add(new_opp)
                     db.commit()
@@ -239,7 +245,52 @@ async def get_crawl_status(
         "pages_discovered": crawl_session.pages_discovered,
         "pages_crawled": crawl_session.pages_crawled,
         "issues_found": crawl_session.issues_found,
-        "max_pages": max_pages_ceiling
+        "max_pages": max_pages_ceiling,
+        "status_message": crawl_session.status_message
+    }
+
+@router.get("/{project_id}/crawl/broken-links")
+async def get_crawl_broken_links(
+    project_id: str,
+    link_type: Optional[str] = None,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        return {"broken_links": [], "total": 0, "internal_count": 0, "external_count": 0}
+
+    domain = project.domain
+    storage = CrawlStorage()
+    website_dir = storage._get_website_folder(domain, domain, project.id)
+    latest_path = os.path.join(website_dir, "latest.json")
+
+    broken_links = []
+    if os.path.exists(latest_path):
+        try:
+            with open(latest_path, "r") as f:
+                latest = json.load(f)
+            crawl_dir = normalize_stored_path(latest.get("path"))
+            bl_file = os.path.join(crawl_dir, "broken_links.json")
+            if os.path.exists(bl_file):
+                with open(bl_file, "r") as bf:
+                    broken_links = json.load(bf)
+        except Exception as e:
+            print(f"[CRAWL API] Error loading broken_links.json: {e}", flush=True)
+
+    internal_count = sum(1 for b in broken_links if b.get("link_type") == "internal")
+    external_count = sum(1 for b in broken_links if b.get("link_type") == "external")
+
+    if link_type and link_type.lower() in ("internal", "external"):
+        broken_links = [b for b in broken_links if b.get("link_type", "").lower() == link_type.lower()]
+
+    return {
+        "domain": domain,
+        "broken_links": broken_links,
+        "total": len(broken_links),
+        "internal_count": internal_count,
+        "external_count": external_count
     }
 
 @router.get("/{project_id}/crawl-history")

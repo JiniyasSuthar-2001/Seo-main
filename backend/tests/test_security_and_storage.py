@@ -13,18 +13,20 @@ from app.llm.context_builder import LLMContextBuilder
 class TestSecurityAndStorage(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        import uuid
         Base.metadata.create_all(bind=engine)
         cls.client = TestClient(app)
         cls.db = SessionLocal()
-        cls.db.query(User).filter(User.email.in_(["sec_usera@example.com", "sec_userb@example.com"])).delete(synchronize_session=False)
-        cls.db.commit()
+
+        cls.user_a_email = f"sec_usera_{uuid.uuid4().hex[:6]}@example.com"
+        cls.user_b_email = f"sec_userb_{uuid.uuid4().hex[:6]}@example.com"
 
         # Create User A
-        cls.user_a = User(id="user_a_id", email="sec_usera@example.com", name="User A")
+        cls.user_a = User(id=cls.user_a_email, email=cls.user_a_email, name="User A")
         cls.db.add(cls.user_a)
         
         # Create User B
-        cls.user_b = User(id="user_b_id", email="sec_userb@example.com", name="User B")
+        cls.user_b = User(id=cls.user_b_email, email=cls.user_b_email, name="User B")
         cls.db.add(cls.user_b)
         cls.db.commit()
 
@@ -45,6 +47,13 @@ class TestSecurityAndStorage(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        try:
+            cls.db.query(ProjectMembership).filter(ProjectMembership.project_id == cls.project_a.id).delete(synchronize_session=False)
+            cls.db.query(Project).filter(Project.id == cls.project_a.id).delete(synchronize_session=False)
+            cls.db.query(User).filter(User.id.in_([cls.user_a.id, cls.user_b.id])).delete(synchronize_session=False)
+            cls.db.commit()
+        except Exception:
+            pass
         cls.db.close()
 
     def test_01_datasources_authorization(self):

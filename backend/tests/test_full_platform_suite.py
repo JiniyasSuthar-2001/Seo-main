@@ -62,9 +62,9 @@ def test_full_platform_remediation_suite():
         role="Owner"
     )
     db.add(membership)
-    db.commit()
-
-    client.headers = {"X-User-ID": test_user.id}
+    from app.config.auth import create_access_token
+    token = create_access_token(user_id=test_user.id)
+    client.headers = {"Authorization": f"Bearer {token}", "X-User-ID": test_user.id}
 
     try:
         # 1. Keywords CSV Import Test
@@ -192,7 +192,9 @@ def test_full_platform_remediation_suite():
     finally:
         # Clean up test project
         db.query(Keyword).filter(Keyword.project_id == proj_id).delete()
+        db.query(ProjectMembership).filter(ProjectMembership.project_id == proj_id).delete()
         db.query(Project).filter(Project.id == proj_id).delete()
+        db.query(User).filter(User.id == test_user.id).delete()
         db.commit()
         db.close()
 

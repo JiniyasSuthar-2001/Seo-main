@@ -69,6 +69,7 @@ export class Settings {
 
     async renderTabContent(container) {
         try {
+            await authStore.checkSession();
             await projectStore.ensureInitialized();
             const selectedProj = projectStore.getSelectedProject();
             const projectId = projectStore.getSelectedProjectId();
@@ -178,6 +179,26 @@ export class Settings {
                 `;
 
             } else if (this.activeTab === 'workspace') {
+                const projects = projectStore.projects || [];
+
+                if (projects.length === 0) {
+                    container.innerHTML = `
+                        <div class="card" style="padding: 40px 24px; text-align: center; max-width: 600px; margin: 32px auto; background: var(--bg-card); border-radius: 14px; border: 1px solid var(--border);">
+                            <div style="width: 48px; height: 48px; border-radius: 50%; background: var(--bg-secondary); color: var(--text-tertiary); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; font-size: 22px;">
+                                📁
+                            </div>
+                            <h3 style="font-size: 18px; font-weight: 700; margin-bottom: 8px; color: var(--text-primary);">No Accessible Projects</h3>
+                            <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 20px; line-height: 1.5;">
+                                You do not currently have access to any projects in this workspace. Create a project to start tracking SEO intelligence.
+                            </p>
+                            <div style="display: flex; gap: 12px; justify-content: center;">
+                                <a href="/projects" class="btn btn-primary btn-sm">+ Create Project</a>
+                            </div>
+                        </div>
+                    `;
+                    return;
+                }
+
                 const projIndustry = selectedProj ? (selectedProj.industry || '') : '';
                 const projServices = selectedProj ? (selectedProj.services || '') : '';
                 const projServiceAreas = selectedProj ? (selectedProj.service_areas || '') : '';
@@ -196,14 +217,28 @@ export class Settings {
                                 </div>
                             </div>
 
+                            <!-- PROJECT SELECTION DROPDOWN -->
+                            <div style="margin-bottom: 18px;">
+                                <label for="settings-project-select" style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--text-secondary);">
+                                    Active Project
+                                </label>
+                                <select id="settings-project-select" style="width: 100%; padding: 9px 12px; font-size: 13.5px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-primary); cursor: pointer;">
+                                    ${projects.map(p => `
+                                        <option value="${this.escapeHtml(p.id)}" ${p.id === projectId ? 'selected' : ''}>
+                                            ${this.escapeHtml(p.name)} — ${this.escapeHtml(p.domain || p.url || '')}
+                                        </option>
+                                    `).join('')}
+                                </select>
+                            </div>
+
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; font-size: 14px; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--border);">
                                 <div>
                                     <span style="color: var(--text-tertiary); font-size: 11px; font-weight: 700; text-transform: uppercase; display: block; margin-bottom: 4px;">PROJECT NAME</span>
-                                    <strong style="font-size: 16px; color: var(--text-primary);">${projName}</strong>
+                                    <strong style="font-size: 16px; color: var(--text-primary);">${this.escapeHtml(projName)}</strong>
                                 </div>
                                 <div>
                                     <span style="color: var(--text-tertiary); font-size: 11px; font-weight: 700; text-transform: uppercase; display: block; margin-bottom: 4px;">TARGET DOMAIN</span>
-                                    <a href="${projDomain}" target="_blank" style="color: var(--primary); font-weight: 600; text-decoration: none;">${projDomain}</a>
+                                    <a href="${this.escapeHtml(projDomain)}" target="_blank" style="color: var(--primary); font-weight: 600; text-decoration: none;">${this.escapeHtml(projDomain)}</a>
                                 </div>
                             </div>
 
@@ -242,6 +277,27 @@ export class Settings {
 
                     </div>
                 `;
+
+                // Handle Project Switcher
+                const projSelect = container.querySelector('#settings-project-select');
+                if (projSelect) {
+                    projSelect.addEventListener('change', async (e) => {
+                        const newProjId = e.target.value;
+                        if (newProjId && newProjId !== projectId) {
+                            projectStore.setSelectedProjectId(newProjId);
+                            const teamWrapper = container.querySelector('#settings-team-wrapper');
+                            if (teamWrapper) {
+                                teamWrapper.innerHTML = `
+                                    <div class="card" style="padding: 24px; text-align: center; color: var(--text-secondary); margin-bottom: 20px;">
+                                        Loading team members...
+                                    </div>
+                                `;
+                            }
+                            await this.renderTabContent(container);
+                            window.dispatchEvent(new CustomEvent('project:selected', { detail: { projectId: newProjId } }));
+                        }
+                    });
+                }
 
                 const ctxForm = container.querySelector('#project-business-context-form');
                 if (ctxForm && isOwner && projectId) {
@@ -290,26 +346,46 @@ export class Settings {
                 }
 
                 const teamWrapper = container.querySelector('#settings-team-wrapper');
-                if (teamWrapper && projectId) {
-                    await this.renderTeamSection(teamWrapper, projectId, isOwner);
+                if (teamWrapper) {
+                    if (projectId) {
+                        await this.renderTeamSection(teamWrapper, projectId, isOwner, projName);
+                    } else {
+                        teamWrapper.innerHTML = `
+                            <div class="card" style="padding: 32px; text-align: center; color: var(--text-secondary); margin-bottom: 20px;">
+                                <h3 style="font-size: 16px; font-weight: 700; margin: 0 0 8px; color: var(--text-primary);">No Project Selected</h3>
+                                <p style="margin: 0; font-size: 13.5px;">Please select or create a website project to manage team access and teammate permissions.</p>
+                            </div>
+                        `;
+                    }
                 }
             }
 
         } catch (e) {
-            if (e.name === 'TypeError' || e.message.includes('fetch') || apiClient.status === 'OFFLINE') {
+            console.error('[SETTINGS] Tab render error:', e);
+            if (e.isNetworkError) {
                 renderBackendOfflineState(container, `Unable to connect to backend API server at ${API_BASE_URL}.`, () => this.renderTabContent(container));
+            } else if (e.status === 401) {
+                renderFeatureErrorState(container, "Session Expired", "Your session has expired. Please sign in again to access workspace settings.", () => window.location.href = '/login');
+            } else if (e.status === 403) {
+                renderFeatureErrorState(container, "Access Restricted", "You do not have permission to access these settings.", () => this.renderTabContent(container));
             } else {
                 renderFeatureErrorState(container, "Settings Error", e.message || "Unable to load settings data.", () => this.renderTabContent(container));
             }
         }
     }
 
-    async renderTeamSection(wrapper, projectId, isOwner) {
+    async renderTeamSection(wrapper, projectId, isOwner, projName = 'this project') {
         try {
+            wrapper.innerHTML = `
+                <div class="card" style="padding: 24px; text-align: center; color: var(--text-secondary); margin-bottom: 20px;">
+                    Loading team members...
+                </div>
+            `;
             const teamData = await apiClient.get(`/api/projects/${projectId}/team`);
             const members = teamData.members || [];
             const pendingInvites = teamData.pending_invitations || [];
             const memberCount = teamData.member_count || 0;
+            const callerIsOwner = teamData.is_owner ?? isOwner;
 
             let pendingRows = pendingInvites.map(inv => `
                 <tr>
@@ -327,9 +403,9 @@ export class Settings {
                         ${inv.created_at ? new Date(inv.created_at).toLocaleDateString() : 'Recent'}
                     </td>
                     <td style="padding: 12px 16px; text-align: right;">
-                        ${isOwner ? `
+                        ${callerIsOwner ? `
                             <button class="btn btn-secondary btn-sm btn-cancel-invitation" data-id="${inv.id}" style="font-size: 11px; color: var(--critical);">Cancel</button>
-                        ` : ''}
+                        ` : '<span style="font-size: 11px; color: var(--text-tertiary);">-</span>'}
                     </td>
                 </tr>
             `).join('');
@@ -343,9 +419,9 @@ export class Settings {
                                 Invite registered SEO Intelligence Platform accounts to collaborate on this project. Each project supports 1 Lead + max 2 Team Members (${memberCount}/2 teammates active).
                             </p>
                         </div>
-                        ${isOwner && memberCount < 2 ? `
+                        ${callerIsOwner && memberCount < 2 ? `
                             <button id="btn-show-invite-form" class="btn btn-primary btn-sm">+ Invite Teammate</button>
-                        ` : (isOwner ? `<span class="badge badge-warning">Team Member Limit Reached (2/2)</span>` : '')}
+                        ` : (callerIsOwner ? `<span class="badge badge-warning">Team Member Limit Reached (2/2)</span>` : '')}
                     </div>
 
                     <!-- SEARCH & INVITE TEAMMATE FORM -->
@@ -403,25 +479,51 @@ export class Settings {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${members.map(m => `
-                                    <tr>
-                                        <td style="padding: 12px 16px;">
-                                            <strong style="color: var(--text-primary); display: block;">${this.escapeHtml(m.name)}</strong>
-                                            <span style="font-size: 11.5px; color: var(--text-secondary); font-family: monospace;">${this.escapeHtml(m.email || m.masked_email)}</span>
-                                        </td>
-                                        <td style="padding: 12px 16px;">
-                                            <span class="badge ${m.role === 'OWNER' ? 'badge-success' : 'badge-info'}">${this.escapeHtml(m.role_label)}</span>
-                                        </td>
-                                        <td style="padding: 12px 16px;">
-                                            <span style="color: var(--success); font-weight: 600; font-size: 12px;">● Active</span>
-                                        </td>
-                                        <td style="padding: 12px 16px; text-align: right;">
-                                            ${isOwner && m.role !== 'OWNER' ? `
-                                                <button class="btn btn-secondary btn-sm btn-remove-teammate" data-user="${this.escapeHtml(m.email)}" style="font-size: 11px; color: var(--critical);">Remove Access</button>
-                                            ` : '<span style="font-size: 11px; color: var(--text-tertiary);">Owner</span>'}
-                                        </td>
-                                    </tr>
-                                `).join('')}
+                                ${members.map(m => {
+                                    const isCurrentLoggedInUser = authStore.user && (
+                                        (authStore.user.email && (m.email === authStore.user.email || m.user_id === authStore.user.email)) ||
+                                        (authStore.user.id && (m.user_id === authStore.user.id || m.email === authStore.user.id))
+                                    );
+
+                                    let actionHtml = '';
+                                    if (callerIsOwner) {
+                                        if (m.role === 'OWNER') {
+                                            actionHtml = '<span style="font-size: 11px; color: var(--text-tertiary);">Owner</span>';
+                                        } else {
+                                            actionHtml = `
+                                                <button class="btn btn-secondary btn-sm btn-remove-teammate" data-user="${this.escapeHtml(m.email || m.user_id)}" data-name="${this.escapeHtml(m.name || m.email || m.user_id)}" style="font-size: 11px; color: var(--critical);">Remove</button>
+                                            `;
+                                        }
+                                    } else {
+                                        if (isCurrentLoggedInUser && m.role !== 'OWNER') {
+                                            actionHtml = `
+                                                <button class="btn btn-secondary btn-sm btn-leave-project" data-id="${this.escapeHtml(projectId)}" data-project="${this.escapeHtml(projName)}" style="font-size: 11px; color: var(--critical);">Leave Project</button>
+                                            `;
+                                        } else if (m.role === 'OWNER') {
+                                            actionHtml = '<span style="font-size: 11px; color: var(--text-tertiary);">Owner</span>';
+                                        } else {
+                                            actionHtml = '<span style="font-size: 11px; color: var(--text-tertiary);">-</span>';
+                                        }
+                                    }
+
+                                    return `
+                                        <tr>
+                                            <td style="padding: 12px 16px;">
+                                                <strong style="color: var(--text-primary); display: block;">${this.escapeHtml(m.name)}</strong>
+                                                <span style="font-size: 11.5px; color: var(--text-secondary); font-family: monospace;">${this.escapeHtml(m.email || m.masked_email)}</span>
+                                            </td>
+                                            <td style="padding: 12px 16px;">
+                                                <span class="badge ${m.role === 'OWNER' ? 'badge-success' : 'badge-info'}">${this.escapeHtml(m.role_label)}</span>
+                                            </td>
+                                            <td style="padding: 12px 16px;">
+                                                <span style="color: var(--success); font-weight: 600; font-size: 12px;">● Active</span>
+                                            </td>
+                                            <td style="padding: 12px 16px; text-align: right;">
+                                                ${actionHtml}
+                                            </td>
+                                        </tr>
+                                    `;
+                                }).join('')}
                             </tbody>
                         </table>
                     </div>
@@ -448,13 +550,30 @@ export class Settings {
                 </div>
             `;
 
-            this.bindTeamHandlers(wrapper, projectId, isOwner);
+            this.bindTeamHandlers(wrapper, projectId, callerIsOwner, projName);
         } catch (err) {
             console.error('[SETTINGS] Team load error:', err);
+            let errTitle = "Unable to Load Team";
+            let errMsg = err.message || "Failed to load team data.";
+            if (err.status === 401) {
+                errTitle = "Session Expired";
+                errMsg = "Your session has expired. Please sign in again.";
+            } else if (err.status === 403) {
+                errTitle = "Access Restricted";
+                errMsg = "You do not have permission to view team members for this project.";
+            } else if (err.status === 404) {
+                errTitle = "Project Not Found";
+                errMsg = "The requested project could not be found.";
+            } else if (err.isNetworkError) {
+                errTitle = "Connection Error";
+                errMsg = `Unable to connect to the backend server at ${API_BASE_URL}.`;
+            }
+
+            renderFeatureErrorState(wrapper, errTitle, errMsg, () => this.renderTeamSection(wrapper, projectId, isOwner, projName));
         }
     }
 
-    bindTeamHandlers(wrapper, projectId, isOwner) {
+    bindTeamHandlers(wrapper, projectId, isOwner, projName = 'this project') {
         const toggleBtn = wrapper.querySelector('#btn-show-invite-form');
         const inviteFormContainer = wrapper.querySelector('#invite-form-container');
         const cancelBtn = wrapper.querySelector('#btn-cancel-invite-form');
@@ -531,7 +650,7 @@ export class Settings {
                         role,
                         permissions: { can_view: true, can_edit: permEdit, can_crawl: permCrawl }
                     });
-                    await this.renderTeamSection(wrapper, projectId, isOwner);
+                    await this.renderTeamSection(wrapper, projectId, isOwner, projName);
                     alert(`Team invitation sent successfully.`);
                 } catch (err) {
                     if (errorBox) {
@@ -552,7 +671,7 @@ export class Settings {
                 if (confirm('Cancel this pending project invitation?')) {
                     try {
                         await apiClient.post(`/api/projects/${projectId}/team/cancel-invite`, { invitation_id: invId });
-                        await this.renderTeamSection(wrapper, projectId, isOwner);
+                        await this.renderTeamSection(wrapper, projectId, isOwner, projName);
                     } catch (err) {
                         alert(`Failed to cancel invitation: ${err.message || err}`);
                     }
@@ -560,20 +679,56 @@ export class Settings {
             });
         });
 
-        // Remove Teammate Buttons
+        // Remove Teammate Buttons (Owner only)
         wrapper.querySelectorAll('.btn-remove-teammate').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 const userEmail = e.currentTarget.dataset.user;
+                const userName = e.currentTarget.dataset.name || userEmail;
                 if (!userEmail) return;
-                if (confirm(`Remove project access for ${userEmail}?`)) {
+                if (confirm(`Remove ${userName} from this project team?`)) {
                     try {
                         await apiClient.post(`/api/projects/${projectId}/team/remove`, { email: userEmail });
-                        await this.renderTeamSection(wrapper, projectId, isOwner);
+                        await this.renderTeamSection(wrapper, projectId, isOwner, projName);
+                        alert(`Team member ${userName} has been removed.`);
                     } catch (err) {
                         alert(`Failed to remove teammate: ${err.message || err}`);
                     }
                 }
             });
         });
+
+        // Leave Project Buttons (Team Member self-leave)
+        wrapper.querySelectorAll('.btn-leave-project').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const confirmed = confirm(
+                    `Leave this project?\n\nYou will lose access to this project's website data, crawl history, keywords, rankings, links, reports, and team workspace.`
+                );
+                if (!confirmed) return;
+
+                try {
+                    await apiClient.post(`/api/projects/${projectId}/team/leave`);
+                    await projectStore.fetchProjects();
+                    const remainingProjects = projectStore.projects || [];
+                    if (remainingProjects.length > 0) {
+                        projectStore.setSelectedProjectId(remainingProjects[0].id);
+                    } else {
+                        projectStore.setSelectedProjectId(null);
+                    }
+                    window.dispatchEvent(new CustomEvent('project:selected', { detail: { projectId: projectStore.getSelectedProjectId() } }));
+                    const container = document.getElementById('settings-content');
+                    if (container) {
+                        await this.renderTabContent(container);
+                    }
+                    alert('You have successfully left the project team.');
+                } catch (err) {
+                    alert(`Failed to leave project: ${err.message || err}`);
+                }
+            });
+        });
+    }
+
+    escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 }

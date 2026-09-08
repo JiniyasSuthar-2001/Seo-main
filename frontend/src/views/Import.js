@@ -1,6 +1,5 @@
 import { projectStore } from '../core/projectStore.js';
 import { getApiBaseUrl } from '../config/api.js';
-import { getUploadGuidance } from '../config/uploadGuidance.js';
 import { UploadGuidanceComponent } from '../components/UploadGuidanceComponent.js';
 import { FileInspectorModal } from '../components/FileInspectorModal.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
@@ -139,8 +138,14 @@ export class Import {
     renderGuidance(element) {
         const container = element.querySelector('#guidance-container');
         if (!container) return;
-        const guidance = getUploadGuidance(this.selectedDataType);
-        container.innerHTML = UploadGuidanceComponent(guidance);
+        container.innerHTML = '';
+        const guidanceComponent = new UploadGuidanceComponent(
+            this.selectedDataType,
+            (file) => {
+                this.handleFileSelected(file);
+            }
+        );
+        container.appendChild(guidanceComponent.render());
     }
 
     handleFileSelected(file) {

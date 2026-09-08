@@ -93,6 +93,7 @@ def get_technical_audit(
         "summary": audit_data["summary"],
         "category_breakdown": audit_data["category_breakdown"],
         "category_checks_table": audit_data.get("category_checks_table", []),
+        "structured_data_summary": audit_data.get("structured_data_summary"),
         "issues": filtered_issues[off : off + lim],
         "total_issues": len(filtered_issues),
         "provenance": audit_data["provenance"]
@@ -269,10 +270,17 @@ def get_audit_issue_history(
 
 
 @router.put("/issues/{issue_id}/status")
-def update_issue_status(issue_id: str, payload: dict = Body(...), db: Session = Depends(get_db)):
+def update_issue_status(
+    issue_id: str,
+    payload: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
     issue = db.query(AuditIssue).filter(AuditIssue.id == issue_id).first()
     if not issue:
         raise HTTPException(status_code=404, detail="Audit issue not found.")
+
+    get_user_membership(db, user_id, issue.project_id)
 
     new_status = payload.get("status")
     if new_status not in ("Open", "In Progress", "Ignored", "Resolved"):

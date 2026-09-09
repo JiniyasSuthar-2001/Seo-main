@@ -25,7 +25,26 @@ class MasterReportBuilder:
     """
 
     @classmethod
-    def build_master_report(cls, project: Project, db: Session, user_id: str) -> Dict[str, Any]:
+    def build_master_report(
+        cls,
+        project: Project,
+        db: Session,
+        user_id: str,
+        allow_ai_generation: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Build the master report from stored crawl artifacts.
+
+        allow_ai_generation=False (default):
+            Report downloads are READ-ONLY with respect to AI generation.
+            Already-persisted AI solutions are included if present in ai_solutions.json.
+            No new LLM calls are made. No AI usage is charged.
+
+        allow_ai_generation=True:
+            Only set when the user explicitly requests AI enrichment via the
+            dedicated AI-solution endpoint. Allows calling the LLM provider and
+            recording AI page usage.
+        """
         domain = get_sanitized_domain(project.domain or project.url)
         project_name = project.name or domain
 
@@ -101,14 +120,17 @@ class MasterReportBuilder:
         health_score = audit_eval.get("health_score", 100)
         evaluated_issues = audit_eval.get("issues", raw_issues)
 
-        # 3. Batch Enrich Problems with Evidence-Grounded Actionable AI Solutions
+        # 3. Enrich issues with AI solutions.
+        #    When allow_ai_generation=False (all download paths) we read-only:
+        #    stored solutions from ai_solutions.json are attached; no LLM call is made.
+        #    When allow_ai_generation=True (explicit user AI action) full generation occurs.
         enriched_issues = AISolutionService.batch_enrich_issues(
             project=project,
             issues=evaluated_issues,
             pages=pages,
-            db=db,
-            user_id=user_id,
-            max_ai_pages=20
+            db=db if allow_ai_generation else None,
+            user_id=user_id if allow_ai_generation else None,
+            max_ai_pages=20 if allow_ai_generation else 0
         )
 
         # 4. Normalized Problems & Indicator System (🔴 Critical, 🟠 High, 🟡 Warning, 🔵 Informational)
@@ -148,18 +170,21 @@ class MasterReportBuilder:
         # 10. AI Analysis Layer (Baseline deterministic assessment)
         ai_analysis = cls._build_ai_analysis(project_name, domain, health_score, len(pages), normalized_problems, opportunities, historical_comparison)
 
-        # 11. AI Enrichment Pass (Calls real LLM provider in batched request when available)
-        cls._enrich_with_ai(
-            normalized_problems=normalized_problems,
-            ai_analysis=ai_analysis,
-            project_name=project_name,
-            domain=domain,
-            health_score=health_score,
-            pages_count=len(pages),
-            business_context=business_context,
-            user_id=user_id,
-            db=db
-        )
+        # 11. AI Enrichment Pass.
+        #    Only calls the LLM provider when allow_ai_generation=True.
+        #    Report downloads pass allow_ai_generation=False so no LLM call fires here.
+        if allow_ai_generation:
+            cls._enrich_with_ai(
+                normalized_problems=normalized_problems,
+                ai_analysis=ai_analysis,
+                project_name=project_name,
+                domain=domain,
+                health_score=health_score,
+                pages_count=len(pages),
+                business_context=business_context,
+                user_id=user_id,
+                db=db
+            )
 
         # 12. Phased Improvement Roadmap (NOW, NEXT, 30-60, 60-90, ONGOING)
         next_improvements = cls._build_phased_roadmap(normalized_problems, opportunities, aeo_data, geo_data)
@@ -565,9 +590,18 @@ class MasterReportBuilder:
         prev_issues_path = os.path.join(prev_dir, "issues.json")
         prev_pages_path = os.path.join(prev_dir, "pages.json")
 
-        prev_issues = json.load(open(prev_issues_path, encoding="utf-8")) if os.path.exists(prev_issues_path) else []
-        prev_pages = json.load(open(prev_pages_path, encoding="utf-8")) if os.path.exists(prev_pages_path) else []
-        prev_meta = json.load(open(prev_meta_path, encoding="utf-8")) if os.path.exists(prev_meta_path) else {}
+        def _safe_read_json(path, default):
+            if not os.path.exists(path):
+                return default
+            try:
+                with open(path, "r", encoding="utf-8") as _f:
+                    return json.load(_f)
+            except Exception:
+                return default
+
+        prev_issues = _safe_read_json(prev_issues_path, [])
+        prev_pages = _safe_read_json(prev_pages_path, [])
+        prev_meta = _safe_read_json(prev_meta_path, {})
 
         prev_score = evaluate_site_audit_rules(prev_pages).get("health_score", 100) if prev_pages else 100
         score_delta = current_score - prev_score

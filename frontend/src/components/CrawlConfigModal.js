@@ -929,18 +929,18 @@ class CrawlConfigModalManager {
     getDepthExplanationHTML(depthVal) {
         switch (depthVal) {
             case 1:
-                return `<strong>Level 1 — Starting page only:</strong> Only crawl the exact URL entered by the user (Homepage).`;
+                return `<strong>Level 1 — Seed + direct 1-hop links:</strong> Crawl the starting URL and all directly linked internal pages (Seed → Level 1).`;
             case 2:
-                return `<strong>Level 2 — Starting page + pages 1 link away:</strong> Crawl starting URL and direct links (Homepage → Services).`;
+                return `<strong>Level 2 — Seed + 2 link levels deep:</strong> Crawl starting URL up to 2 link hops (Seed → Category → Item).`;
             case 3:
-                return `<strong>Level 3 — Up to 3 link levels deep:</strong> Crawl starting URL up to 3 link hops (Homepage → Services → Service Page).`;
+                return `<strong>Level 3 — Up to 3 link levels deep:</strong> Crawl starting URL up to 3 link hops (Seed → Section → Sub-section → Page).`;
             case 5:
-                return `<strong>Level 5 — Up to 5 link levels deep:</strong> Useful for medium-sized websites with nested navigation.`;
+                return `<strong>Level 5 — Up to 5 link levels deep:</strong> Useful for medium-sized websites with nested hierarchies.`;
             case 10:
-                return `<strong>Level 10 — Up to 10 link levels deep:</strong> Useful for large websites with deeply nested navigation.`;
+                return `<strong>Level 10 — Up to 10 link levels deep:</strong> Deep crawling for large websites with deeply nested navigation.`;
             case 0:
             default:
-                return `<strong>Unlimited — Follow internal links until ceiling:</strong> Unrestricted depth until max page limit or robots ceiling stops the crawl.`;
+                return `<strong>Unlimited — Follow all internal links until ceiling:</strong> Unrestricted depth until max page limit or crawl queue exhaustion.`;
         }
     }
 

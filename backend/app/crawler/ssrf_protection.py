@@ -100,12 +100,12 @@ def resolve_hostname_ips(hostname: str, port: int = 80) -> List[str]:
         pass
     return resolved_ips
 
-def validate_url_ssrf(url: str) -> Tuple[bool, Optional[str]]:
+def validate_url_ssrf(url: str, allow_local_dev: bool = False) -> Tuple[bool, Optional[str]]:
     """
     Validates a URL against SSRF security rules:
     1. Scheme must be http or https strictly.
-    2. Hostname must not be localhost or link-local.
-    3. Hostname must resolve strictly to global public IP addresses.
+    2. Hostname must not be localhost or link-local (unless explicitly allowed in development mode).
+    3. Hostname must resolve strictly to global public IP addresses (unless allow_local_dev=True).
     Returns (is_valid, error_reason).
     """
     if not url or not isinstance(url, str):
@@ -124,6 +124,10 @@ def validate_url_ssrf(url: str) -> Tuple[bool, Optional[str]]:
     if not hostname:
         return False, "URL must contain a valid hostname."
 
+    # In local development mode, allow localhost and loopback 127.0.0.1
+    if allow_local_dev and (hostname in ("localhost", "127.0.0.1", "::1")):
+        return True, None
+
     # Check blocked hostnames
     if hostname in BLOCKED_HOSTNAMES or hostname.endswith(".localhost") or hostname.endswith(".local") or hostname.endswith(".internal"):
         return False, f"Destination host '{hostname}' is blocked."
@@ -131,6 +135,8 @@ def validate_url_ssrf(url: str) -> Tuple[bool, Optional[str]]:
     # If hostname is already a raw IP literal
     try:
         ip = ipaddress.ip_address(hostname.strip("[]"))
+        if allow_local_dev and ip.is_loopback:
+            return True, None
         if not is_ip_allowed(str(ip)):
             return False, f"Direct access to private or internal IP '{hostname}' is blocked."
         return True, None
@@ -143,45 +149,43 @@ def validate_url_ssrf(url: str) -> Tuple[bool, Optional[str]]:
     
     if not resolved_ips:
         # If unable to resolve DNS, allow httpx to attempt DNS resolution or block if strict
-        # But if the hostname contains suspicious patterns (e.g. 127.0.0.1 in subdomains or hex IP)
         if "127." in hostname or "169.254" in hostname or "192.168" in hostname or "10." in hostname:
             return False, f"Destination host '{hostname}' references blocked IP ranges."
         return True, None
 
     for ip_str in resolved_ips:
+        if allow_local_dev and ipaddress.ip_address(ip_str).is_loopback:
+            continue
         if not is_ip_allowed(ip_str):
             return False, f"Destination host '{hostname}' resolved to blocked address '{ip_str}'."
 
     return True, None
 
-def ssrf_request_hook(request: httpx.Request):
-    """
-    HTTPX request event hook that intercepts every outgoing request (including redirects).
-    Raises SSRFBlockedError if destination violates SSRF protection rules.
-    """
-    url_str = str(request.url)
-    is_valid, reason = validate_url_ssrf(url_str)
-    if not is_valid:
-        raise SSRFBlockedError(f"SSRF Protection Blocked Request: {reason}")
-
-def ssrf_response_hook(response: httpx.Response):
-    """
-    HTTPX response event hook that validates redirect locations before they are followed.
-    """
-    if response.is_redirect and "location" in response.headers:
-        redirect_url = response.headers["location"]
-        # Resolve relative redirect URLs against current request URL
-        absolute_redirect = urljoin(str(response.request.url), redirect_url)
-        is_valid, reason = validate_url_ssrf(absolute_redirect)
+def create_ssrf_request_hook(allow_local_dev: bool = False):
+    def ssrf_request_hook(request: httpx.Request):
+        url_str = str(request.url)
+        is_valid, reason = validate_url_ssrf(url_str, allow_local_dev=allow_local_dev)
         if not is_valid:
-            raise SSRFBlockedError(f"SSRF Protection Blocked Redirect to '{absolute_redirect}': {reason}")
+            raise SSRFBlockedError(f"SSRF Protection Blocked Request: {reason}")
+    return ssrf_request_hook
+
+def create_ssrf_response_hook(allow_local_dev: bool = False):
+    def ssrf_response_hook(response: httpx.Response):
+        if response.is_redirect and "location" in response.headers:
+            redirect_url = response.headers["location"]
+            absolute_redirect = urljoin(str(response.request.url), redirect_url)
+            is_valid, reason = validate_url_ssrf(absolute_redirect, allow_local_dev=allow_local_dev)
+            if not is_valid:
+                raise SSRFBlockedError(f"SSRF Protection Blocked Redirect to '{absolute_redirect}': {reason}")
+    return ssrf_response_hook
 
 def create_ssrf_safe_client(
     timeout: float = 20.0,
     headers: Optional[dict] = None,
     verify: bool = True,
     follow_redirects: bool = True,
-    max_redirects: int = 10
+    max_redirects: int = 10,
+    allow_local_dev: bool = False
 ) -> httpx.AsyncClient:
     """
     Creates an HTTPX AsyncClient equipped with comprehensive SSRF protection hooks.
@@ -193,7 +197,8 @@ def create_ssrf_safe_client(
         follow_redirects=follow_redirects,
         max_redirects=max_redirects,
         event_hooks={
-            "request": [ssrf_request_hook],
-            "response": [ssrf_response_hook]
+            "request": [create_ssrf_request_hook(allow_local_dev)],
+            "response": [create_ssrf_response_hook(allow_local_dev)]
         }
     )
+

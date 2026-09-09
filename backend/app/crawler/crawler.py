@@ -4,9 +4,9 @@ import time
 import re
 import ssl
 import json
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse, urljoin, urlunparse, parse_qsl, urlencode
 from bs4 import BeautifulSoup
-from typing import Set, Dict, Any, List, Optional, Callable
+from typing import Set, Dict, Any, List, Optional, Callable, Tuple
 from app.crawler.broken_link_checker import BrokenLinkChecker
 from app.crawler.ssrf_protection import validate_url_ssrf, create_ssrf_safe_client, SSRFBlockedError
 
@@ -15,6 +15,160 @@ STATIC_ASSET_EXTENSIONS = (
     ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".zip", ".tar", ".gz", ".rar",
     ".mp4", ".avi", ".mov", ".mp3", ".wav", ".css", ".js", ".woff", ".woff2", ".ttf", ".eot"
 )
+
+BOT_PROTECTION_KEYWORDS = (
+    "just a moment...", "verify you are human", "checking your browser",
+    "cf-browser-verification", "turnstile", "ddos-guard", "cloudflare ray id",
+    "security verification", "attention required! | cloudflare", "access denied"
+)
+
+def canonicalize_url(url: str, base_url: str = "", ignore_utm_params: bool = True) -> str:
+    """
+    Centralized canonical URL normalizer:
+    1. Resolves relative and protocol-relative URLs against base_url.
+    2. Strips URL fragments (#section).
+    3. Normalizes scheme and host to lowercase.
+    4. Removes default ports (:80 on http, :443 on https).
+    5. Normalizes path (normalizes multi-slashes, standardizes trailing slashes).
+    6. Filters tracking parameters (utm_*, gclid, fbclid, etc.) and sorts query parameters for deduplication.
+    """
+    if not url or not isinstance(url, str):
+        return ""
+
+    url = url.strip()
+    if not url or url.startswith(("#", "javascript:", "mailto:", "tel:")):
+        return ""
+
+    if base_url:
+        full_url = urljoin(base_url, url)
+    else:
+        full_url = url
+
+    parsed = urlparse(full_url)
+    scheme = (parsed.scheme or "http").lower()
+    if scheme not in ("http", "https"):
+        return ""
+
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        return ""
+
+    port = parsed.port
+    if (scheme == "http" and port == 80) or (scheme == "https" and port == 443):
+        port = None
+
+    netloc = f"{hostname}:{port}" if port else hostname
+
+    # Path normalization
+    raw_path = parsed.path or "/"
+    # Collapse multiple consecutive slashes
+    raw_path = re.sub(r"/+", "/", raw_path)
+    if not raw_path:
+        raw_path = "/"
+    elif raw_path != "/" and raw_path.endswith("/"):
+        raw_path = raw_path.rstrip("/")
+
+    # Query parameters normalization
+    query_str = ""
+    if parsed.query:
+        try:
+            params = parse_qsl(parsed.query, keep_blank_values=True)
+            filtered_params = []
+            for k, v in params:
+                k_lower = k.lower()
+                if ignore_utm_params and (
+                    k_lower.startswith("utm_") or
+                    k_lower in ("fbclid", "gclid", "mc_cid", "mc_eid", "_ga", "_gl", "msclkid")
+                ):
+                    continue
+                filtered_params.append((k, v))
+            if filtered_params:
+                filtered_params.sort(key=lambda x: x[0])
+                query_str = urlencode(filtered_params)
+        except Exception:
+            query_str = parsed.query
+
+    return urlunparse((scheme, netloc, raw_path, "", query_str, ""))
+
+
+class RobotsDirectiveEngine:
+    """
+    Robust robots.txt parser supporting User-agent matching, Allow/Disallow,
+    wildcards (*), and end-of-path anchors ($).
+    """
+    def __init__(self, robots_txt: str = "", user_agent: str = ""):
+        self.disallowed_patterns: List[str] = []
+        self.allowed_patterns: List[str] = []
+        self.sitemaps: List[str] = []
+        self._parse(robots_txt, user_agent)
+
+    def _parse(self, content: str, target_ua: str):
+        if not content:
+            return
+
+        current_applies = False
+        target_ua_lower = target_ua.lower()
+
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+
+            if ":" not in line:
+                continue
+
+            field, val = line.split(":", 1)
+            field = field.strip().lower()
+            val = val.strip()
+
+            if field == "user-agent":
+                ua_val = val.lower()
+                if ua_val == "*" or ua_val in target_ua_lower or target_ua_lower in ua_val:
+                    current_applies = True
+                else:
+                    current_applies = False
+            elif current_applies:
+                if field == "disallow":
+                    if val:
+                        self.disallowed_patterns.append(val)
+                elif field == "allow":
+                    if val:
+                        self.allowed_patterns.append(val)
+                elif field == "sitemap":
+                    if val and val not in self.sitemaps:
+                        self.sitemaps.append(val)
+
+    def is_disallowed(self, path: str) -> bool:
+        """
+        Checks if a URL path is blocked by parsed robots directives.
+        Allow directives take precedence over Disallow if they match more specifically.
+        """
+        if not path:
+            path = "/"
+
+        # Check explicit Allow rules first
+        for allow_pat in self.allowed_patterns:
+            if self._matches_pattern(path, allow_pat):
+                return False
+
+        for dis_pat in self.disallowed_patterns:
+            if self._matches_pattern(path, dis_pat):
+                return True
+
+        return False
+
+    @staticmethod
+    def _matches_pattern(path: str, pattern: str) -> bool:
+        if pattern == "/":
+            return True
+        regex_pat = "^" + re.escape(pattern).replace(r"\*", ".*")
+        if regex_pat.endswith(r"\$"):
+            regex_pat = regex_pat[:-2] + "$"
+        try:
+            return bool(re.search(regex_pat, path))
+        except re.error:
+            return path.startswith(pattern)
+
 
 class SEOCrawler:
     def __init__(
@@ -32,20 +186,23 @@ class SEOCrawler:
         ignore_utm_params: bool = True,
         follow_redirects: bool = True,
         target_countries: Optional[List[str]] = None,
-        progress_callback: Optional[Callable[[int, int]], None] = None,
+        allow_subdomains: bool = False,
+        allow_local_dev: bool = False,
+        js_rendering: str = "auto",
+        progress_callback: Optional[Callable[[int, int, Optional[str]], None]] = None,
         cancellation_checker: Optional[Callable[[], bool]] = None
     ):
         if not start_url or not start_url.startswith(("http://", "https://")):
             raise ValueError("Crawler requires a valid HTTP or HTTPS start URL.")
 
-        # Strict SSRF validation on target URL
-        is_safe, ssrf_err = validate_url_ssrf(start_url)
+        self.allow_local_dev = allow_local_dev
+        is_safe, ssrf_err = validate_url_ssrf(start_url, allow_local_dev=self.allow_local_dev)
         if not is_safe:
             raise ValueError(f"Prohibited crawl start URL (SSRF Protection): {ssrf_err}")
 
         self.raw_start_url = start_url
         self.ignore_utm_params = ignore_utm_params
-        self.start_url = self.normalize_url(start_url, start_url)
+        self.start_url = canonicalize_url(start_url, ignore_utm_params=ignore_utm_params)
         
         # Handle 5000+ Large-Site Mode (unlimited pages within scope)
         if max_pages == "5000+" or max_pages == 0 or max_pages is None or str(max_pages).strip() == "5000+":
@@ -66,7 +223,7 @@ class SEOCrawler:
 
         self.request_timeout = request_timeout
         self.scope_type = scope_type
-        self.max_depth = max_depth
+        self.max_depth = max(0, int(max_depth or 0))
         self.respect_robots_txt = respect_robots_txt
         self.crawl_delay_ms = crawl_delay_ms
         self.user_agent = user_agent
@@ -74,26 +231,54 @@ class SEOCrawler:
         self.exclude_patterns = exclude_patterns or []
         self.follow_redirects = follow_redirects
         self.target_countries = target_countries or []
+        self.allow_subdomains = allow_subdomains
+        self.js_rendering = (js_rendering or "auto").lower()
         self.progress_callback = progress_callback
         self.cancellation_checker = cancellation_checker
         self.is_cancelled = False
         self.verify_ssl = True
 
         parsed_url = urlparse(self.start_url)
-        self.domain = parsed_url.netloc.lower()
+        self.domain = (parsed_url.hostname or "").lower()
+        self.port = parsed_url.port
+        self.netloc = (parsed_url.netloc or "").lower()
         self.scheme = parsed_url.scheme
         self.start_path = parsed_url.path or "/"
         
-        # Track depth per URL
+        # Base subfolder calculation for subfolder_only scope
+        if self.start_path and self.start_path != "/":
+            self.subfolder_prefix = self.start_path.rstrip("/")
+        else:
+            self.subfolder_prefix = ""
+
+        # Depth tracking: start URL is at depth 0
         self.url_depths: Dict[str, int] = {self.start_url: 0}
         
-        # Queue state tracking: PENDING, CRAWLING, CRAWLED, FAILED, BLOCKED, SKIPPED
+        # Queue state tracking: PENDING, CRAWLING, CRAWLED, FAILED, BLOCKED, SKIPPED, BOT_PROTECTION
         self.queue_status: Dict[str, str] = {self.start_url: "PENDING"}
         self.visited: Set[str] = set()
         self.to_visit: List[str] = [self.start_url]
         
-        self.disallowed_paths: List[str] = []
-        self.sitemap_urls: List[str] = []
+        # Rejection registry for diagnostics
+        self.rejection_log: List[Dict[str, str]] = []
+        
+        # Observability counters
+        self.metrics = {
+            "pages_discovered": 1,
+            "pages_crawled": 0,
+            "pages_failed": 0,
+            "pages_blocked": 0,
+            "pages_skipped": 0,
+            "pages_out_of_scope": 0,
+            "pages_blocked_by_robots": 0,
+            "pages_blocked_by_ssrf": 0,
+            "pages_blocked_by_bot_protection": 0,
+            "pages_js_rendered": 0
+        }
+        
+        self.robots_engine: Optional[RobotsDirectiveEngine] = None
+        self.robots_blocked_seed = False
+        self.bot_protection_blocked_seed = False
         
         # Results collections
         self.pages: List[Dict[str, Any]] = []
@@ -107,111 +292,84 @@ class SEOCrawler:
         self.seed_status_code = None
 
     def is_same_domain(self, url: str) -> bool:
+        """
+        Determines if a URL belongs to the internal crawl target domain.
+        - Handles www vs non-www
+        - Respects allow_subdomains setting
+        - Supports local dev equivalence (localhost <-> 127.0.0.1 on identical port) when allow_local_dev is active
+        """
         parsed = urlparse(url)
-        netloc = parsed.netloc.lower()
-        dom = self.domain.lower()
-        clean_netloc = netloc.replace("www.", "")
-        clean_dom = dom.replace("www.", "")
-        return clean_netloc == clean_dom
+        host = (parsed.hostname or "").lower()
+        if not host:
+            return False
+
+        # Local development equivalence
+        if self.allow_local_dev:
+            target_is_local = self.domain in ("localhost", "127.0.0.1")
+            url_is_local = host in ("localhost", "127.0.0.1")
+            if target_is_local and url_is_local:
+                return (parsed.port or 80) == (self.port or 80)
+
+        clean_host = host.replace("www.", "")
+        clean_target = self.domain.replace("www.", "")
+
+        if clean_host == clean_target:
+            return True
+
+        if self.allow_subdomains:
+            if clean_host.endswith("." + clean_target):
+                return True
+
+        return False
 
     def is_static_asset(self, url: str) -> bool:
         parsed = urlparse(url)
         path = parsed.path.lower()
         return path.endswith(STATIC_ASSET_EXTENSIONS)
 
-    def normalize_url(self, url: str, base_url: str) -> str:
-        full_url = urljoin(base_url, url)
-        parsed = urlparse(full_url)
-        path = parsed.path
-        if not path:
-            path = "/"
-        elif path != "/" and path.endswith("/"):
-            path = path.rstrip("/")
-
-        query_str = ""
-        if parsed.query:
-            if self.ignore_utm_params:
-                q_params = [q for q in parsed.query.split("&") if q and not q.startswith(("utm_", "fbclid=", "gclid=", "mc_cid=", "mc_eid="))]
-                if q_params:
-                    query_str = "?" + "&".join(q_params)
-            else:
-                query_str = "?" + parsed.query
-
-        return f"{parsed.scheme}://{parsed.netloc}{path}{query_str}".lower()
-
-    async def fetch_robots_txt(self, client: httpx.AsyncClient):
-        robots_url = f"{self.scheme}://{self.domain}/robots.txt"
-        print(f"[ROBOTS] Requesting {robots_url}", flush=True)
-        try:
-            resp = await client.get(robots_url, timeout=10.0, follow_redirects=True)
-            if resp.status_code == 200:
-                print(f"[ROBOTS] Found robots.txt ({len(resp.text)} bytes)", flush=True)
-                for line in resp.text.splitlines():
-                    line = line.strip()
-                    if line.lower().startswith("disallow:"):
-                        path = line.split(":", 1)[1].strip()
-                        if path:
-                            self.disallowed_paths.append(path)
-                    elif line.lower().startswith("sitemap:"):
-                        s_url = line.split(":", 1)[1].strip()
-                        if s_url:
-                            self.sitemap_urls.append(s_url)
-        except Exception as e:
-            print(f"[ROBOTS] Optional robots.txt fetch error: {e}", flush=True)
-
-    async def fetch_sitemap_xml(self, client: httpx.AsyncClient):
-        sitemap_candidates = list(self.sitemap_urls) or [f"{self.scheme}://{self.domain}/sitemap.xml"]
-        max_sitemap_entries = 5000 if not self.is_unlimited_scope else 20000
-        for sm_url in sitemap_candidates[:5]:
-            try:
-                resp = await client.get(sm_url, timeout=10.0, follow_redirects=True)
-                if resp.status_code == 200:
-                    found_locs = re.findall(r"<loc>(.*?)</loc>", resp.text, re.I)
-                    print(f"[SITEMAP] Discovered {len(found_locs)} URLs from {sm_url}", flush=True)
-                    for loc in found_locs[:max_sitemap_entries]:
-                        norm = self.normalize_url(loc.strip(), sm_url)
-                        if self.is_same_domain(norm) and not self.is_static_asset(norm) and norm not in self.queue_status:
-                            self.queue_status[norm] = "PENDING"
-                            self.to_visit.append(norm)
-            except Exception as e:
-                print(f"[SITEMAP] Optional sitemap fetch error for {sm_url}: {e}", flush=True)
-
     def is_disallowed(self, url: str) -> bool:
-        if not self.respect_robots_txt or not self.disallowed_paths:
+        if not self.respect_robots_txt or not self.robots_engine:
             return False
         parsed = urlparse(url)
         path = parsed.path or "/"
-        for dis in self.disallowed_paths:
-            if dis == "/":
-                return True
-            if path.startswith(dis):
-                return True
-        return False
+        return self.robots_engine.is_disallowed(path)
 
-    def is_within_scope(self, url: str) -> bool:
+    def is_within_scope(self, url: str) -> Tuple[bool, str]:
+        """
+        Comprehensive crawl scope evaluation:
+        1. Domain validation
+        2. Static asset filtering
+        3. Depth ceiling evaluation (depth > max_depth rejected for max_depth > 0)
+        4. Subfolder path-segment matching
+        5. Exclude / include regex patterns
+        Returns (is_valid, rejection_reason).
+        """
         if not self.is_same_domain(url):
-            return False
+            return False, "EXTERNAL_DOMAIN"
 
         if self.is_static_asset(url):
-            return False
+            return False, "STATIC_ASSET"
 
+        # Correct depth semantics: max_depth = 1 allows depth 0 (seed) and depth 1 (direct links)
         if self.max_depth > 0:
             depth = self.url_depths.get(url, 999)
-            if depth >= self.max_depth:
-                return False
+            if depth > self.max_depth:
+                return False, "MAX_DEPTH_EXCEEDED"
 
         parsed = urlparse(url)
         path = parsed.path or "/"
 
-        if self.scope_type == "subfolder_only":
-            if not path.startswith(self.start_path):
-                return False
+        # Path-segment subfolder validation
+        if self.scope_type == "subfolder_only" and self.subfolder_prefix:
+            prefix = self.subfolder_prefix
+            if path != prefix and not path.startswith(prefix + "/"):
+                return False, "OUT_OF_SUBFOLDER_SCOPE"
 
         if self.exclude_patterns:
             for pattern in self.exclude_patterns:
                 clean_pat = pattern.strip().lower()
                 if clean_pat and (clean_pat in path or clean_pat in url):
-                    return False
+                    return False, "EXCLUDE_PATTERN_MATCH"
 
         if self.include_patterns:
             matched = False
@@ -221,9 +379,119 @@ class SEOCrawler:
                     matched = True
                     break
             if not matched:
-                return False
+                return False, "INCLUDE_PATTERN_MISMATCH"
 
-        return True
+        return True, "OK"
+
+    async def fetch_robots_txt(self, client: httpx.AsyncClient):
+        robots_url = f"{self.scheme}://{self.netloc}/robots.txt"
+        print(f"[ROBOTS] Requesting {robots_url}", flush=True)
+        try:
+            resp = await client.get(robots_url, timeout=10.0, follow_redirects=True)
+            if resp.status_code == 200:
+                self.robots_engine = RobotsDirectiveEngine(resp.text, self.user_agent)
+                print(f"[ROBOTS] Parsed robots.txt ({len(resp.text)} bytes)", flush=True)
+                
+                # Check if seed URL is disallowed
+                if self.respect_robots_txt and self.robots_engine.is_disallowed(self.start_path):
+                    print(f"[ROBOTS] Seed URL '{self.start_url}' is DISALLOWED by robots.txt", flush=True)
+                    self.robots_blocked_seed = True
+        except Exception as e:
+            print(f"[ROBOTS] Optional robots.txt fetch error: {e}", flush=True)
+
+    async def fetch_sitemap_xml(self, client: httpx.AsyncClient):
+        candidates = []
+        if self.robots_engine and self.robots_engine.sitemaps:
+            candidates.extend(self.robots_engine.sitemaps)
+        candidates.append(f"{self.scheme}://{self.netloc}/sitemap.xml")
+
+        max_entries = 5000 if not self.is_unlimited_scope else 20000
+        for sm_url in candidates[:5]:
+            try:
+                resp = await client.get(sm_url, timeout=10.0, follow_redirects=True)
+                if resp.status_code == 200:
+                    found_locs = re.findall(r"<loc>(.*?)</loc>", resp.text, re.I)
+                    print(f"[SITEMAP] Discovered {len(found_locs)} URLs from {sm_url}", flush=True)
+                    for loc in found_locs[:max_entries]:
+                        norm = canonicalize_url(loc.strip(), sm_url, self.ignore_utm_params)
+                        if norm and norm not in self.queue_status:
+                            is_scope, reason = self.is_within_scope(norm)
+                            if is_scope:
+                                is_safe, _ = validate_url_ssrf(norm, allow_local_dev=self.allow_local_dev)
+                                if is_safe and not self.is_disallowed(norm):
+                                    self.queue_status[norm] = "PENDING"
+                                    self.url_depths[norm] = 1
+                                    self.to_visit.append(norm)
+                                    self.metrics["pages_discovered"] += 1
+            except Exception as e:
+                print(f"[SITEMAP] Optional sitemap fetch error for {sm_url}: {e}", flush=True)
+
+    def extract_spa_links_from_html(self, html: str, current_url: str) -> List[str]:
+        """
+        Inspects static HTML for Single Page Application routing payloads
+        (Next.js __NEXT_DATA__, Nuxt __NUXT__, Remix/SvelteKit data, React Router links).
+        """
+        discovered: List[str] = []
+        try:
+            # 1. Next.js __NEXT_DATA__
+            if "__NEXT_DATA__" in html:
+                match = re.search(r'<script[^>]*id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
+                if match:
+                    try:
+                        data = json.loads(match.group(1).strip())
+                        # Check buildManifest or page paths
+                        props = data.get("props", {})
+                        # Extract any strings formatted like URL paths
+                        json_str = json.dumps(data)
+                        paths = re.findall(r'\"(/[a-zA-Z0-9_\-\./]+)\"', json_str)
+                        for p in paths:
+                            if not p.endswith(STATIC_ASSET_EXTENSIONS) and not p.startswith("/_next"):
+                                discovered.append(p)
+                    except Exception:
+                        pass
+
+            # 2. Nuxt __NUXT__ or payload scripts
+            if "__NUXT__" in html:
+                paths = re.findall(r'routePath:\s*[\'"](/[\w\-/]+)[\'"]', html)
+                discovered.extend(paths)
+
+            # 3. Harvest root-relative links from client JS chunks
+            routes = re.findall(r'href:\s*[\'"](/[\w\-/]+)[\'"]', html)
+            discovered.extend(routes)
+
+        except Exception:
+            pass
+
+        return discovered
+
+    async def render_with_browser_fallback(self, url: str) -> Optional[Tuple[str, List[str]]]:
+        """
+        Optional headless browser rendering fallback for SPA / JavaScript-rendered websites.
+        Attempts to use Playwright if available in the environment.
+        Returns (rendered_html, extracted_links) or None if unavailable.
+        """
+        try:
+            from playwright.async_api import async_playwright
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page(user_agent=self.user_agent)
+                await page.goto(url, timeout=int(self.request_timeout * 1000), wait_until="domcontentloaded")
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=3000)
+                except Exception:
+                    pass
+                
+                rendered_html = await page.content()
+                hrefs = await page.eval_on_selector_all("a[href]", "elements => elements.map(el => el.getAttribute('href'))")
+                await browser.close()
+                self.metrics["pages_js_rendered"] += 1
+                return rendered_html, [h for h in hrefs if h]
+        except ImportError:
+            # Playwright is not installed; static parsing & SPA route harvesting handles SPA data
+            return None
+        except Exception as e:
+            print(f"[BROWSER RENDER] Headless fallback skipped for {url}: {e}", flush=True)
+            return None
 
     def evaluate_page_issues(self, page_data: Dict[str, Any]):
         url = page_data["url"]
@@ -233,16 +501,16 @@ class SEOCrawler:
         source_links = [l for l in self.internal_links if l.get("target") == url]
         source_url = source_links[0]["source"] if source_links else page_data.get("source_url") or "Start URL"
 
-        if status in (403, 401) or fetch_st == "BLOCKED":
+        if fetch_st == "BOT_PROTECTION" or status in (403, 401) or "Access Denied" in (page_data.get("error") or ""):
             self.issues.append({
                 "rule_id": "CRAWL_002",
                 "category": "Crawlability",
                 "severity": "Critical",
-                "issue_type": "Access Denied / Forbidden",
+                "issue_type": "Access Denied / Bot Protection",
                 "affected_url": url,
                 "source_url": source_url,
-                "details": f"URL '{url}' returned HTTP status {status} (Access Denied / Forbidden). Crawling blocked.",
-                "recommendation": "Verify firewall policies, server permissions, or user-agent access controls."
+                "details": f"URL '{url}' encountered bot protection or access control (HTTP {status}).",
+                "recommendation": "Configure user-agent whitelisting, firewall rules, or disable anti-bot challenges for crawler IP."
             })
             return
 
@@ -330,16 +598,18 @@ class SEOCrawler:
         if self.is_disallowed(url):
             print(f"[ROBOTS] Skipping disallowed URL: {url}", flush=True)
             self.queue_status[url] = "SKIPPED"
+            self.metrics["pages_blocked_by_robots"] += 1
+            self.metrics["pages_skipped"] += 1
             return
 
         self.visited.add(url)
         self.queue_status[url] = "CRAWLING"
+        self.metrics["pages_crawled"] += 1
         print(f"[CRAWL HTTP] GET {url}", flush=True)
 
         start_time = time.time()
         
         try:
-            # Enforce strict 20.0 second max timeout per individual page operation
             await asyncio.wait_for(
                 self._fetch_and_process_page(client, url, start_time),
                 timeout=self.request_timeout
@@ -349,6 +619,7 @@ class SEOCrawler:
             err_msg = f"Page crawl timed out after {self.request_timeout} seconds."
             print(f"[CRAWL TIMEOUT] {url} ({err_msg})", flush=True)
             self.queue_status[url] = "TIMEOUT"
+            self.metrics["pages_failed"] += 1
             page_record = {
                 "url": url,
                 "status_code": 0,
@@ -368,6 +639,7 @@ class SEOCrawler:
             err_msg = f"Page processing exception: {str(unhandled_err)[:120]}"
             print(f"[CRAWL PAGE ERROR] {url} ({err_msg})", flush=True)
             self.queue_status[url] = "FAILED"
+            self.metrics["pages_failed"] += 1
             page_record = {
                 "url": url,
                 "status_code": 0,
@@ -385,55 +657,50 @@ class SEOCrawler:
         finally:
             if self.progress_callback:
                 try:
-                    self.progress_callback(len(self.visited), len(self.queue_status))
+                    self.progress_callback(len(self.visited), max(len(self.queue_status), len(self.visited)), f"Crawled {len(self.visited)} pages...")
                 except Exception:
                     pass
 
     async def _fetch_and_process_page(self, client: httpx.AsyncClient, url: str, start_time: float):
-        attempt = 0
-        max_attempts = 1  # 1 attempt per page bounded strictly by 20s
         response = None
         elapsed_ms = 0
         fetch_error = None
         fetch_status = "FAILED"
 
-        while attempt < max_attempts:
-            attempt += 1
-            try:
-                headers = {
-                    "User-Agent": self.user_agent,
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                    "Accept-Language": "en-US,en;q=0.9",
-                    "Upgrade-Insecure-Requests": "1"
-                }
-                response = await client.get(url, headers=headers, timeout=self.request_timeout, follow_redirects=True)
-                elapsed_ms = int((time.time() - start_time) * 1000)
-                break
-            except SSRFBlockedError as sbe:
-                elapsed_ms = int((time.time() - start_time) * 1000)
-                fetch_status = "BLOCKED"
-                fetch_error = f"SSRF Protection: {str(sbe)}"
-            except httpx.TimeoutException:
-                elapsed_ms = int((time.time() - start_time) * 1000)
-                fetch_status = "TIMEOUT"
-                fetch_error = f"Request timed out after {self.request_timeout}s"
-            except httpx.ConnectError as ce:
-                elapsed_ms = int((time.time() - start_time) * 1000)
-                err_str = str(ce)
-                if "name" in err_str.lower() or "dns" in err_str.lower() or "getaddrinfo" in err_str.lower():
-                    fetch_status = "DNS_ERROR"
-                    fetch_error = "DNS resolution failed"
-                else:
-                    fetch_status = "CONNECTION_REFUSED"
-                    fetch_error = "Connection refused"
-            except Exception as e:
-                elapsed_ms = int((time.time() - start_time) * 1000)
-                fetch_status = "NETWORK_ERROR"
-                fetch_error = f"Network request error: {str(e)[:120]}"
+        try:
+            headers = {
+                "User-Agent": self.user_agent,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Upgrade-Insecure-Requests": "1"
+            }
+            response = await client.get(url, headers=headers, timeout=self.request_timeout, follow_redirects=True)
+            elapsed_ms = int((time.time() - start_time) * 1000)
+        except SSRFBlockedError as sbe:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            fetch_status = "BLOCKED"
+            fetch_error = f"SSRF Protection: {str(sbe)}"
+            self.metrics["pages_blocked_by_ssrf"] += 1
+        except httpx.TimeoutException:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            fetch_status = "TIMEOUT"
+            fetch_error = f"Request timed out after {self.request_timeout}s"
+            self.metrics["pages_failed"] += 1
+        except httpx.ConnectError as ce:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            err_str = str(ce)
+            fetch_status = "DNS_ERROR" if ("dns" in err_str.lower() or "getaddrinfo" in err_str.lower()) else "CONNECTION_REFUSED"
+            fetch_error = "DNS resolution failed" if fetch_status == "DNS_ERROR" else "Connection refused"
+            self.metrics["pages_failed"] += 1
+        except Exception as e:
+            elapsed_ms = int((time.time() - start_time) * 1000)
+            fetch_status = "NETWORK_ERROR"
+            fetch_error = f"Network request error: {str(e)[:120]}"
+            self.metrics["pages_failed"] += 1
 
         if not response:
             print(f"[CRAWL FAILED] {fetch_status} for {url} ({fetch_error})", flush=True)
-            self.queue_status[url] = fetch_status if fetch_status == "TIMEOUT" else "FAILED"
+            self.queue_status[url] = fetch_status
             page_record = {
                 "url": url,
                 "status_code": 0,
@@ -455,15 +722,23 @@ class SEOCrawler:
 
         print(f"[CRAWL HTTP] {response.status_code} {url} ({elapsed_ms}ms)", flush=True)
         
-        if response.status_code in (403, 401):
-            self.queue_status[url] = "BLOCKED"
+        # Detect Bot Protection / Cloudflare Challenges
+        resp_text_preview = (response.text or "")[:4000].lower()
+        is_bot_challenge = any(kw in resp_text_preview for kw in BOT_PROTECTION_KEYWORDS)
+        
+        if (response.status_code in (403, 503) and is_bot_challenge) or (response.status_code == 403):
+            self.queue_status[url] = "BOT_PROTECTION"
+            self.metrics["pages_blocked_by_bot_protection"] += 1
+            self.metrics["pages_blocked"] += 1
+            if url == self.start_url:
+                self.bot_protection_blocked_seed = True
             page_record = {
                 "url": url,
                 "status_code": response.status_code,
                 "response_time_ms": elapsed_ms,
-                "error": f"HTTP {response.status_code} Access Denied",
+                "error": f"HTTP {response.status_code} Bot Protection / Access Denied",
                 "is_success": False,
-                "fetch_status": "BLOCKED",
+                "fetch_status": "BOT_PROTECTION",
                 "content_available": False,
                 "word_count": 0,
                 "internal_links_count": 0,
@@ -475,6 +750,7 @@ class SEOCrawler:
 
         if response.status_code >= 400:
             self.queue_status[url] = "FAILED"
+            self.metrics["pages_failed"] += 1
             page_record = {
                 "url": url,
                 "status_code": response.status_code,
@@ -550,34 +826,81 @@ class SEOCrawler:
 
             current_depth = self.url_depths.get(url, 0)
             discovered_internal = []
+            raw_hrefs_to_process: List[Tuple[str, str, str]] = []  # (href, anchor_text, rel)
 
+            # 1. Harvest traditional anchor links from HTML
             for a_tag in soup.find_all("a", href=True):
                 raw_href = a_tag["href"].strip()
                 if not raw_href or raw_href.startswith(("#", "javascript:", "mailto:", "tel:")):
                     continue
-                
-                normalized = self.normalize_url(raw_href, url)
+                raw_hrefs_to_process.append((
+                    raw_href,
+                    a_tag.get_text().strip() or "[Image/No Text]",
+                    a_tag.get("rel", "")
+                ))
+
+            # 2. Check SPA Route Discovery if static links are sparse
+            spa_routes = self.extract_spa_links_from_html(html, url)
+            for sr in spa_routes:
+                raw_hrefs_to_process.append((sr, "[SPA Navigation Route]", ""))
+
+            # 3. Optional Headless Browser Rendering Fallback for SPA shells with 0 static links
+            if len(raw_hrefs_to_process) == 0 and (self.js_rendering in ("auto", "enabled")):
+                browser_result = await self.render_with_browser_fallback(url)
+                if browser_result:
+                    rendered_html, rendered_hrefs = browser_result
+                    for rh in rendered_hrefs:
+                        raw_hrefs_to_process.append((rh, "[JS Rendered Link]", ""))
+
+            # Process all discovered candidate links
+            for raw_href, anchor_txt, rel_val in raw_hrefs_to_process:
+                normalized = canonicalize_url(raw_href, url, self.ignore_utm_params)
+                if not normalized:
+                    continue
 
                 if self.is_same_domain(normalized):
                     discovered_internal.append(normalized)
                     self.internal_links.append({
                         "source": url,
                         "target": normalized,
-                        "anchor_text": a_tag.get_text().strip() or "[Image/No Text]",
-                        "rel": a_tag.get("rel", "")
+                        "anchor_text": anchor_txt,
+                        "rel": rel_val
                     })
                     
-                    if normalized not in self.queue_status and self.is_within_scope(normalized):
-                        self.queue_status[normalized] = "PENDING"
-                        self.url_depths[normalized] = current_depth + 1
-                        self.to_visit.append(normalized)
+                    if normalized not in self.queue_status:
+                        # Queue assignment depth: child links are depth + 1
+                        assigned_depth = current_depth + 1
+                        self.url_depths[normalized] = assigned_depth
+                        
+                        is_scope, reason = self.is_within_scope(normalized)
+                        if is_scope:
+                            is_safe, ssrf_reason = validate_url_ssrf(normalized, allow_local_dev=self.allow_local_dev)
+                            if is_safe:
+                                if not self.is_disallowed(normalized):
+                                    self.queue_status[normalized] = "PENDING"
+                                    self.to_visit.append(normalized)
+                                    self.metrics["pages_discovered"] += 1
+                                else:
+                                    self.queue_status[normalized] = "SKIPPED"
+                                    self.metrics["pages_blocked_by_robots"] += 1
+                                    self.metrics["pages_skipped"] += 1
+                                    self.rejection_log.append({"url": normalized, "reason": "ROBOTS_DISALLOWED"})
+                            else:
+                                self.queue_status[normalized] = "BLOCKED"
+                                self.metrics["pages_blocked_by_ssrf"] += 1
+                                self.rejection_log.append({"url": normalized, "reason": f"SSRF_BLOCKED: {ssrf_reason}"})
+                        else:
+                            self.queue_status[normalized] = "SKIPPED"
+                            self.metrics["pages_out_of_scope"] += 1
+                            self.rejection_log.append({"url": normalized, "reason": reason})
                 else:
                     self.external_links.append({
                         "source": url,
                         "target": normalized,
-                        "anchor_text": a_tag.get_text().strip() or "[External Link]",
-                        "rel": a_tag.get("rel", "")
+                        "anchor_text": anchor_txt,
+                        "rel": rel_val
                     })
+                    self.rejection_log.append({"url": normalized, "reason": "EXTERNAL_DOMAIN"})
 
             page_record = {
                 "url": url,
@@ -610,6 +933,7 @@ class SEOCrawler:
             self.evaluate_page_issues(page_record)
         except Exception as parse_err:
             print(f"[PARSE ERROR] Failed to parse HTML for {url}: {parse_err}", flush=True)
+            self.metrics["pages_failed"] += 1
             page_record = {
                 "url": url,
                 "status_code": response.status_code,
@@ -627,9 +951,13 @@ class SEOCrawler:
 
     async def start(self) -> Dict[str, Any]:
         self.is_running = True
-        print(f"[CRAWL] Starting real Internet crawl for {self.start_url}", flush=True)
+        print(f"[CRAWL] Starting real Internet crawl for {self.start_url} (Max Depth: {self.max_depth}, Scope: {self.scope_type}, Max Pages: {'5000+' if self.is_unlimited_scope else self.max_pages})", flush=True)
         
-        async with create_ssrf_safe_client(verify=self.verify_ssl, timeout=self.request_timeout) as client:
+        async with create_ssrf_safe_client(
+            verify=self.verify_ssl,
+            timeout=self.request_timeout,
+            allow_local_dev=self.allow_local_dev
+        ) as client:
             await self.fetch_robots_txt(client)
             await self.fetch_sitemap_xml(client)
 
@@ -644,7 +972,7 @@ class SEOCrawler:
                 
                 tasks = [self.crawl_page(client, url) for url in batch]
                 await asyncio.gather(*tasks, return_exceptions=True)
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(0.1)
 
         self.is_running = False
 
@@ -661,11 +989,6 @@ class SEOCrawler:
                 if self.progress_callback:
                     try:
                         self.progress_callback(len(self.visited), max(len(self.queue_status), len(self.visited)), msg)
-                    except TypeError:
-                        try:
-                            self.progress_callback(len(self.visited), max(len(self.queue_status), len(self.visited)))
-                        except Exception:
-                            pass
                     except Exception:
                         pass
 
@@ -689,21 +1012,31 @@ class SEOCrawler:
         
         if self.is_cancelled:
             overall_status = "cancelled"
-        elif is_access_denied:
-            overall_status = "access_denied"
+            status_message = "Crawl was cancelled by user."
+        elif self.robots_blocked_seed:
+            overall_status = "blocked_by_robots"
+            status_message = "Crawl blocked by robots.txt (Disallow directive)."
+        elif self.bot_protection_blocked_seed or (is_access_denied and len(successful_pages) == 0):
+            overall_status = "blocked_by_protection"
+            status_message = "Crawl could not continue because the website returned a bot-protection challenge (Cloudflare/CAPTCHA)."
         elif len(successful_pages) > 0 and len(failed_pages) > 0:
             overall_status = "completed_with_errors"
+            status_message = f"Crawl completed with {len(successful_pages)} pages crawled and {len(failed_pages)} errors."
         elif len(successful_pages) > 0 and len(failed_pages) == 0:
             overall_status = "completed"
+            status_message = f"Crawl successfully completed ({len(successful_pages)} pages crawled)."
         elif len(self.pages) > 0:
             overall_status = "completed_with_errors"
+            status_message = "Crawl completed with issues."
         else:
             overall_status = "failed"
+            status_message = "Crawl failed to reach destination server."
 
         print(f"[CRAWL FINISHED] Status: '{overall_status}'. Total Pages Saved: {len(self.pages)}, Successful: {len(successful_pages)}, Failed/Blocked: {len(failed_pages)}, Broken Links: {len(self.broken_links)}, Issues: {len(self.issues)}", flush=True)
         
         return {
             "status": overall_status,
+            "status_message": status_message,
             "max_pages": "5000+" if self.is_unlimited_scope else self.max_pages,
             "seed_status_code": self.seed_status_code,
             "successful_pages_count": len(successful_pages),
@@ -713,5 +1046,7 @@ class SEOCrawler:
             "internal_links": self.internal_links,
             "external_links": self.external_links,
             "broken_links": self.broken_links,
-            "asset_checks": self.asset_checks
+            "asset_checks": self.asset_checks,
+            "metrics": self.metrics,
+            "rejections_sample": self.rejection_log[:100]
         }

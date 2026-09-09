@@ -5,7 +5,7 @@ from app.models.project import Project
 from app.models.crawl_session import CrawlSession
 from app.crawler.crawler import SEOCrawler
 from app.services.crawl_storage import CrawlStorage
-from app.config.utils import get_sanitized_domain
+from app.config.utils import get_sanitized_domain, normalize_stored_path
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import asyncio
@@ -28,6 +28,9 @@ class CrawlRequest(BaseModel):
     ignore_utm_params: Optional[bool] = True
     follow_redirects: Optional[bool] = True
     target_countries: Optional[List[str]] = []
+    allow_subdomains: Optional[bool] = False
+    allow_local_dev: Optional[bool] = False
+    js_rendering: Optional[str] = "auto"
 
 async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict[str, Any]] = None):
     db = SessionLocal()
@@ -77,6 +80,9 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
             ignore_utm_params=opts.get("ignore_utm_params", True),
             follow_redirects=opts.get("follow_redirects", True),
             target_countries=opts.get("target_countries", []),
+            allow_subdomains=opts.get("allow_subdomains", False),
+            allow_local_dev=opts.get("allow_local_dev", False),
+            js_rendering=opts.get("js_rendering", "auto"),
             progress_callback=update_db_progress,
             cancellation_checker=check_cancellation
         )
@@ -91,16 +97,15 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
         
         # Determine status
         raw_status = results.get("status", "completed")
-        if raw_status == "cancelled":
-            crawl_status = "cancelled"
-        elif raw_status == "completed_with_errors":
-            crawl_status = "completed_with_errors"
-        elif raw_status in ("completed", "access_denied"):
-            crawl_status = "completed"
+        if raw_status in ("cancelled", "blocked_by_robots", "blocked_by_protection", "completed_with_errors", "completed", "failed"):
+            crawl_status = raw_status
+        elif raw_status == "access_denied":
+            crawl_status = "blocked_by_protection"
         else:
-            crawl_status = "failed"
+            crawl_status = "completed"
 
         crawl_session.status = crawl_status
+        crawl_session.status_message = results.get("status_message", f"Crawl {crawl_status}")
         crawl_session.pages_crawled = len(results.get("pages", []))
         crawl_session.pages_discovered = max(len(results.get("pages", [])), 1)
         crawl_session.issues_found = len(results.get("issues", []))

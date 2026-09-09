@@ -285,6 +285,9 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
 
         # 4. Metadata
         missing_titles = [p for p in html_pages if not p.get("title") or p.get("title", "").strip() == ""]
+        long_titles = [p for p in html_pages if p.get("title") and len(p.get("title", "").strip()) > 60]
+        short_titles = [p for p in html_pages if p.get("title") and 0 < len(p.get("title", "").strip()) < 30]
+
         if missing_titles:
             issues.append({
                 "rule_id": "META_001",
@@ -300,7 +303,24 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             categories["Metadata"]["critical"] += len(missing_titles)
             categories["Metadata"]["status"] = "Issues Found"
 
+        if long_titles:
+            issues.append({
+                "rule_id": "META_003",
+                "category": "Metadata",
+                "severity": "warning",
+                "title": "Page Titles Exceeding 60 Characters",
+                "description": f"{len(long_titles)} pages have titles longer than 60 characters, risking truncation in SERP snippets.",
+                "evidence": f"Long title URLs: {', '.join([p.get('url', '') for p in long_titles[:3]])}",
+                "affected_urls": [p.get("url") for p in long_titles],
+                "affected_count": len(long_titles),
+                "recommendation": "Shorten title tags to 50-60 characters while placing primary keywords first."
+            })
+            categories["Metadata"]["warning"] += len(long_titles)
+            categories["Metadata"]["status"] = "Issues Found"
+
         missing_desc = [p for p in html_pages if not p.get("meta_description") or p.get("meta_description", "").strip() == ""]
+        long_desc = [p for p in html_pages if p.get("meta_description") and len(p.get("meta_description", "").strip()) > 160]
+
         if missing_desc:
             issues.append({
                 "rule_id": "META_002",
@@ -316,7 +336,22 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             categories["Metadata"]["warning"] += len(missing_desc)
             categories["Metadata"]["status"] = "Issues Found"
 
-        if not missing_titles and not missing_desc:
+        if long_desc:
+            issues.append({
+                "rule_id": "META_005",
+                "category": "Metadata",
+                "severity": "notice",
+                "title": "Meta Descriptions Exceeding 160 Characters",
+                "description": f"{len(long_desc)} pages have meta descriptions exceeding 160 characters.",
+                "evidence": f"Truncated descriptions on: {', '.join([p.get('url', '') for p in long_desc[:3]])}",
+                "affected_urls": [p.get("url") for p in long_desc],
+                "affected_count": len(long_desc),
+                "recommendation": "Shorten meta descriptions to 150-160 characters to prevent snippet truncation."
+            })
+            categories["Metadata"]["notice"] += len(long_desc)
+            categories["Metadata"]["status"] = "Issues Found"
+
+        if not missing_titles and not long_titles and not missing_desc and not long_desc:
             categories["Metadata"]["passed"] += html_count
 
         # 5. Content
@@ -340,6 +375,8 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
 
         # 6. Headings
         missing_h1 = [p for p in html_pages if not (p.get("h1") if isinstance(p.get("h1"), list) else str(p.get("h1") or "").strip())]
+        multiple_h1 = [p for p in html_pages if isinstance(p.get("h1"), list) and len(p.get("h1")) > 1]
+
         if missing_h1:
             issues.append({
                 "rule_id": "HEAD_001",
@@ -354,7 +391,23 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             })
             categories["Headings"]["warning"] += len(missing_h1)
             categories["Headings"]["status"] = "Issues Found"
-        else:
+
+        if multiple_h1:
+            issues.append({
+                "rule_id": "HEAD_002",
+                "category": "Headings",
+                "severity": "notice",
+                "title": "Pages with Multiple H1 Headings",
+                "description": f"{len(multiple_h1)} pages contain more than one <h1> heading, diluting semantic hierarchy.",
+                "evidence": f"URLs with multiple H1: {', '.join([p.get('url', '') for p in multiple_h1[:3]])}",
+                "affected_urls": [p.get("url") for p in multiple_h1],
+                "affected_count": len(multiple_h1),
+                "recommendation": "Maintain a single primary <h1> heading per page and convert secondary headings to <h2>."
+            })
+            categories["Headings"]["notice"] += len(multiple_h1)
+            categories["Headings"]["status"] = "Issues Found"
+
+        if not missing_h1 and not multiple_h1:
             categories["Headings"]["passed"] += html_count
 
         # 7. Canonicals
@@ -403,14 +456,16 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             categories["Images"]["passed"] += html_count
 
         # 9. Internal Links
-        orphan_pages = [p for p in html_pages if p.get("internal_links_count", 1) == 0 and not p.get("url", "").endswith("/")]
+        orphan_pages = [p for p in html_pages if (p.get("inbound_internal_links_count", p.get("internal_links_count", 1)) == 0) and not p.get("url", "").endswith("/")]
+        deep_pages = [p for p in html_pages if (p.get("crawl_depth") or 0) > 3]
+
         if orphan_pages:
             issues.append({
                 "rule_id": "LINK_001",
                 "category": "Internal Links",
                 "severity": "warning",
                 "title": "Orphan Pages (0 Inbound Internal Links)",
-                "description": f"{len(orphan_pages)} pages have zero internal links pointing to them.",
+                "description": f"{len(orphan_pages)} pages have no incoming internal links discovered within this crawl.",
                 "evidence": f"Orphan URLs: {', '.join([p.get('url', '') for p in orphan_pages[:3]])}",
                 "affected_urls": [p.get("url") for p in orphan_pages],
                 "affected_count": len(orphan_pages),
@@ -418,7 +473,23 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             })
             categories["Internal Links"]["warning"] += len(orphan_pages)
             categories["Internal Links"]["status"] = "Issues Found"
-        else:
+
+        if deep_pages:
+            issues.append({
+                "rule_id": "LINK_002",
+                "category": "Internal Links",
+                "severity": "notice",
+                "title": "Deep Pages (Crawl Depth > 3)",
+                "description": f"{len(deep_pages)} pages require more than 3 clicks from seed to reach.",
+                "evidence": f"Deep URLs: {', '.join([p.get('url', '') for p in deep_pages[:3]])}",
+                "affected_urls": [p.get("url") for p in deep_pages],
+                "affected_count": len(deep_pages),
+                "recommendation": "Improve site architecture with direct category navigation and hub links."
+            })
+            categories["Internal Links"]["notice"] += len(deep_pages)
+            categories["Internal Links"]["status"] = "Issues Found"
+
+        if not orphan_pages and not deep_pages:
             categories["Internal Links"]["passed"] += html_count
 
         # 10. External Links

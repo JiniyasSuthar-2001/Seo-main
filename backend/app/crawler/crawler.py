@@ -493,6 +493,113 @@ class SEOCrawler:
             print(f"[BROWSER RENDER] Headless fallback skipped for {url}: {e}", flush=True)
             return None
 
+    def extract_page_data_from_html(self, url: str, html: str) -> Dict[str, Any]:
+        """
+        Parses HTML content and extracts comprehensive SEO page attributes,
+        headings, structured data, image inventory, open graph, and twitter cards.
+        """
+        soup = BeautifulSoup(html, "html.parser")
+        
+        title_tag = soup.title.string.strip() if soup.title and soup.title.string else None
+        meta_desc_tag = soup.find("meta", attrs={"name": "description"})
+        meta_description = meta_desc_tag["content"].strip() if meta_desc_tag and meta_desc_tag.get("content") else None
+        
+        canonical_tag = soup.find("link", attrs={"rel": "canonical"})
+        canonical = canonical_tag["href"].strip() if canonical_tag and canonical_tag.get("href") else None
+        
+        robots_tag = soup.find("meta", attrs={"name": "robots"})
+        robots_meta = robots_tag["content"].strip() if robots_tag and robots_tag.get("content") else "index, follow"
+
+        html_lang = soup.html.get("lang").strip() if soup.html and soup.html.get("lang") else None
+        viewport_tag = soup.find("meta", attrs={"name": "viewport"})
+        viewport = viewport_tag["content"].strip() if viewport_tag and viewport_tag.get("content") else None
+
+        hreflangs = []
+        for link in soup.find_all("link", attrs={"rel": re.compile(r"alternate", re.I)}):
+            if link.get("hreflang"):
+                hreflangs.append({
+                    "lang": link.get("hreflang").strip(),
+                    "href": link.get("href", "").strip()
+                })
+
+        structured_data = []
+        for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
+            if script.string:
+                try:
+                    structured_data.append(json.loads(script.string.strip()))
+                except Exception:
+                    pass
+
+        h1_tags = [h.get_text().strip() for h in soup.find_all("h1") if h.get_text()]
+        h2_tags = [h.get_text().strip() for h in soup.find_all("h2") if h.get_text()]
+        h3_tags = [h.get_text().strip() for h in soup.find_all("h3") if h.get_text()]
+        h1 = h1_tags[0] if h1_tags else None
+
+        text = soup.get_text(separator=" ")
+        words = [w for w in text.split() if len(w) > 1]
+        word_count = len(words)
+
+        images = soup.find_all("img")
+        image_inventory = []
+        for img in images:
+            src = img.get("src") or img.get("data-src") or ""
+            if src:
+                img_url = canonicalize_url(src.strip(), url, self.ignore_utm_params)
+                alt = img.get("alt", None)
+                has_alt = alt is not None and len(str(alt).strip()) > 0
+                image_inventory.append({
+                    "image_url": img_url or src,
+                    "source_page": url,
+                    "alt_text": str(alt).strip() if alt else "",
+                    "alt_missing": not has_alt,
+                    "width": img.get("width"),
+                    "height": img.get("height"),
+                    "loading": img.get("loading")
+                })
+        images_missing_alt = sum(1 for img in image_inventory if img["alt_missing"]) if image_inventory else sum(1 for img in images if not img.get("alt"))
+
+        open_graph = {}
+        for meta_tag in soup.find_all("meta", attrs={"property": re.compile(r"^og:", re.I)}):
+            prop = meta_tag.get("property", "").lower()
+            c_val = meta_tag.get("content", "").strip()
+            if prop and c_val:
+                open_graph[prop] = c_val
+
+        twitter_cards = {}
+        for meta_tag in soup.find_all("meta", attrs={"name": re.compile(r"^twitter:", re.I)}):
+            name = meta_tag.get("name", "").lower()
+            c_val = meta_tag.get("content", "").strip()
+            if name and c_val:
+                twitter_cards[name] = c_val
+
+        return {
+            "url": url,
+            "title": title_tag,
+            "meta_description": meta_description,
+            "canonical": canonical,
+            "robots_meta": robots_meta,
+            "html_lang": html_lang,
+            "viewport": viewport,
+            "hreflangs": hreflangs,
+            "structured_data": structured_data,
+            "h1": h1,
+            "h1_count": len(h1_tags),
+            "h1_tags": h1_tags,
+            "h2": h2_tags,
+            "h2_count": len(h2_tags),
+            "h3": h3_tags,
+            "h3_count": len(h3_tags),
+            "word_count": word_count,
+            "images": [img.get("src") for img in images if img.get("src")],
+            "image_inventory": image_inventory,
+            "images_missing_alt": images_missing_alt,
+            "open_graph": open_graph,
+            "twitter_cards": twitter_cards,
+            "og_title": open_graph.get("og:title"),
+            "og_description": open_graph.get("og:description"),
+            "twitter_card": twitter_cards.get("twitter:card")
+        }
+
     def evaluate_page_issues(self, page_data: Dict[str, Any]):
         url = page_data["url"]
         status = page_data.get("status_code", 0)
@@ -822,7 +929,38 @@ class SEOCrawler:
             word_count = len(words)
 
             images = soup.find_all("img")
-            images_missing_alt = sum(1 for img in images if not img.get("alt"))
+            image_inventory = []
+            for img in images:
+                src = img.get("src") or img.get("data-src") or ""
+                if src:
+                    img_url = canonicalize_url(src.strip(), url, self.ignore_utm_params)
+                    alt = img.get("alt", None)
+                    has_alt = alt is not None and len(str(alt).strip()) > 0
+                    image_inventory.append({
+                        "image_url": img_url or src,
+                        "source_page": url,
+                        "alt_text": str(alt).strip() if alt else "",
+                        "alt_missing": not has_alt,
+                        "width": img.get("width"),
+                        "height": img.get("height"),
+                        "loading": img.get("loading")
+                    })
+            images_missing_alt = sum(1 for img in image_inventory if img["alt_missing"]) if image_inventory else sum(1 for img in images if not img.get("alt"))
+
+            # Social metadata: Open Graph & Twitter Cards
+            open_graph = {}
+            for meta_tag in soup.find_all("meta", attrs={"property": re.compile(r"^og:", re.I)}):
+                prop = meta_tag.get("property", "").lower()
+                c_val = meta_tag.get("content", "").strip()
+                if prop and c_val:
+                    open_graph[prop] = c_val
+
+            twitter_cards = {}
+            for meta_tag in soup.find_all("meta", attrs={"name": re.compile(r"^twitter:", re.I)}):
+                name = meta_tag.get("name", "").lower()
+                c_val = meta_tag.get("content", "").strip()
+                if name and c_val:
+                    twitter_cards[name] = c_val
 
             current_depth = self.url_depths.get(url, 0)
             discovered_internal = []
@@ -919,13 +1057,16 @@ class SEOCrawler:
                 "viewport": viewport,
                 "hreflangs": hreflangs,
                 "structured_data": structured_data,
+                "open_graph": open_graph,
+                "twitter_cards": twitter_cards,
                 "h1": h1,
                 "h1_count": len(h1_tags),
                 "h2_count": len(h2_tags),
                 "h3_count": len(h3_tags),
                 "word_count": word_count,
-                "images_count": len(images),
+                "images_count": len(image_inventory) if image_inventory else len(images),
                 "images_missing_alt": images_missing_alt,
+                "image_inventory": image_inventory,
                 "internal_links_count": len(discovered_internal)
             }
             

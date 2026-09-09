@@ -9,6 +9,7 @@ from app.models.project import Project
 from app.config.settings import settings
 from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 from app.llm.llm_provider import get_llm_provider_for_user
+from app.services.ai_usage_service import AIUsageService
 
 class AISolutionService:
     """
@@ -149,9 +150,10 @@ class AISolutionService:
                 cls._MEMORY_CACHE[cache_key] = stored_solutions[cache_key]
                 return stored_solutions[cache_key]
 
-        # 5. Attempt AI Generation via Active LLM Provider
+        # 5. Check AI Allowance & Attempt AI Generation via Active LLM Provider
+        can_use_ai = AIUsageService.can_consume_ai_page(user_id=user_id, db=db)
         provider = None
-        if user_id and db:
+        if can_use_ai and user_id and db:
             try:
                 provider = get_llm_provider_for_user(user_id=user_id, db=db)
             except Exception as e:
@@ -175,10 +177,25 @@ class AISolutionService:
                     page=matching_page,
                     crawl_date=crawl_date
                 )
+                if solution_obj:
+                    # Record real AI page consumption
+                    p_name = getattr(provider, "provider_name", type(provider).__name__)
+                    m_name = getattr(provider, "model", "default")
+                    AIUsageService.record_ai_usage(
+                        user_id=user_id,
+                        project_id=project.id,
+                        crawl_id=crawl_id,
+                        page_url=affected_url,
+                        task_type="page_solution",
+                        model=f"{p_name}:{m_name}",
+                        units_consumed=1,
+                        status="success",
+                        db=db
+                    )
             except Exception as ai_err:
                 print(f"[AI SOLUTION SERVICE] LLM execution failed, using deterministic evidence fallback: {ai_err}", flush=True)
 
-        # 6. Deterministic Evidence-Grounded Fallback (if LLM returned None or errored)
+        # 6. Deterministic Evidence-Grounded Fallback (if LLM returned None, errored, or limit reached)
         if not solution_obj:
             solution_obj = cls._generate_deterministic_fallback(
                 project=project,
@@ -193,6 +210,9 @@ class AISolutionService:
                 page=matching_page,
                 crawl_date=crawl_date
             )
+            if not can_use_ai:
+                solution_obj["ai_limit_reached"] = True
+                solution_obj["usage_note"] = "AI page limit reached. Website crawling and standard SEO analysis will continue normally."
 
         # 7. Save and Cache Result
         cls._save_stored_solution(project.id, domain, crawl_dir, cache_key, solution_obj)

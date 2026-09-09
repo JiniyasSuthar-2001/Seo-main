@@ -13,6 +13,7 @@ from app.models.audit_issue import AuditIssue
 from app.models.action_opportunity import ActionOpportunity
 from app.models.report import ReportRecord
 from app.models.notification import Notification
+from app.models.ai_usage_log import AIUsageLog
 
 __all__ = [
     "Project",
@@ -29,5 +30,6 @@ __all__ = [
     "AuditIssue",
     "ActionOpportunity",
     "ReportRecord",
-    "Notification"
+    "Notification",
+    "AIUsageLog"
 ]

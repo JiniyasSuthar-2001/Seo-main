@@ -162,7 +162,7 @@ def validate_url_ssrf(url: str, allow_local_dev: bool = False) -> Tuple[bool, Op
     return True, None
 
 def create_ssrf_request_hook(allow_local_dev: bool = False):
-    def ssrf_request_hook(request: httpx.Request):
+    async def ssrf_request_hook(request: httpx.Request):
         url_str = str(request.url)
         is_valid, reason = validate_url_ssrf(url_str, allow_local_dev=allow_local_dev)
         if not is_valid:
@@ -170,7 +170,7 @@ def create_ssrf_request_hook(allow_local_dev: bool = False):
     return ssrf_request_hook
 
 def create_ssrf_response_hook(allow_local_dev: bool = False):
-    def ssrf_response_hook(response: httpx.Response):
+    async def ssrf_response_hook(response: httpx.Response):
         if response.is_redirect and "location" in response.headers:
             redirect_url = response.headers["location"]
             absolute_redirect = urljoin(str(response.request.url), redirect_url)

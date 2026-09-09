@@ -14,6 +14,7 @@ from app.models.action_opportunity import ActionOpportunity
 from app.models.report import ReportRecord
 from app.models.notification import Notification
 from app.models.ai_usage_log import AIUsageLog
+from app.models.link_record import LinkRecord
 
 __all__ = [
     "Project",
@@ -31,5 +32,6 @@ __all__ = [
     "ActionOpportunity",
     "ReportRecord",
     "Notification",
-    "AIUsageLog"
+    "AIUsageLog",
+    "LinkRecord"
 ]

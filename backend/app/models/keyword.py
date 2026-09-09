@@ -17,6 +17,7 @@ class Keyword(Base):
     difficulty = Column(Float, nullable=True)
     intent = Column(String, nullable=True)
     position = Column(Integer, nullable=True)
+    previous_position = Column(Integer, nullable=True)
     country = Column(String, nullable=True)
     device = Column(String, nullable=True)
     cpc = Column(Float, nullable=True)

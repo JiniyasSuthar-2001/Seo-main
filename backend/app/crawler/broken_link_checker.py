@@ -100,14 +100,17 @@ async def check_single_link(
                 "status_code": status_code,
                 "is_broken": False,
                 "error": None,
+                "error_type": None,
                 "final_url": final_url
             }
         else:
+            err_type = "not_found" if status_code == 404 else ("gone" if status_code == 410 else "http_error")
             return {
                 "url": url,
                 "status_code": status_code,
                 "is_broken": True,
                 "error": f"HTTP {status_code} {getattr(resp, 'reason_phrase', 'Error') or 'Error'}",
+                "error_type": err_type,
                 "final_url": final_url
             }
 
@@ -117,19 +120,23 @@ async def check_single_link(
             "status_code": 0,
             "is_broken": True,
             "error": f"Request Timed Out ({timeout}s)",
+            "error_type": "timeout",
             "final_url": url
         }
     except httpx.ConnectError as ce:
         err_s = str(ce)
         if any(k in err_s.lower() for k in ("name", "dns", "getaddrinfo", "nodename")):
             err_msg = "DNS Resolution Failed"
+            err_type = "dns_error"
         else:
             err_msg = "Connection Refused"
+            err_type = "connection_error"
         return {
             "url": url,
             "status_code": 0,
             "is_broken": True,
             "error": err_msg,
+            "error_type": err_type,
             "final_url": url
         }
     except httpx.InvalidURL:
@@ -138,6 +145,7 @@ async def check_single_link(
             "status_code": 0,
             "is_broken": True,
             "error": "Malformed URL",
+            "error_type": "invalid_url",
             "final_url": url
         }
     except Exception as exc:
@@ -147,6 +155,7 @@ async def check_single_link(
             "status_code": 0,
             "is_broken": True,
             "error": f"Network Error ({err_text})",
+            "error_type": "network_error",
             "final_url": url
         }
 
@@ -359,7 +368,19 @@ class BrokenLinkChecker:
                     "link_type": "internal",
                     "status_code": status_info.get("status_code", 0),
                     "is_broken": True,
-                    "error": status_info.get("error")
+                    "error": status_info.get("error"),
+                    "error_type": status_info.get("error_type", "http_error"),
+                    "final_url": status_info.get("final_url", target),
+                    "rel": link.get("rel", "follow"),
+                    "source_section": link.get("source_section", "other"),
+                    "nearest_heading": link.get("nearest_heading"),
+                    "heading_level": link.get("heading_level"),
+                    "paragraph_index": link.get("paragraph_index"),
+                    "sentence_index": link.get("sentence_index"),
+                    "context_before": link.get("context_before", ""),
+                    "context_text": link.get("context_text", ""),
+                    "context_after": link.get("context_after", ""),
+                    "html_snippet": link.get("html_snippet", "")
                 })
 
         # External broken links
@@ -376,7 +397,19 @@ class BrokenLinkChecker:
                     "link_type": "external",
                     "status_code": status_info.get("status_code", 0),
                     "is_broken": True,
-                    "error": status_info.get("error")
+                    "error": status_info.get("error"),
+                    "error_type": status_info.get("error_type", "http_error"),
+                    "final_url": status_info.get("final_url", target),
+                    "rel": link.get("rel", "follow"),
+                    "source_section": link.get("source_section", "other"),
+                    "nearest_heading": link.get("nearest_heading"),
+                    "heading_level": link.get("heading_level"),
+                    "paragraph_index": link.get("paragraph_index"),
+                    "sentence_index": link.get("sentence_index"),
+                    "context_before": link.get("context_before", ""),
+                    "context_text": link.get("context_text", ""),
+                    "context_after": link.get("context_after", ""),
+                    "html_snippet": link.get("html_snippet", "")
                 })
 
         return broken_links

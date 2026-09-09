@@ -202,41 +202,82 @@ def get_winners_losers(
     db: Session = Depends(get_db)
 ):
     """
-    Detects New, Lost, Improved, and Declined ranking keywords across real snapshots.
-    Production rule: Requires at least 2 completed snapshots. Never infers change from a single dataset.
+    Detects New, Lost, Improved, and Declined ranking keywords across real snapshots or keyword records.
+    Deterministic rule: Only calculates change when comparison values actually exist. Never manufactures data.
     """
     get_user_membership(db, user_id, project_id)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
 
+    keywords = db.query(Keyword).filter(Keyword.project_id == project.id).all()
     sessions = db.query(CrawlSession).filter(
         CrawlSession.project_id == project.id,
         CrawlSession.status == "completed"
     ).order_by(CrawlSession.completed_at.desc()).all()
 
-    if len(sessions) < 2:
-        return {
-            "has_comparison": False,
-            "message": "Trend data will appear after connecting a position provider and recording multiple snapshots.",
-            "improved": [],
-            "declined": [],
-            "winners": [],
-            "losers": [],
-            "new_keywords": [],
-            "lost_keywords": []
-        }
+    improved = []
+    declined = []
+    new_keywords = []
+    lost_keywords = []
+
+    for kw in keywords:
+        pos = getattr(kw, "position", None)
+        prev = getattr(kw, "previous_position", None)
+
+        if pos is not None and prev is not None:
+            diff = prev - pos
+            kw_data = {
+                "keyword": kw.keyword,
+                "current_position": pos,
+                "previous_position": prev,
+                "change": diff,
+                "url": kw.target_url or f"https://{project.domain}/",
+                "search_volume": kw.search_volume,
+                "data_source": kw.source or "Rank Tracker"
+            }
+            if diff > 0:
+                improved.append(kw_data)
+            elif diff < 0:
+                declined.append(kw_data)
+        elif pos is not None and prev is None:
+            new_keywords.append({
+                "keyword": kw.keyword,
+                "current_position": pos,
+                "previous_position": None,
+                "change": None,
+                "url": kw.target_url or f"https://{project.domain}/",
+                "search_volume": kw.search_volume,
+                "data_source": kw.source or "Rank Tracker"
+            })
+        elif pos is None and prev is not None:
+            lost_keywords.append({
+                "keyword": kw.keyword,
+                "current_position": None,
+                "previous_position": prev,
+                "change": None,
+                "url": kw.target_url or f"https://{project.domain}/",
+                "search_volume": kw.search_volume,
+                "data_source": kw.source or "Rank Tracker"
+            })
+
+    has_comparison = len(improved) > 0 or len(declined) > 0 or len(new_keywords) > 0 or len(lost_keywords) > 0 or len(sessions) >= 2
+
+    # Sort improved by largest gain, declined by largest drop
+    improved.sort(key=lambda x: x["change"], reverse=True)
+    declined.sort(key=lambda x: x["change"])
 
     return {
-        "has_comparison": True,
-        "snapshot_current": sessions[0].completed_at.isoformat() if sessions[0].completed_at else "Recent",
-        "snapshot_previous": sessions[1].completed_at.isoformat() if sessions[1].completed_at else "Previous",
-        "improved": [],
-        "declined": [],
-        "winners": [],
-        "losers": [],
-        "new_keywords": [],
-        "lost_keywords": []
+        "has_comparison": has_comparison,
+        "snapshot_current": sessions[0].completed_at.isoformat() if len(sessions) > 0 and sessions[0].completed_at else "Recent",
+        "snapshot_previous": sessions[1].completed_at.isoformat() if len(sessions) > 1 and sessions[1].completed_at else "Previous",
+        "improved": improved,
+        "declined": declined,
+        "winners": improved[:10],
+        "losers": declined[:10],
+        "new_keywords": new_keywords,
+        "lost_keywords": lost_keywords,
+        "message": "Ranking comparisons active." if has_comparison else "Trend data will appear after recording multiple position snapshots."
     }
 
 from app.routers.reports import export_rankings_csv

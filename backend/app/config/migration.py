@@ -104,6 +104,7 @@ def _migrate_single_file(db_file: str):
             "difficulty": "REAL",
             "intent": "TEXT",
             "position": "INTEGER",
+            "previous_position": "INTEGER",
             "country": "TEXT",
             "device": "TEXT",
             "cpc": "REAL",

@@ -17,6 +17,14 @@ from app.services.reports.export_service import CSVExportService
 from app.routers.reports import build_export_filename, record_report_generation
 from pydantic import BaseModel
 from app.services.anchor_suggestion_service import AnchorSuggestionService
+from app.crawler.crawler import canonicalize_url
+from app.services.link_graph_engine import (
+    build_internal_link_graph,
+    get_incoming_links_for_page,
+    get_outgoing_links_for_page,
+    get_link_detail,
+    normalize_graph_url
+)
 
 router = APIRouter()
 
@@ -26,15 +34,7 @@ ALLOWED_SECTIONS = {"graph", "orphans", "anchors", "opportunities", "broken"}
 def normalize_link_url(url: Optional[str]) -> str:
     if not url:
         return ""
-    clean = url.split('#')[0].strip()
-    if clean.endswith('/') and clean not in ("https://", "http://", "https:///", "http:///"):
-        clean = clean.rstrip('/')
-    return clean
-
-
-def _is_homepage_url(url: str, clean_dom: str) -> bool:
-    c = normalize_link_url(url).lower().replace("https://", "").replace("http://", "").replace("www.", "")
-    return c == clean_dom or c == ""
+    return canonicalize_url(url)
 
 
 def _load_crawl_dataset(project: Project) -> Dict[str, Any]:
@@ -47,7 +47,8 @@ def _load_crawl_dataset(project: Project) -> Dict[str, Any]:
             "pages": [],
             "internal_links": [],
             "external_links": [],
-            "broken_links": []
+            "broken_links": [],
+            "link_records": []
         }
 
     proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, project.domain, project.id)
@@ -57,6 +58,7 @@ def _load_crawl_dataset(project: Project) -> Dict[str, Any]:
     internal_links = []
     external_links = []
     broken_links = []
+    link_records = []
     crawl_dir = None
 
     if os.path.exists(latest_path):
@@ -85,6 +87,11 @@ def _load_crawl_dataset(project: Project) -> Dict[str, Any]:
                 if os.path.exists(broken_file):
                     with open(broken_file, "r", encoding="utf-8") as bf:
                         broken_links = json.load(bf)
+
+                rec_file = os.path.join(crawl_dir, "link_records.json")
+                if os.path.exists(rec_file):
+                    with open(rec_file, "r", encoding="utf-8") as rf:
+                        link_records = json.load(rf)
         except Exception as e:
             print(f"[INTERNAL LINKS] Error loading crawl dataset: {e}", flush=True)
 
@@ -93,63 +100,54 @@ def _load_crawl_dataset(project: Project) -> Dict[str, Any]:
         "pages": pages,
         "internal_links": internal_links,
         "external_links": external_links,
-        "broken_links": broken_links
+        "broken_links": broken_links,
+        "link_records": link_records
     }
 
 
-def _compute_link_graph_and_orphans(pages: List[Dict[str, Any]], internal_links: List[Dict[str, Any]], domain: str):
+def _compute_link_graph_and_orphans(pages: List[Dict[str, Any]], internal_links: List[Dict[str, Any]], domain: str, link_records: Optional[List[Dict[str, Any]]] = None):
     """
     Computes incoming/outgoing link distributions, orphan pages, and anchor text frequency.
     """
-    incoming_map = defaultdict(int)
-    outgoing_map = defaultdict(int)
+    seed_url = f"https://{domain}/"
+    graph = build_internal_link_graph(pages, internal_links, link_records=link_records, seed_url=seed_url)
+
+    incoming_map = defaultdict(int, graph.get("inbound_counts", {}))
+    outgoing_map = defaultdict(int, graph.get("outbound_counts", {}))
+    orphan_pages = [o.get("url") for o in graph.get("orphan_pages", [])]
+
     anchor_counter = Counter()
-
-    for link in internal_links:
-        src = normalize_link_url(link.get("source"))
-        tgt = normalize_link_url(link.get("target"))
-        anc = (link.get("anchor_text") or "").strip()
-        if src:
-            outgoing_map[src] += 1
-        if tgt:
-            incoming_map[tgt] += 1
-        if anc:
-            anchor_counter[anc] += 1
-
-    all_urls = [p.get("url") for p in pages if p.get("url")]
-    clean_domain = domain.lower().replace("https://", "").replace("http://", "").replace("www.", "").rstrip('/')
-    orphan_pages = []
-    for url in all_urls:
-        norm_url = normalize_link_url(url)
-        if _is_homepage_url(norm_url, clean_domain):
-            continue
-        if incoming_map[norm_url] == 0:
-            orphan_pages.append(url)
+    active_links = link_records if (link_records and len(link_records) > 0) else internal_links
+    for link in active_links:
+        if link.get("is_internal") is not False:
+            anc = (link.get("anchor_text") or "").strip()
+            if anc:
+                anchor_counter[anc] += 1
 
     top_anchors = [{"anchor_text": k, "frequency": v} for k, v in anchor_counter.most_common(15)]
-    return incoming_map, outgoing_map, orphan_pages, top_anchors, anchor_counter
+    return incoming_map, outgoing_map, orphan_pages, top_anchors, anchor_counter, graph
 
 
-def _compute_opportunities(pages: List[Dict[str, Any]], internal_links: List[Dict[str, Any]], domain: str) -> List[Dict[str, Any]]:
+def _compute_opportunities(pages: List[Dict[str, Any]], internal_links: List[Dict[str, Any]], domain: str, link_records: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """
     Identifies internal link growth opportunities from graph structure.
     """
-    incoming_map = defaultdict(int)
-    for link in internal_links:
-        tgt = normalize_link_url(link.get("target"))
-        if tgt:
-            incoming_map[tgt] += 1
-
+    seed_url = f"https://{domain}/"
+    graph = build_internal_link_graph(pages, internal_links, link_records=link_records, seed_url=seed_url)
+    incoming_map = graph.get("inbound_counts", {})
     clean_domain = domain.lower().replace("https://", "").replace("http://", "").replace("www.", "").rstrip('/')
+    
     opportunities = []
     for p in pages:
         url = p.get("url")
         if not url:
             continue
         norm_url = normalize_link_url(url)
-        if _is_homepage_url(norm_url, clean_domain):
+        c = norm_url.lower().replace("https://", "").replace("http://", "").replace("www.", "")
+        if c == clean_domain or c == "":
             continue
-        inc_count = incoming_map[norm_url]
+            
+        inc_count = incoming_map.get(norm_url, 0)
         if inc_count == 0:
             opportunities.append({
                 "source_page": f"https://{domain}/",
@@ -192,7 +190,14 @@ def _get_broken_links_list(dataset: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "link_type": "internal",
                     "status_code": pg.get("status_code", 0),
                     "is_broken": True,
-                    "error": pg.get("error") or f"HTTP {pg.get('status_code', 0)}"
+                    "error": pg.get("error") or f"HTTP {pg.get('status_code', 0)}",
+                    "error_type": "not_found" if pg.get("status_code") == 404 else "http_error",
+                    "source_section": l.get("source_section", "other"),
+                    "nearest_heading": l.get("nearest_heading"),
+                    "paragraph_index": l.get("paragraph_index"),
+                    "sentence_index": l.get("sentence_index"),
+                    "context_text": l.get("context_text", ""),
+                    "html_snippet": l.get("html_snippet", "")
                 })
         return computed_broken
     return broken_links
@@ -216,8 +221,9 @@ def get_internal_links(
     dataset = _load_crawl_dataset(project)
     internal_links = dataset["internal_links"]
     pages = dataset["pages"]
+    link_records = dataset["link_records"]
 
-    incoming_map, outgoing_map, orphan_pages, top_anchors, anchor_counter = _compute_link_graph_and_orphans(pages, internal_links, domain)
+    incoming_map, outgoing_map, orphan_pages, top_anchors, anchor_counter, graph = _compute_link_graph_and_orphans(pages, internal_links, domain, link_records)
 
     return {
         "domain": domain,
@@ -225,7 +231,9 @@ def get_internal_links(
             "total_internal_links": len(internal_links),
             "total_audited_pages": len(pages),
             "orphan_pages_count": len(orphan_pages),
-            "unique_anchor_texts": len(anchor_counter)
+            "unique_anchor_texts": len(anchor_counter),
+            "deep_pages_count": graph.get("deep_pages_count", 0),
+            "dead_end_pages_count": graph.get("dead_end_pages_count", 0)
         },
         "orphan_pages": orphan_pages,
         "anchor_texts": top_anchors,
@@ -235,6 +243,147 @@ def get_internal_links(
             "source": "Local Crawl Link Graph Parser",
             "confidence": 100.0
         }
+    }
+
+
+@router.get("/incoming")
+def get_incoming_links_api(
+    project_id: str,
+    url: str = Query(..., description="Target page URL to find incoming links for"),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns all incoming links pointing to a target URL with rich location, context, and source status.
+    """
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    dataset = _load_crawl_dataset(project)
+    incoming = get_incoming_links_for_page(
+        target_url=url,
+        link_records=dataset.get("link_records"),
+        internal_links=dataset.get("internal_links"),
+        pages=dataset.get("pages")
+    )
+
+    return {
+        "project_id": project.id,
+        "target_url": url,
+        "total_incoming_links": len(incoming),
+        "incoming_links": incoming
+    }
+
+
+@router.get("/outgoing")
+def get_outgoing_links_api(
+    project_id: str,
+    url: str = Query(..., description="Source page URL to find outgoing links for"),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns all outgoing links from a source URL with target status, location, and context.
+    """
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    dataset = _load_crawl_dataset(project)
+    outgoing = get_outgoing_links_for_page(
+        source_url=url,
+        link_records=dataset.get("link_records"),
+        internal_links=dataset.get("internal_links"),
+        external_links=dataset.get("external_links"),
+        pages=dataset.get("pages")
+    )
+
+    return {
+        "project_id": project.id,
+        "source_url": url,
+        "total_outgoing_links": len(outgoing),
+        "outgoing_links": outgoing
+    }
+
+
+@router.get("/link-detail")
+def get_link_detail_api(
+    project_id: str,
+    link_id: str = Query(..., description="Unique LinkRecord ID"),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns complete LinkRecord evidence for a specific link ID.
+    """
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    dataset = _load_crawl_dataset(project)
+    rec = get_link_detail(link_id=link_id, link_records=dataset.get("link_records"))
+    if not rec:
+        raise HTTPException(status_code=404, detail="Link record not found")
+
+    return {
+        "project_id": project.id,
+        "link_record": rec
+    }
+
+
+@router.get("/page-link-counts")
+def get_page_link_counts_api(
+    project_id: str,
+    url: str = Query(..., description="Page URL to get counts for"),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns incoming_internal_links, outgoing_internal_links, unique counts, depth, and orphan status for a page.
+    """
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    dataset = _load_crawl_dataset(project)
+    seed_url = f"https://{project.domain}/"
+    graph = build_internal_link_graph(
+        pages=dataset.get("pages", []),
+        internal_links=dataset.get("internal_links", []),
+        link_records=dataset.get("link_records"),
+        seed_url=seed_url
+    )
+
+    norm_target = normalize_link_url(url)
+    matched = None
+    for pm in graph.get("page_metrics", []):
+        if pm.get("normalized_url") == norm_target or pm.get("url") == url:
+            matched = pm
+            break
+
+    if not matched:
+        # Default zero-evaluated record
+        matched = {
+            "url": url,
+            "normalized_url": norm_target,
+            "title": "",
+            "status_code": 0,
+            "incoming_internal_links": 0,
+            "outgoing_internal_links": 0,
+            "unique_incoming_internal_links": 0,
+            "unique_outgoing_internal_links": 0,
+            "internal_link_depth": 0,
+            "orphan_status": "not_in_crawl"
+        }
+
+    return {
+        "project_id": project.id,
+        "page": matched
     }
 
 
@@ -253,7 +402,7 @@ def get_internal_link_opportunities(
         return {"opportunities": []}
 
     dataset = _load_crawl_dataset(project)
-    opportunities = _compute_opportunities(dataset["pages"], dataset["internal_links"], project.domain)
+    opportunities = _compute_opportunities(dataset["pages"], dataset["internal_links"], project.domain, dataset.get("link_records"))
 
     return {
         "project_id": project.id,
@@ -399,18 +548,18 @@ def internal_links_export_csv(
         filename_label = "internal-links"
         report_name = "Internal Links CSV"
     elif sec == "orphans":
-        _, _, orphan_pages, _, _ = _compute_link_graph_and_orphans(dataset["pages"], dataset["internal_links"], domain)
+        _, _, orphan_pages, _, _, _ = _compute_link_graph_and_orphans(dataset["pages"], dataset["internal_links"], domain, dataset.get("link_records"))
         csv_str = CSVExportService.generate_orphan_pages_csv(orphan_pages)
         filename_label = "orphan-pages"
         report_name = "Orphan Pages CSV"
     elif sec == "anchors":
-        _, _, _, _, anchor_counter = _compute_link_graph_and_orphans(dataset["pages"], dataset["internal_links"], domain)
+        _, _, _, _, anchor_counter, _ = _compute_link_graph_and_orphans(dataset["pages"], dataset["internal_links"], domain, dataset.get("link_records"))
         all_anchors = [{"anchor_text": k, "frequency": v} for k, v in anchor_counter.most_common()]
         csv_str = CSVExportService.generate_anchor_texts_csv(all_anchors)
         filename_label = "link-text"
         report_name = "Link Text CSV"
     elif sec == "opportunities":
-        opps = _compute_opportunities(dataset["pages"], dataset["internal_links"], domain)
+        opps = _compute_opportunities(dataset["pages"], dataset["internal_links"], domain, dataset.get("link_records"))
         csv_str = CSVExportService.generate_link_opportunities_csv(opps)
         filename_label = "suggested-links"
         report_name = "Suggested Links CSV"

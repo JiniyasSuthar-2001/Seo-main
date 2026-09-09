@@ -4,6 +4,8 @@ import time
 import re
 import ssl
 import json
+import uuid
+from datetime import datetime
 from urllib.parse import urlparse, urljoin, urlunparse, parse_qsl, urlencode
 from bs4 import BeautifulSoup
 from typing import Set, Dict, Any, List, Optional, Callable, Tuple
@@ -90,8 +92,101 @@ def canonicalize_url(url: str, base_url: str = "", ignore_utm_params: bool = Tru
 
     return urlunparse((scheme, netloc, raw_path, "", query_str, ""))
 
+from app.models.link_record import LinkRecord
+
+def extract_link_semantic_location_and_context(a_tag: Any, soup: BeautifulSoup) -> Dict[str, Any]:
+    """
+    Extracts semantic DOM section, nearest heading (H1/H2/H3), paragraph index,
+    sentence index, surrounding context, and exact HTML snippet for an anchor tag.
+    """
+    # 1. Semantic DOM section
+    section = "other"
+    curr = a_tag.parent
+    while curr and getattr(curr, "name", None) != "[document]":
+        name = getattr(curr, "name", "").lower() if getattr(curr, "name", None) else ""
+        classes = " ".join(curr.get("class", [])).lower() if isinstance(curr.get("class"), list) else str(curr.get("class") or "").lower()
+        elem_id = str(curr.get("id") or "").lower()
+        role = str(curr.get("role") or "").lower()
+
+        if name == "nav" or role == "navigation" or "nav" in classes or "menu" in classes or "nav" in elem_id:
+            section = "navigation"
+            break
+        elif name == "header" or role == "banner" or "header" in classes or "head" in classes:
+            section = "header"
+            break
+        elif name == "footer" or role == "contentinfo" or "footer" in classes:
+            section = "footer"
+            break
+        elif name == "aside" or role == "complementary" or "sidebar" in classes or "aside" in classes:
+            section = "sidebar"
+            break
+        elif name == "article" or role == "article":
+            section = "article"
+            break
+        elif name == "main" or role == "main" or "content" in classes or "main" in classes:
+            section = "main"
+            break
+        curr = curr.parent
+
+    # 2. Nearest Heading (preceding H1, H2, H3, H4)
+    nearest_heading = None
+    heading_level = None
+    prev_h = a_tag.find_previous(["h1", "h2", "h3", "h4", "h5", "h6"])
+    if prev_h:
+        h_text = prev_h.get_text().strip()
+        if h_text:
+            nearest_heading = h_text
+            try:
+                heading_level = int(prev_h.name[1])
+            except (ValueError, IndexError):
+                heading_level = None
+
+    # 3. Parent paragraph and surrounding context
+    parent_p = a_tag.find_parent("p") or a_tag.find_parent(["li", "div", "section", "td"])
+    p_text = parent_p.get_text(separator=" ").strip() if parent_p else ""
+    anc_text = a_tag.get_text().strip()
+
+    context_before = ""
+    context_after = ""
+    context_text = p_text
+    paragraph_index = None
+    sentence_index = None
+
+    if parent_p:
+        container = parent_p.parent or soup
+        p_siblings = container.find_all("p") if container else []
+        if parent_p in p_siblings:
+            paragraph_index = p_siblings.index(parent_p) + 1
+
+        if anc_text and anc_text in p_text:
+            pos = p_text.find(anc_text)
+            context_before = p_text[:pos].strip()[-100:]
+            context_after = p_text[pos + len(anc_text):].strip()[:100]
+
+            sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', p_text) if s.strip()]
+            for s_idx, sent in enumerate(sentences, 1):
+                if anc_text in sent:
+                    sentence_index = s_idx
+                    context_text = sent
+                    break
+
+    html_snippet = str(a_tag)[:300]
+
+    return {
+        "source_section": section,
+        "nearest_heading": nearest_heading,
+        "heading_level": heading_level,
+        "paragraph_index": paragraph_index,
+        "sentence_index": sentence_index,
+        "context_before": context_before,
+        "context_text": context_text or anc_text,
+        "context_after": context_after,
+        "html_snippet": html_snippet
+    }
+
 
 class RobotsDirectiveEngine:
+
     """
     Robust robots.txt parser supporting User-agent matching, Allow/Disallow,
     wildcards (*), and end-of-path anchors ($).
@@ -285,6 +380,7 @@ class SEOCrawler:
         self.issues: List[Dict[str, Any]] = []
         self.internal_links: List[Dict[str, Any]] = []
         self.external_links: List[Dict[str, Any]] = []
+        self.link_records: List[Dict[str, Any]] = []
         self.broken_links: List[Dict[str, Any]] = []
         self.asset_checks: List[Dict[str, Any]] = []
         
@@ -572,6 +668,84 @@ class SEOCrawler:
             if name and c_val:
                 twitter_cards[name] = c_val
 
+        links = []
+        link_records = []
+        for idx, a_tag in enumerate(soup.find_all("a", href=True), 1):
+            raw_href = a_tag["href"].strip()
+            if not raw_href or raw_href.startswith(("#", "javascript:", "mailto:", "tel:")):
+                continue
+            normalized = canonicalize_url(raw_href, url, self.ignore_utm_params)
+            if not normalized:
+                continue
+            
+            anc_txt = a_tag.get_text().strip()
+            rel_val = a_tag.get("rel", "")
+            if isinstance(rel_val, list):
+                rel_val = " ".join(rel_val)
+            elif not isinstance(rel_val, str):
+                rel_val = str(rel_val or "")
+
+            has_img = a_tag.find("img") is not None
+            l_type = "image_link" if has_img else "hyperlink"
+            if not anc_txt and has_img:
+                img_child = a_tag.find("img")
+                anc_txt = str(img_child.get("alt", "")).strip() if img_child else "[Image Link]"
+                if not anc_txt:
+                    anc_txt = "[Image Link]"
+            elif not anc_txt:
+                anc_txt = "[No Anchor Text]"
+
+            loc_info = extract_link_semantic_location_and_context(a_tag, soup)
+            loc_info["link_index_on_page"] = idx
+
+            is_int = self.is_same_domain(normalized)
+            rel_lower = (rel_val or "").lower()
+
+            rec = {
+                "id": str(uuid.uuid4()),
+                "source_url": url,
+                "target_url": normalized,
+                "normalized_source_url": canonicalize_url(url),
+                "normalized_target_url": normalized,
+                "link_scope": "internal" if is_int else "external",
+                "link_type": l_type,
+                "anchor_text": anc_txt,
+                "rel": rel_val or "follow",
+                "is_internal": is_int,
+                "is_external": not is_int,
+                "is_nofollow": "nofollow" in rel_lower,
+                "is_sponsored": "sponsored" in rel_lower,
+                "is_ugc": "ugc" in rel_lower,
+                "source_section": loc_info.get("source_section", "other"),
+                "nearest_heading": loc_info.get("nearest_heading"),
+                "heading_level": loc_info.get("heading_level"),
+                "paragraph_index": loc_info.get("paragraph_index"),
+                "sentence_index": loc_info.get("sentence_index"),
+                "link_index_on_page": loc_info.get("link_index_on_page"),
+                "context_before": loc_info.get("context_before", ""),
+                "context_text": loc_info.get("context_text", ""),
+                "context_after": loc_info.get("context_after", ""),
+                "html_snippet": loc_info.get("html_snippet", ""),
+                "discovered_at": datetime.utcnow().isoformat()
+            }
+            link_records.append(rec)
+            links.append({
+                "source": url,
+                "target": normalized,
+                "anchor_text": anc_txt,
+                "rel": rel_val,
+                "is_internal": is_int,
+                "source_section": loc_info.get("source_section", "other"),
+                "nearest_heading": loc_info.get("nearest_heading"),
+                "heading_level": loc_info.get("heading_level"),
+                "paragraph_index": loc_info.get("paragraph_index"),
+                "sentence_index": loc_info.get("sentence_index"),
+                "context_before": loc_info.get("context_before", ""),
+                "context_text": loc_info.get("context_text", ""),
+                "context_after": loc_info.get("context_after", ""),
+                "html_snippet": loc_info.get("html_snippet", "")
+            })
+
         return {
             "url": url,
             "title": title_tag,
@@ -597,7 +771,9 @@ class SEOCrawler:
             "twitter_cards": twitter_cards,
             "og_title": open_graph.get("og:title"),
             "og_description": open_graph.get("og:description"),
-            "twitter_card": twitter_cards.get("twitter:card")
+            "twitter_card": twitter_cards.get("twitter:card"),
+            "links": links,
+            "link_records": link_records
         }
 
     def evaluate_page_issues(self, page_data: Dict[str, Any]):
@@ -964,23 +1140,63 @@ class SEOCrawler:
 
             current_depth = self.url_depths.get(url, 0)
             discovered_internal = []
-            raw_hrefs_to_process: List[Tuple[str, str, str]] = []  # (href, anchor_text, rel)
+            raw_hrefs_to_process: List[Tuple[str, str, str, str, Dict[str, Any]]] = []  # (href, anchor_text, rel, link_type, loc_info)
 
-            # 1. Harvest traditional anchor links from HTML
-            for a_tag in soup.find_all("a", href=True):
+            # 1. Harvest traditional anchor links from HTML with full semantic location & context
+            for idx, a_tag in enumerate(soup.find_all("a", href=True), 1):
                 raw_href = a_tag["href"].strip()
                 if not raw_href or raw_href.startswith(("#", "javascript:", "mailto:", "tel:")):
                     continue
+
+                anc_txt = a_tag.get_text().strip()
+                rel_val = a_tag.get("rel", "")
+                if isinstance(rel_val, list):
+                    rel_val = " ".join(rel_val)
+                elif not isinstance(rel_val, str):
+                    rel_val = str(rel_val or "")
+
+                has_img = a_tag.find("img") is not None
+                l_type = "image_link" if has_img else "hyperlink"
+                if not anc_txt and has_img:
+                    img_child = a_tag.find("img")
+                    anc_txt = str(img_child.get("alt", "")).strip() if img_child else "[Image Link]"
+                    if not anc_txt:
+                        anc_txt = "[Image Link]"
+                elif not anc_txt:
+                    anc_txt = "[No Anchor Text]"
+
+                loc_info = extract_link_semantic_location_and_context(a_tag, soup)
+                loc_info["link_index_on_page"] = idx
+
                 raw_hrefs_to_process.append((
                     raw_href,
-                    a_tag.get_text().strip() or "[Image/No Text]",
-                    a_tag.get("rel", "")
+                    anc_txt,
+                    rel_val,
+                    l_type,
+                    loc_info
                 ))
 
             # 2. Check SPA Route Discovery if static links are sparse
             spa_routes = self.extract_spa_links_from_html(html, url)
             for sr in spa_routes:
-                raw_hrefs_to_process.append((sr, "[SPA Navigation Route]", ""))
+                raw_hrefs_to_process.append((
+                    sr,
+                    "[SPA Navigation Route]",
+                    "",
+                    "nav_link",
+                    {
+                        "source_section": "navigation",
+                        "nearest_heading": None,
+                        "heading_level": None,
+                        "paragraph_index": None,
+                        "sentence_index": None,
+                        "context_before": "",
+                        "context_text": "[SPA Route]",
+                        "context_after": "",
+                        "html_snippet": f'<a href="{sr}">SPA Route</a>',
+                        "link_index_on_page": None
+                    }
+                ))
 
             # 3. Optional Headless Browser Rendering Fallback for SPA shells with 0 static links
             if len(raw_hrefs_to_process) == 0 and (self.js_rendering in ("auto", "enabled")):
@@ -988,21 +1204,79 @@ class SEOCrawler:
                 if browser_result:
                     rendered_html, rendered_hrefs = browser_result
                     for rh in rendered_hrefs:
-                        raw_hrefs_to_process.append((rh, "[JS Rendered Link]", ""))
+                        raw_hrefs_to_process.append((
+                            rh,
+                            "[JS Rendered Link]",
+                            "",
+                            "nav_link",
+                            {
+                                "source_section": "navigation",
+                                "nearest_heading": None,
+                                "heading_level": None,
+                                "paragraph_index": None,
+                                "sentence_index": None,
+                                "context_before": "",
+                                "context_text": "[JS Rendered Link]",
+                                "context_after": "",
+                                "html_snippet": f'<a href="{rh}">JS Rendered Link</a>',
+                                "link_index_on_page": None
+                            }
+                        ))
 
-            # Process all discovered candidate links
-            for raw_href, anchor_txt, rel_val in raw_hrefs_to_process:
+            # Process all discovered candidate links and build canonical LinkRecords
+            for raw_href, anchor_txt, rel_val, l_type, loc_info in raw_hrefs_to_process:
                 normalized = canonicalize_url(raw_href, url, self.ignore_utm_params)
                 if not normalized:
                     continue
 
-                if self.is_same_domain(normalized):
+                is_internal_link = self.is_same_domain(normalized)
+                rel_lower = (rel_val or "").lower()
+
+                link_rec = {
+                    "id": str(uuid.uuid4()),
+                    "source_url": url,
+                    "target_url": normalized,
+                    "normalized_source_url": canonicalize_url(url),
+                    "normalized_target_url": normalized,
+                    "link_scope": "internal" if is_internal_link else "external",
+                    "link_type": l_type,
+                    "anchor_text": anchor_txt,
+                    "rel": rel_val or "follow",
+                    "is_internal": is_internal_link,
+                    "is_external": not is_internal_link,
+                    "is_nofollow": "nofollow" in rel_lower,
+                    "is_sponsored": "sponsored" in rel_lower,
+                    "is_ugc": "ugc" in rel_lower,
+                    "source_section": loc_info.get("source_section", "other"),
+                    "nearest_heading": loc_info.get("nearest_heading"),
+                    "heading_level": loc_info.get("heading_level"),
+                    "paragraph_index": loc_info.get("paragraph_index"),
+                    "sentence_index": loc_info.get("sentence_index"),
+                    "link_index_on_page": loc_info.get("link_index_on_page"),
+                    "context_before": loc_info.get("context_before", ""),
+                    "context_text": loc_info.get("context_text", ""),
+                    "context_after": loc_info.get("context_after", ""),
+                    "html_snippet": loc_info.get("html_snippet", ""),
+                    "discovered_at": datetime.utcnow().isoformat()
+                }
+                self.link_records.append(link_rec)
+
+                if is_internal_link:
                     discovered_internal.append(normalized)
                     self.internal_links.append({
                         "source": url,
                         "target": normalized,
                         "anchor_text": anchor_txt,
-                        "rel": rel_val
+                        "rel": rel_val,
+                        "source_section": loc_info.get("source_section", "other"),
+                        "nearest_heading": loc_info.get("nearest_heading"),
+                        "heading_level": loc_info.get("heading_level"),
+                        "paragraph_index": loc_info.get("paragraph_index"),
+                        "sentence_index": loc_info.get("sentence_index"),
+                        "context_before": loc_info.get("context_before", ""),
+                        "context_text": loc_info.get("context_text", ""),
+                        "context_after": loc_info.get("context_after", ""),
+                        "html_snippet": loc_info.get("html_snippet", "")
                     })
                     
                     if normalized not in self.queue_status:
@@ -1036,7 +1310,16 @@ class SEOCrawler:
                         "source": url,
                         "target": normalized,
                         "anchor_text": anchor_txt,
-                        "rel": rel_val
+                        "rel": rel_val,
+                        "source_section": loc_info.get("source_section", "other"),
+                        "nearest_heading": loc_info.get("nearest_heading"),
+                        "heading_level": loc_info.get("heading_level"),
+                        "paragraph_index": loc_info.get("paragraph_index"),
+                        "sentence_index": loc_info.get("sentence_index"),
+                        "context_before": loc_info.get("context_before", ""),
+                        "context_text": loc_info.get("context_text", ""),
+                        "context_after": loc_info.get("context_after", ""),
+                        "html_snippet": loc_info.get("html_snippet", "")
                     })
                     self.rejection_log.append({"url": normalized, "reason": "EXTERNAL_DOMAIN"})
 
@@ -1186,6 +1469,7 @@ class SEOCrawler:
             "issues": self.issues,
             "internal_links": self.internal_links,
             "external_links": self.external_links,
+            "link_records": self.link_records,
             "broken_links": self.broken_links,
             "asset_checks": self.asset_checks,
             "metrics": self.metrics,

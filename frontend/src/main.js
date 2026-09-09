@@ -21,6 +21,7 @@ import { Opportunities } from './views/Opportunities.js';
 import { Import } from './views/Import.js';
 import { Reports } from './views/Reports.js';
 import { CrawlHistory } from './views/CrawlHistory.js';
+import { CrawlData } from './views/CrawlData.js';
 import { Alerts } from './views/Alerts.js';
 import { Settings } from './views/Settings.js';
 import { Integrations } from './views/Integrations.js';
@@ -60,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
   router.addRoute('/', Dashboard);
   router.addRoute('/projects', Projects);
   router.addRoute('/pages', Pages);
+  router.addRoute('/crawl-data', CrawlData);
   router.addRoute('/keywords', Keywords);
   router.addRoute('/rankings', Rankings);
   router.addRoute('/backlinks', Backlinks);

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config.settings import settings, validate_startup_config
-from app.routers import projects, pages, keywords, crawl, technical, internal_links, ai, backlinks, rankings, datasources, reports, imports, competitors, integrations, opportunities, alerts, workspace, auth, notifications
+from app.routers import projects, pages, keywords, crawl, technical, internal_links, ai, backlinks, rankings, datasources, reports, imports, competitors, integrations, opportunities, alerts, workspace, auth, notifications, crawl_data
 
 
 from app.config.database import engine, Base
@@ -78,6 +78,7 @@ app.include_router(imports.router, prefix="/api/projects/{project_id}/import", t
 app.include_router(imports.router, prefix="/api", tags=["guidelines"])
 app.include_router(competitors.router, prefix="/api/projects/{project_id}/competitors", tags=["competitors"])
 app.include_router(alerts.router, prefix="/api/projects/{project_id}/alerts", tags=["alerts"])
+app.include_router(crawl_data.router, prefix="/api/projects/{project_id}/crawl-data", tags=["crawl-data"])
 
 
 @app.get("/api/health", tags=["System"])

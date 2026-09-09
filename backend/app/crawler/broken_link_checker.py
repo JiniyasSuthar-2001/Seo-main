@@ -51,15 +51,20 @@ async def check_single_link(
 ) -> Dict[str, Any]:
     """
     Checks the status of a single URL via HTTP HEAD with fallback to GET.
-    Returns status_code, is_broken, error, and final_url.
+    Captures status_code, status label, Content-Type response header, final_url,
+    redirect chain, is_broken, and error.
     """
     if not url or not url.startswith(("http://", "https://")):
         return {
             "url": url,
             "status_code": 0,
+            "status": "Invalid URL",
+            "content_type": "N/A",
             "is_broken": True,
             "error": "Invalid or Unsupported URL scheme",
-            "final_url": url
+            "error_type": "invalid_url",
+            "final_url": url,
+            "redirect_chain": []
         }
 
     is_safe, ssrf_reason = validate_url_ssrf(url)
@@ -67,9 +72,13 @@ async def check_single_link(
         return {
             "url": url,
             "status_code": 0,
+            "status": "Blocked",
+            "content_type": "N/A",
             "is_broken": True,
             "error": f"Blocked (SSRF Protection: {ssrf_reason})",
-            "final_url": url
+            "error_type": "blocked",
+            "final_url": url,
+            "redirect_chain": []
         }
 
     req_headers = {
@@ -93,70 +102,129 @@ async def check_single_link(
         status_code = resp.status_code
         final_url = str(resp.url)
         
+        # Extract Content-Type header from actual HTTP response
+        raw_ct = resp.headers.get("content-type") or ""
+        content_type = raw_ct.split(";")[0].strip().lower() if raw_ct else "text/html"
+        
+        # Extract redirect history
+        redirect_chain = []
+        if getattr(resp, "history", None):
+            for r in resp.history:
+                redirect_chain.append({
+                    "url": str(r.url),
+                    "status_code": r.status_code
+                })
+        redirect_chain.append({
+            "url": final_url,
+            "status_code": status_code
+        })
+
+        has_redirect = len(resp.history) > 0 if getattr(resp, "history", None) else False
+        initial_status = resp.history[0].status_code if has_redirect else status_code
+
+        if status_code == 200:
+            status_label = f"{initial_status} Redirect" if has_redirect else "200 OK"
+        elif 200 <= status_code < 300:
+            status_label = f"{initial_status} Redirect" if has_redirect else f"{status_code} OK"
+        elif 300 <= status_code < 400:
+            status_label = f"{status_code} Redirect"
+        elif status_code == 404:
+            status_label = "404 Not Found"
+        elif status_code == 410:
+            status_label = "410 Gone"
+        elif status_code in (401, 403):
+            status_label = f"{status_code} Forbidden"
+        elif 400 <= status_code < 500:
+            status_label = f"{status_code} Client Error"
+        elif 500 <= status_code < 600:
+            status_label = f"{status_code} Server Error"
+        else:
+            status_label = f"HTTP {status_code}"
+        
         # Determine if healthy (2xx, 3xx followed to 2xx)
         if status_code < 400 and status_code != 0:
             return {
                 "url": url,
                 "status_code": status_code,
+                "status": status_label,
+                "content_type": content_type,
                 "is_broken": False,
                 "error": None,
                 "error_type": None,
-                "final_url": final_url
+                "final_url": final_url,
+                "redirect_chain": redirect_chain
             }
         else:
             err_type = "not_found" if status_code == 404 else ("gone" if status_code == 410 else "http_error")
             return {
                 "url": url,
                 "status_code": status_code,
+                "status": status_label,
+                "content_type": content_type,
                 "is_broken": True,
                 "error": f"HTTP {status_code} {getattr(resp, 'reason_phrase', 'Error') or 'Error'}",
                 "error_type": err_type,
-                "final_url": final_url
+                "final_url": final_url,
+                "redirect_chain": redirect_chain
             }
 
     except httpx.TimeoutException:
         return {
             "url": url,
             "status_code": 0,
+            "status": "Timeout",
+            "content_type": "N/A",
             "is_broken": True,
             "error": f"Request Timed Out ({timeout}s)",
             "error_type": "timeout",
-            "final_url": url
+            "final_url": url,
+            "redirect_chain": []
         }
     except httpx.ConnectError as ce:
         err_s = str(ce)
         if any(k in err_s.lower() for k in ("name", "dns", "getaddrinfo", "nodename")):
             err_msg = "DNS Resolution Failed"
             err_type = "dns_error"
+            status_label = "DNS Error"
         else:
             err_msg = "Connection Refused"
             err_type = "connection_error"
+            status_label = "Connection Error"
         return {
             "url": url,
             "status_code": 0,
+            "status": status_label,
+            "content_type": "N/A",
             "is_broken": True,
             "error": err_msg,
             "error_type": err_type,
-            "final_url": url
+            "final_url": url,
+            "redirect_chain": []
         }
     except httpx.InvalidURL:
         return {
             "url": url,
             "status_code": 0,
+            "status": "Malformed URL",
+            "content_type": "N/A",
             "is_broken": True,
             "error": "Malformed URL",
             "error_type": "invalid_url",
-            "final_url": url
+            "final_url": url,
+            "redirect_chain": []
         }
     except Exception as exc:
         err_text = str(exc)[:100] or type(exc).__name__
         return {
             "url": url,
             "status_code": 0,
+            "status": "Network Error",
+            "content_type": "N/A",
             "is_broken": True,
             "error": f"Network Error ({err_text})",
             "error_type": "network_error",
-            "final_url": url
+            "final_url": url,
+            "redirect_chain": []
         }
 
 
@@ -237,8 +305,9 @@ class BrokenLinkChecker:
         Runs comprehensive broken-link analysis:
         1. For internal links: reuses already crawled page status without network requests.
         2. For uncrawled internal targets: runs status check.
-        3. For external links: checks ALL unique targets concurrently (no 300 cap).
-        4. Reconstructs all source->target relationships for broken links only.
+        3. For external links: checks ALL unique targets concurrently (no cap).
+        4. Enriches external_links with verified HTTP status and Content-Type.
+        5. Reconstructs all source->target relationships for broken links only.
         """
         # Map of crawled pages by normalized URL
         crawled_page_map: Dict[str, Dict[str, Any]] = {}
@@ -263,7 +332,7 @@ class BrokenLinkChecker:
         uncrawled_internal_targets: Set[str] = set()
 
         for link in internal_links:
-            target = link.get("target") or ""
+            target = link.get("target") or link.get("target_url") or link.get("destination_url") or link.get("href") or ""
             if not target or target.startswith(STATIC_OR_SPECIAL_SCHEMES):
                 continue
             
@@ -275,21 +344,30 @@ class BrokenLinkChecker:
                 status_code = matched_page.get("status_code", 0)
                 is_success = matched_page.get("is_success", True)
                 fetch_status = matched_page.get("fetch_status", "")
+                content_type = matched_page.get("content_type", "text/html")
+                final_url = matched_page.get("final_url") or target
                 
                 is_broken = False
                 err_msg = None
+                status_label = "200 OK" if status_code == 200 else (f"{status_code} OK" if 200 <= status_code < 300 else f"HTTP {status_code}")
 
                 if status_code in (403, 401) or fetch_status == "BLOCKED":
                     is_broken = True
                     err_msg = f"HTTP {status_code} Access Denied"
+                    status_label = f"{status_code} Forbidden"
                 elif status_code >= 400 or status_code == 0 or not is_success or fetch_status in ("FAILED", "TIMEOUT", "DNS_ERROR", "CONNECTION_REFUSED"):
                     is_broken = True
                     err_msg = matched_page.get("error") or f"HTTP {status_code} Error"
+                    status_label = "404 Not Found" if status_code == 404 else f"{status_code} Error"
                 
                 target_status_cache[norm_target] = {
                     "status_code": status_code,
+                    "status": status_label,
+                    "content_type": content_type,
                     "is_broken": is_broken,
-                    "error": err_msg
+                    "error": err_msg,
+                    "final_url": final_url,
+                    "redirect_chain": []
                 }
             else:
                 uncrawled_internal_targets.add(target)
@@ -308,11 +386,11 @@ class BrokenLinkChecker:
                 target_status_cache[u] = res
 
         # -------------------------------------------------------------
-        # Phase 2: External Links (NO 300 URL CAP)
+        # Phase 2: External Links
         # -------------------------------------------------------------
         unique_external_targets: List[str] = []
         for link in external_links:
-            target = link.get("target") or ""
+            target = link.get("target") or link.get("target_url") or link.get("destination_url") or link.get("href") or ""
             if not target or target.startswith(STATIC_OR_SPECIAL_SCHEMES):
                 continue
             norm_target = normalize_link_url(target)
@@ -342,6 +420,25 @@ class BrokenLinkChecker:
                 target_status_cache[normalize_link_url(u)] = res
                 target_status_cache[u] = res
 
+        # Annotate external_links in-place with verified status and Content-Type
+        for link in external_links:
+            target = link.get("target") or link.get("target_url") or link.get("destination_url") or link.get("href") or ""
+            if not target:
+                continue
+            norm_target = normalize_link_url(target)
+            status_info = target_status_cache.get(norm_target) or target_status_cache.get(target)
+            if status_info:
+                link["status_code"] = status_info.get("status_code", 0)
+                link["status"] = status_info.get("status") or "Not Checked"
+                link["content_type"] = status_info.get("content_type") or "Not Checked"
+                link["final_url"] = status_info.get("final_url", target)
+                link["redirect_chain"] = status_info.get("redirect_chain", [])
+                link["is_broken"] = status_info.get("is_broken", False)
+                link["error"] = status_info.get("error")
+            else:
+                link["status"] = "Not Checked"
+                link["content_type"] = "Not Checked"
+
         if progress_callback:
             try:
                 progress_callback(total_external, total_external, "Broken link checking complete")
@@ -350,27 +447,29 @@ class BrokenLinkChecker:
 
         # -------------------------------------------------------------
         # Phase 3: Construct Combined Broken Links Dataset
-        # (Preserving ALL source-page relationships, saving only broken links)
         # -------------------------------------------------------------
         broken_links: List[Dict[str, Any]] = []
 
         # Internal broken links
         for link in internal_links:
-            target = link.get("target") or ""
+            target = link.get("target") or link.get("target_url") or link.get("destination_url") or link.get("href") or ""
             norm_target = normalize_link_url(target)
             status_info = target_status_cache.get(norm_target) or target_status_cache.get(target)
             
             if status_info and status_info.get("is_broken"):
                 broken_links.append({
-                    "source": link.get("source", ""),
+                    "source": link.get("source") or link.get("source_url", ""),
                     "target": target,
-                    "anchor_text": link.get("anchor_text", "") or "[No Anchor Text]",
+                    "anchor_text": link.get("anchor_text") or link.get("anchor", "") or "[No Anchor Text]",
                     "link_type": "internal",
                     "status_code": status_info.get("status_code", 0),
+                    "status": status_info.get("status") or f"HTTP {status_info.get('status_code', 0)}",
+                    "content_type": status_info.get("content_type", "text/html"),
                     "is_broken": True,
                     "error": status_info.get("error"),
                     "error_type": status_info.get("error_type", "http_error"),
                     "final_url": status_info.get("final_url", target),
+                    "redirect_chain": status_info.get("redirect_chain", []),
                     "rel": link.get("rel", "follow"),
                     "source_section": link.get("source_section", "other"),
                     "nearest_heading": link.get("nearest_heading"),
@@ -385,21 +484,24 @@ class BrokenLinkChecker:
 
         # External broken links
         for link in external_links:
-            target = link.get("target") or ""
+            target = link.get("target") or link.get("target_url") or link.get("destination_url") or link.get("href") or ""
             norm_target = normalize_link_url(target)
             status_info = target_status_cache.get(norm_target) or target_status_cache.get(target)
             
             if status_info and status_info.get("is_broken"):
                 broken_links.append({
-                    "source": link.get("source", ""),
+                    "source": link.get("source") or link.get("source_url", ""),
                     "target": target,
-                    "anchor_text": link.get("anchor_text", "") or "[External Link]",
+                    "anchor_text": link.get("anchor_text") or link.get("anchor", "") or "[External Link]",
                     "link_type": "external",
                     "status_code": status_info.get("status_code", 0),
+                    "status": status_info.get("status") or f"HTTP {status_info.get('status_code', 0)}",
+                    "content_type": status_info.get("content_type", "text/html"),
                     "is_broken": True,
                     "error": status_info.get("error"),
                     "error_type": status_info.get("error_type", "http_error"),
                     "final_url": status_info.get("final_url", target),
+                    "redirect_chain": status_info.get("redirect_chain", []),
                     "rel": link.get("rel", "follow"),
                     "source_section": link.get("source_section", "other"),
                     "nearest_heading": link.get("nearest_heading"),

@@ -1,6 +1,7 @@
 import { projectStore } from '../core/projectStore.js';
 import { crawlDataService } from '../services/crawlDataService.js';
 import { renderFeatureErrorState } from '../components/ErrorState.js';
+import { GrowthDetailModal } from '../components/GrowthDetailModal.js';
 
 export class CrawlData {
     constructor() {
@@ -270,11 +271,24 @@ export class CrawlData {
         const columns = this.currentData.columns || [];
 
         if (items.length === 0) {
+            let emptyLabel = 'No records found in this dataset';
+            let emptySub = this.searchQuery || this.filterValue ? 'Try clearing your search query or filter.' : 'This crawl did not produce entries for this category.';
+            if (this.activeTab === 'external-links') {
+                emptyLabel = 'No external links were found';
+                emptySub = 'No outbound links pointing to external domains were discovered in this crawl.';
+            } else if (this.activeTab === 'broken-links') {
+                emptyLabel = 'No broken links were detected';
+                emptySub = 'All checked internal and external hyperlinks responded with healthy HTTP status codes.';
+            } else if (this.activeTab === 'internal-links') {
+                emptyLabel = 'No internal links found';
+                emptySub = 'No internal navigational links discovered.';
+            }
+
             vp.innerHTML = `
                 <div style="padding: 48px 24px; text-align: center; color: var(--text-secondary);">
                     <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 10px; opacity: 0.5;"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                    <div style="font-weight: 600; font-size: 14.5px; color: var(--text-primary); margin-bottom: 4px;">No records found in this dataset</div>
-                    <div style="font-size: 12.5px;">${this.searchQuery || this.filterValue ? 'Try clearing your search query or filter.' : 'This crawl did not produce entries for this category.'}</div>
+                    <div style="font-weight: 600; font-size: 14.5px; color: var(--text-primary); margin-bottom: 4px;">${emptyLabel}</div>
+                    <div style="font-size: 12.5px;">${emptySub}</div>
                 </div>
             `;
             return;
@@ -292,11 +306,11 @@ export class CrawlData {
                     </tr>
                 </thead>
                 <tbody>
-                    ${items.map(row => `
+                    ${items.map((row, rowIdx) => `
                         <tr style="border-bottom: 1px solid var(--border); transition: background 0.1s ease;" onmouseover="this.style.background='var(--bg-subtle)'" onmouseout="this.style.background='transparent'">
                             ${columns.map(col => `
                                 <td style="padding: 8px 12px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle;">
-                                    ${this.renderCellValue(col.key, row[col.key])}
+                                    ${this.renderCellValue(col.key, row[col.key], row, rowIdx)}
                                 </td>
                             `).join('')}
                         </tr>
@@ -318,9 +332,36 @@ export class CrawlData {
                 this.loadCurrentTabData();
             });
         });
+
+        // Bind Inspect button clicks
+        vp.querySelectorAll('.btn-inspect-crawl-row').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const idx = parseInt(btn.getAttribute('data-row-index'), 10);
+                const rowData = items[idx];
+                if (rowData) {
+                    if (this.activeTab === 'internal-links' || this.activeTab === 'external-links' || this.activeTab === 'broken-links') {
+                        GrowthDetailModal.showGroupedLinkDetail(rowData, this.activeTab);
+                    } else if (this.activeTab === 'redirects') {
+                        GrowthDetailModal.showRedirectDetail(rowData);
+                    } else {
+                        GrowthDetailModal.showLinkDetail(rowData);
+                    }
+                }
+            });
+        });
     }
 
-    renderCellValue(key, val) {
+    renderCellValue(key, val, row = {}, rowIdx = 0) {
+        if (key === 'inspect' || key === 'action') {
+            return `
+                <button class="btn btn-secondary btn-sm btn-inspect-crawl-row" data-row-index="${rowIdx}" style="font-size: 11px; padding: 2px 8px; display: inline-flex; align-items: center; gap: 4px; font-weight: 600;">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    Inspect
+                </button>
+            `;
+        }
+
         if (val === null || val === undefined || val === '') {
             return `<span style="color: var(--text-tertiary); font-style: italic;">—</span>`;
         }
@@ -328,14 +369,63 @@ export class CrawlData {
         const sVal = String(val);
 
         if (key === 'url' || key === 'final_url' || key === 'destination_url' || key === 'canonical_url' || key === 'affected_url' || key === 'target_url') {
-            return `<a href="${this.escapeHtml(sVal)}" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: none;" title="${this.escapeHtml(sVal)}">${this.escapeHtml(sVal)}</a>`;
+            return `<a href="${this.escapeHtml(sVal)}" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: none; font-family: monospace; font-size: 11.5px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${this.escapeHtml(sVal)}">${this.escapeHtml(sVal)}</a>`;
+        }
+
+        if (key === 'source_pages' || key === 'no_pages' || key === 'occurrences') {
+            return `<span style="font-weight: 700; color: var(--text-primary);">${this.escapeHtml(sVal)}</span>`;
+        }
+
+        if (key === 'type') {
+            if (sVal === 'Not Checked' || sVal === 'Unknown') {
+                return `<span class="badge" style="background: rgba(148, 163, 184, 0.15); color: var(--text-secondary); border: 1px solid var(--border); font-size: 10.5px; padding: 2px 6px;">Not Checked</span>`;
+            }
+            if (sVal === 'Mixed') {
+                return `<span class="badge badge-warning" style="font-size: 10.5px; padding: 2px 6px;">Mixed</span>`;
+            }
+            if (sVal === 'HTML') {
+                return `<span class="badge" style="background: rgba(59, 130, 246, 0.12); color: #3b82f6; font-size: 10.5px; padding: 2px 6px; font-weight: 600;">HTML</span>`;
+            }
+            if (sVal === 'PDF') {
+                return `<span class="badge" style="background: rgba(239, 68, 68, 0.12); color: #f87171; font-size: 10.5px; padding: 2px 6px; font-weight: 600;">PDF</span>`;
+            }
+            return `<span class="badge badge-secondary" style="font-size: 10.5px; padding: 2px 6px;">${this.escapeHtml(sVal)}</span>`;
+        }
+
+        if (key === 'rel') {
+            if (sVal === 'Mixed') {
+                return `<span class="badge badge-warning" style="font-size: 10.5px; padding: 2px 6px;">Mixed</span>`;
+            }
+            if (sVal.toLowerCase().includes('nofollow')) {
+                return `<span class="badge badge-secondary" style="font-size: 10.5px; padding: 2px 6px; font-family: monospace;">${this.escapeHtml(sVal)}</span>`;
+            }
+            return `<span style="color: var(--text-secondary); font-family: monospace; font-size: 11px;">${this.escapeHtml(sVal)}</span>`;
+        }
+
+        if (key === 'status') {
+            if (sVal === 'Not Checked' || sVal === 'Not Available') {
+                return `<span class="badge" style="background: rgba(148, 163, 184, 0.15); color: var(--text-secondary); border: 1px solid var(--border); font-size: 10.5px; padding: 2px 6px;">Not Checked</span>`;
+            }
+            if (sVal === 'Mixed') {
+                return `<span class="badge badge-warning" style="font-size: 10.5px; padding: 2px 6px;">Mixed</span>`;
+            }
+            if (sVal.startsWith('200') || sVal.includes('OK')) {
+                return `<span class="badge badge-success" style="font-size: 10.5px; padding: 2px 6px;">${this.escapeHtml(sVal)}</span>`;
+            }
+            if (sVal.includes('Redirect') || sVal.startsWith('3')) {
+                return `<span class="badge badge-warning" style="font-size: 10.5px; padding: 2px 6px;">${this.escapeHtml(sVal)}</span>`;
+            }
+            if (sVal.includes('Found') || sVal.includes('Broken') || sVal.includes('Error') || sVal.includes('Timeout') || sVal.includes('Blocked') || sVal.startsWith('4') || sVal.startsWith('5')) {
+                return `<span class="badge badge-danger" style="font-size: 10.5px; padding: 2px 6px;">${this.escapeHtml(sVal)}</span>`;
+            }
+            return `<span class="badge badge-secondary" style="font-size: 10.5px; padding: 2px 6px;">${this.escapeHtml(sVal)}</span>`;
         }
 
         if (key === 'status_code') {
             const num = parseInt(sVal, 10);
             if (num >= 200 && num < 300) return `<span class="badge badge-success" style="font-size: 11px; padding: 2px 6px;">${num}</span>`;
             if (num >= 300 && num < 400) return `<span class="badge badge-warning" style="font-size: 11px; padding: 2px 6px;">${num}</span>`;
-            if (num >= 400) return `<span class="badge badge-danger" style="font-size: 11px; padding: 2px 6px;">${num}</span>`;
+            if (num >= 400 || num === 0) return `<span class="badge badge-danger" style="font-size: 11px; padding: 2px 6px;">${num || 'Dead'}</span>`;
             return `<span style="color: var(--text-tertiary);">${sVal}</span>`;
         }
 
@@ -343,6 +433,11 @@ export class CrawlData {
             if (sVal === '2xx') return `<span style="color: #10b981; font-weight: 700;">2xx</span>`;
             if (sVal === '3xx') return `<span style="color: #f59e0b; font-weight: 700;">3xx</span>`;
             if (sVal === '4xx' || sVal === '5xx') return `<span style="color: #ef4444; font-weight: 700;">${sVal}</span>`;
+        }
+
+        if (key === 'link_scope') {
+            const isInt = sVal.toLowerCase().includes('internal');
+            return `<span class="badge" style="background: ${isInt ? 'rgba(59,130,246,0.12)' : 'rgba(168,85,247,0.12)'}; color: ${isInt ? '#3b82f6' : '#a855f7'}; font-size: 10.5px; font-weight: 600;">${this.escapeHtml(sVal)}</span>`;
         }
 
         if (key === 'severity') {

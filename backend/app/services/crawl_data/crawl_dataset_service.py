@@ -7,6 +7,30 @@ from urllib.parse import urlparse
 from app.config.utils import get_project_storage_dir, normalize_stored_path
 from app.config.settings import settings
 from app.services.audit_rules import extract_schema_types
+from app.crawler.crawler import canonicalize_url
+
+
+def format_content_type_label(raw_ct: Optional[str]) -> str:
+    if not raw_ct or raw_ct in ("Not Checked", "Not Available", "Unknown", "N/A", "none", "None"):
+        return "Not Checked"
+    raw_lower = str(raw_ct).lower().strip()
+    if "text/html" in raw_lower or "application/xhtml" in raw_lower or raw_lower == "html":
+        return "HTML"
+    if "application/pdf" in raw_lower or raw_lower == "pdf":
+        return "PDF"
+    if "image/" in raw_lower or raw_lower == "image":
+        return "Image"
+    if "video/" in raw_lower or raw_lower == "video":
+        return "Video"
+    if "application/json" in raw_lower or "text/json" in raw_lower or raw_lower == "json":
+        return "JSON"
+    if "xml" in raw_lower:
+        return "XML"
+    if "msword" in raw_lower or "officedocument" in raw_lower or raw_lower == "document":
+        return "Document"
+    if "/" in raw_lower:
+        return "Other"
+    return str(raw_ct)
 
 
 class CrawlDatasetService:
@@ -115,6 +139,7 @@ class CrawlDatasetService:
         internal_links = _read_json("internal_links.json", [])
         external_links = _read_json("external_links.json", [])
         broken_links = _read_json("broken_links.json", [])
+        link_records = _read_json("link_records.json", [])
 
         return {
             "crawl_folder": crawl_folder,
@@ -125,7 +150,8 @@ class CrawlDatasetService:
             "issues": issues,
             "internal_links": internal_links,
             "external_links": external_links,
-            "broken_links": broken_links
+            "broken_links": broken_links,
+            "link_records": link_records
         }
 
     # =========================================================================
@@ -576,69 +602,468 @@ class CrawlDatasetService:
         return rows
 
     @classmethod
-    def get_internal_links_dataset(cls, artifacts: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _group_link_records(
+        cls,
+        links: List[Dict[str, Any]],
+        link_records: List[Dict[str, Any]],
+        broken_links: List[Dict[str, Any]],
+        pages: List[Dict[str, Any]],
+        is_internal: bool,
+        ts: str
+    ) -> List[Dict[str, Any]]:
         """
-        13. Internal Links Tab: 1 row per discovered internal link.
+        Aggregates individual link occurrences into a grouped destination summary layer.
+        Groups primarily by normalized destination URL.
+        Retains every individual occurrence in `occurrences_list` with rich DOM context & HTML snippet.
         """
-        links = artifacts.get("internal_links", [])
-        ts = artifacts.get("timestamp", "N/A")
-        rows = []
+        page_map: Dict[str, Dict[str, Any]] = {}
+        for p in pages:
+            u = p.get("url")
+            if u:
+                norm_u = canonicalize_url(u) or u
+                page_map[norm_u] = p
+                page_map[u] = p
 
-        for link in links:
-            source = link.get("source_url") or link.get("source") or ""
-            target = link.get("destination_url") or link.get("target_url") or link.get("target") or link.get("href") or ""
-            rows.append({
+        broken_map: Dict[str, Dict[str, Any]] = {}
+        for b in broken_links:
+            t = b.get("target") or b.get("target_url") or b.get("destination_url") or b.get("url") or ""
+            if t:
+                norm_t = canonicalize_url(t) or t
+                broken_map[norm_t] = b
+                broken_map[t] = b
+
+        all_raw_items = []
+        if link_records:
+            for r in link_records:
+                r_internal = r.get("is_internal")
+                if r_internal is None:
+                    scope = r.get("link_scope")
+                    if is_internal and scope == "external":
+                        continue
+                    if not is_internal and scope == "internal":
+                        continue
+                else:
+                    if is_internal and not r_internal:
+                        continue
+                    if not is_internal and r_internal:
+                        continue
+                all_raw_items.append(r)
+
+        if not all_raw_items:
+            all_raw_items = links
+
+        groups: Dict[str, Dict[str, Any]] = {}
+        ordered_keys: List[str] = []
+
+        for item in all_raw_items:
+            source = item.get("source_url") or item.get("source") or item.get("source_page") or ""
+            target = item.get("destination_url") or item.get("target_url") or item.get("target") or item.get("href") or item.get("url") or ""
+            if not target:
+                continue
+
+            norm_target = canonicalize_url(target)
+            if not norm_target:
+                norm_target = target.strip()
+
+            if norm_target not in groups:
+                ordered_keys.append(norm_target)
+                domain = urlparse(target).netloc.lower()
+                
+                status_label = "Not Checked"
+                status_code = None
+                content_type = "Not Checked"
+                final_url = target
+                redirect_chain = []
+                is_broken = False
+                error = None
+                error_type = None
+
+                b_info = broken_map.get(norm_target) or broken_map.get(target)
+                if b_info:
+                    is_broken = True
+                    status_code = b_info.get("status_code", 404)
+                    status_label = b_info.get("status") or (f"404 Not Found" if status_code == 404 else (f"HTTP {status_code}" if status_code else "Broken"))
+                    content_type = b_info.get("content_type") or "text/html"
+                    error = b_info.get("error") or "Broken Link"
+                    error_type = b_info.get("error_type")
+                    final_url = b_info.get("final_url", target)
+                    redirect_chain = b_info.get("redirect_chain", [])
+                elif is_internal:
+                    p_info = page_map.get(norm_target) or page_map.get(target)
+                    if p_info:
+                        status_code = p_info.get("status_code", 200)
+                        content_type = p_info.get("content_type", "text/html")
+                        final_url = p_info.get("final_url") or target
+                        status_label = "200 OK" if status_code == 200 else (f"{status_code} OK" if 200 <= status_code < 300 else (f"{status_code} Redirect" if 300 <= status_code < 400 else f"HTTP {status_code}"))
+                        is_broken = status_code >= 400 or status_code == 0
+                        if is_broken:
+                            error = p_info.get("error") or f"HTTP {status_code}"
+                    else:
+                        status_code = item.get("status_code") or item.get("destination_status_code")
+                        if status_code:
+                            status_label = "200 OK" if status_code == 200 else f"HTTP {status_code}"
+                            content_type = item.get("content_type", "text/html")
+                        else:
+                            status_label = item.get("status") or "Not Checked"
+                            content_type = item.get("content_type") or "Not Checked"
+                else:
+                    if item.get("status_code"):
+                        status_code = item.get("status_code")
+                        status_label = item.get("status") or ("200 OK" if status_code == 200 else f"HTTP {status_code}")
+                        content_type = item.get("content_type") or "text/html"
+                        final_url = item.get("final_url") or target
+                        redirect_chain = item.get("redirect_chain", [])
+                        is_broken = item.get("is_broken", False)
+                        error = item.get("error")
+                    elif item.get("status") and item.get("status") not in ("Active", "Working", "Healthy", "true"):
+                        status_label = item.get("status")
+                        content_type = item.get("content_type", "Not Checked")
+                    else:
+                        status_label = "Not Checked"
+                        content_type = "Not Checked"
+
+                groups[norm_target] = {
+                    "destination_url": target,
+                    "target_url": target,
+                    "destination_domain": domain,
+                    "normalized_target_url": norm_target,
+                    "unique_source_urls": set(),
+                    "occurrences_list": [],
+                    "anchors": [],
+                    "rels": [],
+                    "status": status_label,
+                    "status_code": status_code,
+                    "content_type": content_type,
+                    "link_scope": "internal" if is_internal else "external",
+                    "link_type": "internal" if is_internal else "external",
+                    "final_url": final_url,
+                    "redirect_chain": redirect_chain,
+                    "is_broken": is_broken,
+                    "error": error,
+                    "error_type": error_type,
+                    "crawl_timestamp": ts
+                }
+
+            group = groups[norm_target]
+            if source:
+                group["unique_source_urls"].add(source)
+
+            anchor = (item.get("anchor_text") or item.get("anchor") or "").strip()
+            if anchor and anchor not in ("[No Text]", "[No Anchor Text]", "[External Link]"):
+                group["anchors"].append(anchor)
+
+            raw_rel = item.get("rel")
+            rel = raw_rel.strip() if isinstance(raw_rel, str) else ("" if raw_rel is None else str(raw_rel).strip())
+            group["rels"].append(rel)
+
+            occ_content_type = item.get("content_type") or group["content_type"]
+            occ_status = item.get("status") or group["status"]
+
+            occ_record = {
                 "source_url": source,
+                "source_page": source,
+                "target_url": target,
                 "destination_url": target,
-                "anchor_text": link.get("anchor_text") or link.get("anchor") or "[No Text]",
-                "rel": link.get("rel") or "follow",
-                "destination_status_code": link.get("status_code") or link.get("destination_status_code", 200),
-                "crawl_timestamp": ts
+                "anchor_text": anchor or "(Empty Anchor)",
+                "anchor": anchor or "(Empty Anchor)",
+                "rel": rel,
+                "type": format_content_type_label(occ_content_type),
+                "content_type": occ_content_type,
+                "status": occ_status,
+                "source_section": item.get("source_section", "other"),
+                "nearest_heading": item.get("nearest_heading") or "Not available",
+                "heading_level": item.get("heading_level"),
+                "paragraph_index": item.get("paragraph_index"),
+                "sentence_index": item.get("sentence_index"),
+                "link_index": item.get("link_index"),
+                "context_before": item.get("context_before", ""),
+                "context_text": item.get("context_text", ""),
+                "context_after": item.get("context_after", ""),
+                "html_snippet": item.get("html_snippet") or "HTML snippet unavailable"
+            }
+            group["occurrences_list"].append(occ_record)
+
+        rows = []
+        for k in ordered_keys:
+            g = groups[k]
+            rep_anchor = g["anchors"][0] if g["anchors"] else "(Empty Anchor)"
+            
+            # Rel representation: if single rel across occurrences -> that rel; if mixed -> "Mixed"
+            all_rels = set(g["rels"])
+            if len(all_rels) > 1:
+                rep_rel = "Mixed"
+            elif len(all_rels) == 1:
+                rep_rel = list(all_rels)[0]
+            else:
+                rep_rel = ""
+
+            # Content-Type / Type representation
+            type_label = format_content_type_label(g["content_type"])
+            occ_types = sorted(list(set(occ.get("type", "Not Checked") for occ in g["occurrences_list"] if occ.get("type") not in ("Not Checked", "Unknown"))))
+            if len(occ_types) > 1:
+                rep_type = "Mixed"
+            elif len(occ_types) == 1:
+                rep_type = occ_types[0]
+            else:
+                rep_type = type_label
+
+            # Status representation
+            occ_statuses = sorted(list(set(occ.get("status", "Not Checked") for occ in g["occurrences_list"] if occ.get("status") not in ("Not Checked", "Active", "Working"))))
+            if len(occ_statuses) > 1:
+                rep_status = "Mixed"
+            elif len(occ_statuses) == 1:
+                rep_status = occ_statuses[0]
+            else:
+                rep_status = g["status"]
+
+            source_pages_count = len(g["unique_source_urls"])
+            occurrences_count = len(g["occurrences_list"])
+
+            rows.append({
+                "destination_url": g["destination_url"],
+                "target_url": g["target_url"],
+                "destination_domain": g["destination_domain"],
+                "normalized_target_url": g["normalized_target_url"],
+                "source_pages": source_pages_count,
+                "no_pages": source_pages_count,
+                "occurrences": occurrences_count,
+                "total_occurrences": occurrences_count,
+                "representative_anchor": rep_anchor,
+                "anchor_text": rep_anchor,
+                "anchor": rep_anchor,
+                "representative_rel": rep_rel,
+                "rel": rep_rel,
+                "source_url": list(g["unique_source_urls"])[0] if g["unique_source_urls"] else "",
+                "source_page": list(g["unique_source_urls"])[0] if g["unique_source_urls"] else "",
+                "status": rep_status,
+                "status_code": g["status_code"] if g["status_code"] is not None else "Not Checked",
+                "destination_status_code": g["status_code"] if g["status_code"] is not None else "Not Available",
+                "type": rep_type,
+                "content_type": g["content_type"],
+                "link_scope": g["link_scope"],
+                "link_type": g["link_type"],
+                "final_url": g["final_url"],
+                "redirect_chain": g["redirect_chain"],
+                "is_broken": g["is_broken"],
+                "error": g["error"] or "None",
+                "error_type": g["error_type"],
+                "inspect": "Inspect",
+                "action": "Inspect",
+                "unique_source_urls": list(g["unique_source_urls"]),
+                "occurrences_list": g["occurrences_list"],
+                "crawl_timestamp": g["crawl_timestamp"]
             })
 
         return rows
+
+    @classmethod
+    def get_internal_links_dataset(cls, artifacts: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        13. Internal Links Tab: Grouped by destination page URL with incoming source pages & occurrence counts.
+        """
+        links = artifacts.get("internal_links", [])
+        link_records = artifacts.get("link_records", [])
+        broken = artifacts.get("broken_links", [])
+        pages = artifacts.get("pages", [])
+        ts = artifacts.get("timestamp", "N/A")
+        return cls._group_link_records(links, link_records, broken, pages, is_internal=True, ts=ts)
 
     @classmethod
     def get_external_links_dataset(cls, artifacts: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        14. External Links Tab: 1 row per discovered outbound link.
+        14. External Links Tab: Grouped by outbound destination URL with real verified status & occurrence counts.
         """
         links = artifacts.get("external_links", [])
+        link_records = artifacts.get("link_records", [])
+        broken = artifacts.get("broken_links", [])
+        pages = artifacts.get("pages", [])
         ts = artifacts.get("timestamp", "N/A")
-        rows = []
-
-        for link in links:
-            source = link.get("source_url") or link.get("source") or ""
-            target = link.get("destination_url") or link.get("target_url") or link.get("target") or link.get("href") or ""
-            rows.append({
-                "source_url": source,
-                "destination_url": target,
-                "anchor_text": link.get("anchor_text") or link.get("anchor") or "[External Link]",
-                "rel": link.get("rel") or "follow",
-                "status": link.get("status", "Active"),
-                "crawl_timestamp": ts
-            })
-
-        return rows
+        return cls._group_link_records(links, link_records, broken, pages, is_internal=False, ts=ts)
 
     @classmethod
     def get_broken_links_dataset(cls, artifacts: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        15. Broken Links Tab: 1 row per verified broken link.
+        15. Broken Links Tab: Grouped by broken target destination URL.
+        Shows unique source pages count, occurrence count, error, and full occurrence evidence.
         """
         links = artifacts.get("broken_links", [])
+        link_records = artifacts.get("link_records", [])
         ts = artifacts.get("timestamp", "N/A")
-        rows = []
+        if not links:
+            return []
+
+        # Index any extra occurrence context from link_records
+        records_by_target: Dict[str, List[Dict[str, Any]]] = {}
+        for r in link_records:
+            t = r.get("destination_url") or r.get("target_url") or r.get("target") or ""
+            if t:
+                norm_r = canonicalize_url(t) or t.strip()
+                if norm_r not in records_by_target:
+                    records_by_target[norm_r] = []
+                records_by_target[norm_r].append(r)
+
+        groups: Dict[str, Dict[str, Any]] = {}
+        ordered_keys: List[str] = []
 
         for link in links:
+            target = link.get("target") or link.get("target_url") or link.get("destination_url") or link.get("url") or ""
+            if not target:
+                continue
+
+            norm_target = canonicalize_url(target) or target.strip()
+            source = link.get("source") or link.get("source_url") or link.get("source_page") or ""
+
+            if norm_target not in groups:
+                ordered_keys.append(norm_target)
+                domain = urlparse(target).netloc.lower()
+                status_code = link.get("status_code", 404)
+                status_label = link.get("status") or (f"404 Not Found" if status_code == 404 else (f"HTTP {status_code}" if status_code else "Broken"))
+                link_type = link.get("link_type", "internal")
+                link_scope = "Internal Broken Link" if link_type == "internal" else "External Broken Link"
+                raw_ct = link.get("content_type") or "text/html"
+                
+                groups[norm_target] = {
+                    "target_url": target,
+                    "destination_url": target,
+                    "destination_domain": domain,
+                    "normalized_target_url": norm_target,
+                    "link_scope": link_scope,
+                    "link_type": link_type,
+                    "status_code": status_code,
+                    "status": status_label,
+                    "error": link.get("error") or f"HTTP {status_code} Error",
+                    "error_type": link.get("error_type", "http_error"),
+                    "final_url": link.get("final_url", target),
+                    "redirect_chain": link.get("redirect_chain", []),
+                    "content_type": raw_ct,
+                    "type": format_content_type_label(raw_ct),
+                    "unique_source_urls": set(),
+                    "occurrences_list": [],
+                    "anchors": [],
+                    "rels": [],
+                    "crawl_timestamp": ts
+                }
+
+            group = groups[norm_target]
+            if source:
+                group["unique_source_urls"].add(source)
+
+            anchor = (link.get("anchor_text") or link.get("anchor") or "").strip()
+            if anchor and anchor not in ("[No Text]", "[No Anchor Text]", "[External Link]"):
+                group["anchors"].append(anchor)
+
+            rel = (link.get("rel") or "").strip() or ("standard" if group["link_type"] == "internal" else "follow")
+            group["rels"].append(rel)
+
+            group["occurrences_list"].append({
+                "source_url": source,
+                "source_page": source,
+                "target_url": target,
+                "destination_url": target,
+                "anchor_text": anchor or "(Empty Anchor)",
+                "anchor": anchor or "(Empty Anchor)",
+                "rel": rel,
+                "type": format_content_type_label(group["content_type"]),
+                "content_type": group["content_type"],
+                "status": group["status"],
+                "source_section": link.get("source_section", "other"),
+                "nearest_heading": link.get("nearest_heading") or "Not available",
+                "heading_level": link.get("heading_level"),
+                "paragraph_index": link.get("paragraph_index"),
+                "sentence_index": link.get("sentence_index"),
+                "link_index": link.get("link_index"),
+                "context_before": link.get("context_before", ""),
+                "context_text": link.get("context_text", ""),
+                "context_after": link.get("context_after", ""),
+                "html_snippet": link.get("html_snippet") or "HTML snippet unavailable"
+            })
+
+        # Append any occurrences from link_records that match these broken targets
+        for k in ordered_keys:
+            g = groups[k]
+            matched_records = records_by_target.get(k, [])
+            for r in matched_records:
+                r_src = r.get("source_url") or r.get("source_page") or ""
+                # Avoid duplicate if same source & link_index already present
+                already_has = any(occ["source_url"] == r_src and occ.get("link_index") == r.get("link_index") for occ in g["occurrences_list"])
+                if not already_has and r_src:
+                    g["unique_source_urls"].add(r_src)
+                    r_anc = (r.get("anchor_text") or r.get("anchor") or "").strip()
+                    if r_anc and r_anc not in ("[No Text]", "[No Anchor Text]", "[External Link]"):
+                        g["anchors"].append(r_anc)
+                    r_rel = (r.get("rel") or "").strip() or ("standard" if g["link_type"] == "internal" else "follow")
+                    g["rels"].append(r_rel)
+                    g["occurrences_list"].append({
+                        "source_url": r_src,
+                        "source_page": r_src,
+                        "target_url": g["target_url"],
+                        "destination_url": g["destination_url"],
+                        "anchor_text": r_anc or "(Empty Anchor)",
+                        "anchor": r_anc or "(Empty Anchor)",
+                        "rel": r_rel,
+                        "type": g["type"],
+                        "content_type": g["content_type"],
+                        "status": g["status"],
+                        "source_section": r.get("source_section", "other"),
+                        "nearest_heading": r.get("nearest_heading") or "Not available",
+                        "heading_level": r.get("heading_level"),
+                        "paragraph_index": r.get("paragraph_index"),
+                        "sentence_index": r.get("sentence_index"),
+                        "link_index": r.get("link_index"),
+                        "context_before": r.get("context_before", ""),
+                        "context_text": r.get("context_text", ""),
+                        "context_after": r.get("context_after", ""),
+                        "html_snippet": r.get("html_snippet") or "HTML snippet unavailable"
+                    })
+
+        rows = []
+        for k in ordered_keys:
+            g = groups[k]
+            rep_anchor = g["anchors"][0] if g["anchors"] else "(Empty Anchor)"
+            
+            clean_rels = [r for r in g["rels"] if r]
+            distinct_rels = sorted(list(set(clean_rels)))
+            if len(distinct_rels) == 1:
+                rep_rel = distinct_rels[0]
+            elif len(distinct_rels) > 1:
+                rep_rel = "Mixed"
+            else:
+                rep_rel = "standard"
+
+            source_pages_count = len(g["unique_source_urls"])
+            occurrences_count = len(g["occurrences_list"])
+
             rows.append({
-                "source_page": link.get("source", "") or link.get("source_url", ""),
-                "target_url": link.get("target", "") or link.get("target_url", ""),
-                "link_type": link.get("link_type", "internal"),
-                "status_code": link.get("status_code", 404),
-                "anchor_text": link.get("anchor_text", ""),
-                "error": link.get("error", "HTTP 404 Not Found"),
-                "crawl_timestamp": ts
+                "target_url": g["target_url"],
+                "destination_url": g["destination_url"],
+                "destination_domain": g["destination_domain"],
+                "normalized_target_url": g["normalized_target_url"],
+                "link_scope": g["link_scope"],
+                "link_type": g["link_type"],
+                "status": g["status"],
+                "status_code": g["status_code"],
+                "error": g["error"],
+                "error_type": g["error_type"],
+                "source_pages": source_pages_count,
+                "no_pages": source_pages_count,
+                "occurrences": occurrences_count,
+                "total_occurrences": occurrences_count,
+                "rel": rep_rel,
+                "representative_rel": rep_rel,
+                "type": g["type"],
+                "content_type": g["content_type"],
+                "representative_anchor": rep_anchor,
+                "anchor_text": rep_anchor,
+                "anchor": rep_anchor,
+                "source_page": list(g["unique_source_urls"])[0] if g["unique_source_urls"] else "",
+                "source_url": list(g["unique_source_urls"])[0] if g["unique_source_urls"] else "",
+                "final_url": g["final_url"],
+                "redirect_chain": g["redirect_chain"],
+                "inspect": "Inspect",
+                "action": "Inspect",
+                "unique_source_urls": list(g["unique_source_urls"]),
+                "occurrences_list": g["occurrences_list"],
+                "crawl_timestamp": g["crawl_timestamp"]
             })
 
         return rows
@@ -842,36 +1267,39 @@ class CrawlDatasetService:
         },
         "internal-links": {
             "title": "Internal Links",
-            "description": "Discovered in-domain hyperlinks, source/target pairs, and anchor text.",
+            "description": "Discovered in-domain hyperlinks grouped by target destination page with incoming source pages and occurrences.",
             "columns": [
-                {"key": "source_url", "label": "Source URL"},
-                {"key": "destination_url", "label": "Destination URL"},
-                {"key": "anchor_text", "label": "Anchor Text"},
-                {"key": "rel", "label": "Rel"},
-                {"key": "destination_status_code", "label": "Target Status"}
+                {"key": "destination_url", "label": "Target Page"},
+                {"key": "source_pages", "label": "Source Pages"},
+                {"key": "occurrences", "label": "Occurrences"},
+                {"key": "status", "label": "Target Status"},
+                {"key": "representative_rel", "label": "Rel"},
+                {"key": "representative_anchor", "label": "Anchor"},
+                {"key": "inspect", "label": "Inspect"}
             ]
         },
         "external-links": {
-            "title": "External Links",
-            "description": "Outbound external links pointing to third-party domains.",
+            "title": "Outbound External Links",
+            "description": "Outbound external links grouped by destination URL, with verified status, Content-Type, and full occurrence evidence.",
             "columns": [
-                {"key": "source_url", "label": "Source URL"},
                 {"key": "destination_url", "label": "Destination URL"},
-                {"key": "anchor_text", "label": "Anchor Text"},
+                {"key": "source_pages", "label": "No. Pages"},
                 {"key": "rel", "label": "Rel"},
-                {"key": "status", "label": "Status"}
+                {"key": "status", "label": "Status"},
+                {"key": "type", "label": "Type"},
+                {"key": "inspect", "label": "Action"}
             ]
         },
         "broken-links": {
             "title": "Broken Links",
-            "description": "Verified broken internal and external link references (HTTP 4xx/5xx).",
+            "description": "Verified broken internal and external link references grouped by target destination URL.",
             "columns": [
-                {"key": "source_page", "label": "Source Page"},
-                {"key": "target_url", "label": "Broken Target URL"},
-                {"key": "link_type", "label": "Link Type"},
-                {"key": "status_code", "label": "Status Code"},
-                {"key": "anchor_text", "label": "Anchor Text"},
-                {"key": "error", "label": "Error"}
+                {"key": "destination_url", "label": "Destination URL"},
+                {"key": "source_pages", "label": "No. Pages"},
+                {"key": "rel", "label": "Rel"},
+                {"key": "status", "label": "Status"},
+                {"key": "type", "label": "Type"},
+                {"key": "inspect", "label": "Action"}
             ]
         },
         "issues": {
@@ -1025,9 +1453,19 @@ class CrawlDatasetService:
         elif clean_tab == "meta-descriptions":
             summary["missing_count"] = sum(1 for r in all_rows if r.get("missing") == "Yes")
             summary["duplicate_count"] = sum(1 for r in all_rows if r.get("duplicate") == "Yes")
+        elif clean_tab == "internal-links":
+            summary["total_destinations"] = total_unfiltered
+            summary["total_occurrences"] = sum(r.get("occurrences", 0) for r in all_rows)
+        elif clean_tab == "external-links":
+            summary["total_destinations"] = total_unfiltered
+            summary["total_occurrences"] = sum(r.get("occurrences", 0) for r in all_rows)
+            summary["verified_count"] = sum(1 for r in all_rows if r.get("status") != "Not Checked")
+            summary["broken_count"] = sum(1 for r in all_rows if r.get("is_broken"))
         elif clean_tab == "broken-links":
-            summary["internal_broken"] = sum(1 for r in all_rows if r.get("link_type") == "internal")
-            summary["external_broken"] = sum(1 for r in all_rows if r.get("link_type") == "external")
+            summary["total_destinations"] = total_unfiltered
+            summary["total_occurrences"] = sum(r.get("occurrences", 0) for r in all_rows)
+            summary["internal_broken"] = sum(1 for r in all_rows if "internal" in str(r.get("link_type", "") or r.get("link_scope", "")).lower())
+            summary["external_broken"] = sum(1 for r in all_rows if "external" in str(r.get("link_type", "") or r.get("link_scope", "")).lower())
         elif clean_tab == "issues":
             summary["critical_count"] = sum(1 for r in all_rows if r.get("severity") == "Critical")
             summary["warning_count"] = sum(1 for r in all_rows if r.get("severity") == "Warning")

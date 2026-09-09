@@ -11,6 +11,7 @@ from typing import Optional, List, Dict, Any
 import asyncio
 import os
 import json
+from datetime import datetime
 
 router = APIRouter()
 
@@ -109,6 +110,7 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
         crawl_session.pages_crawled = len(results.get("pages", []))
         crawl_session.pages_discovered = max(len(results.get("pages", [])), 1)
         crawl_session.issues_found = len(results.get("issues", []))
+        crawl_session.completed_at = datetime.utcnow()
         db.commit()
         print(f"[CRAWL FINISHED] Session {session_id} status: '{crawl_status}'. Saved {len(results.get('pages', []))} pages to {crawl_dir}", flush=True)
 
@@ -155,6 +157,7 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
             crawl_session = db.query(CrawlSession).filter(CrawlSession.id == session_id).first()
             if crawl_session:
                 crawl_session.status = "failed"
+                crawl_session.completed_at = datetime.utcnow()
                 db.commit()
         except Exception:
             pass
@@ -245,11 +248,21 @@ async def get_crawl_status(
             pass
     max_pages_ceiling = cfg.get("max_pages", 5000)
 
+    duration_seconds = None
+    if crawl_session.started_at:
+        end_time = crawl_session.completed_at or datetime.utcnow()
+        duration_seconds = max(0, int((end_time - crawl_session.started_at).total_seconds()))
+
     return {
+        "id": crawl_session.id,
+        "session_id": crawl_session.id,
         "status": crawl_session.status,
         "pages_discovered": crawl_session.pages_discovered,
         "pages_crawled": crawl_session.pages_crawled,
         "issues_found": crawl_session.issues_found,
+        "duration_seconds": duration_seconds,
+        "started_at": crawl_session.started_at.isoformat() if crawl_session.started_at else None,
+        "completed_at": crawl_session.completed_at.isoformat() if crawl_session.completed_at else None,
         "max_pages": max_pages_ceiling,
         "status_message": crawl_session.status_message
     }

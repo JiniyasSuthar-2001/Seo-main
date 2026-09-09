@@ -1202,12 +1202,13 @@ class XLSXExportService:
         ws.auto_filter.ref = "A1:F1"
 
         for idx, lnk in enumerate(links, start=1):
+            st = lnk.get("status") or (f"HTTP {lnk.get('status_code', 200)}" if lnk.get("status_code") else "Verified Internal Link")
             ws.append([
                 idx,
                 lnk.get("source") or lnk.get("source_url") or "",
                 lnk.get("target") or lnk.get("target_url") or "",
                 lnk.get("anchor_text") or lnk.get("anchor") or "(No Anchor Text)",
-                "Active (HTTP 200)",
+                st,
                 "Optimize anchor text for target service keywords."
             ])
             cls._apply_data_row_style(ws, idx + 1, row_height=20)

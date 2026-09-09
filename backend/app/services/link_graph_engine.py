@@ -212,14 +212,14 @@ def get_incoming_links_for_page(
 
     if link_records:
         for rec in link_records:
-            tgt = rec.get("normalized_target_url") or normalize_graph_url(rec.get("target_url") or rec.get("target"))
+            tgt = rec.get("normalized_target_url") or normalize_graph_url(rec.get("target_url") or rec.get("target_page") or rec.get("target"))
             if tgt == norm_target:
-                src = rec.get("source_url") or rec.get("source") or ""
+                src = rec.get("source_url") or rec.get("source_page") or rec.get("source") or ""
                 norm_src = rec.get("normalized_source_url") or normalize_graph_url(src)
                 results.append({
                     "id": rec.get("id") or str(uuid.uuid4()),
                     "source_url": src,
-                    "target_url": rec.get("target_url") or rec.get("target") or target_url,
+                    "target_url": rec.get("target_url") or rec.get("target_page") or rec.get("target") or target_url,
                     "anchor_text": rec.get("anchor_text") or "[No Anchor Text]",
                     "link_type": rec.get("link_type") or ("internal" if rec.get("is_internal") else "external"),
                     "link_scope": rec.get("link_scope") or "internal",
@@ -237,14 +237,14 @@ def get_incoming_links_for_page(
                 })
     elif internal_links:
         for link in internal_links:
-            tgt = normalize_graph_url(link.get("target_url") or link.get("target") or link.get("destination_url"))
+            tgt = normalize_graph_url(link.get("target_url") or link.get("target_page") or link.get("target") or link.get("destination_url"))
             if tgt == norm_target:
-                src = link.get("source_url") or link.get("source") or ""
+                src = link.get("source_url") or link.get("source_page") or link.get("source") or ""
                 norm_src = normalize_graph_url(src)
                 results.append({
                     "id": link.get("id") or str(uuid.uuid4()),
                     "source_url": src,
-                    "target_url": link.get("target") or target_url,
+                    "target_url": link.get("target_page") or link.get("target") or target_url,
                     "anchor_text": link.get("anchor_text") or "[No Anchor Text]",
                     "link_type": "internal",
                     "link_scope": "internal",
@@ -284,9 +284,9 @@ def get_outgoing_links_for_page(
 
     if link_records:
         for rec in link_records:
-            src = rec.get("normalized_source_url") or normalize_graph_url(rec.get("source_url") or rec.get("source"))
+            src = rec.get("normalized_source_url") or normalize_graph_url(rec.get("source_url") or rec.get("source_page") or rec.get("source"))
             if src == norm_source:
-                tgt = rec.get("target_url") or rec.get("target") or ""
+                tgt = rec.get("target_url") or rec.get("target_page") or rec.get("target") or ""
                 norm_tgt = rec.get("normalized_target_url") or normalize_graph_url(tgt)
                 is_int = rec.get("is_internal") if rec.get("is_internal") is not None else (rec.get("link_scope") == "internal")
                 tgt_status = rec.get("status_code") or (page_status_map.get(norm_tgt, 200) if is_int else None)

@@ -10,6 +10,7 @@ from app.config.database import Base, engine, SessionLocal
 from app.models.user import User
 from app.models.project import Project
 from app.models.project_membership import ProjectMembership
+from app.config.auth import create_access_token
 
 class TestExportSystem(unittest.TestCase):
     @classmethod
@@ -52,7 +53,8 @@ class TestExportSystem(unittest.TestCase):
             cls.db.add(cls.membership)
             cls.db.commit()
 
-        cls.headers = {"X-User-ID": cls.user.id}
+        token = create_access_token(cls.user.id)
+        cls.headers = {"Authorization": f"Bearer {token}", "X-User-ID": cls.user.id}
 
     @classmethod
     def tearDownClass(cls):

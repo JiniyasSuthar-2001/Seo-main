@@ -1,15 +1,23 @@
 import { crawlService } from '../services/crawlService.js';
+import { projectStore } from '../core/projectStore.js';
+import { crawlCompleteModal } from './CrawlCompleteModal.js';
 
 class CrawlProgressOverlayManager {
     constructor() {
         this.activeInterval = null;
         this.overlayElement = null;
+        this.activeSessionId = null;
+        this.isCrawling = false;
     }
 
     createOverlayElement(targetUrl) {
         if (this.overlayElement) {
             this.overlayElement.remove();
+            this.overlayElement = null;
         }
+
+        const leftover = document.getElementById('global-crawl-overlay');
+        if (leftover) leftover.remove();
 
         const container = document.createElement('div');
         container.id = 'global-crawl-overlay';
@@ -113,12 +121,16 @@ class CrawlProgressOverlayManager {
     }
 
     start(projectId, sessionId, targetUrl) {
-        this.createOverlayElement(targetUrl);
-
         if (this.activeInterval) {
             clearInterval(this.activeInterval);
+            this.activeInterval = null;
         }
 
+        this.isCrawling = true;
+        this.activeSessionId = sessionId;
+        crawlCompleteModal.close(); // Close any lingering completion modal
+
+        this.createOverlayElement(targetUrl);
         this.setButtonsState(true);
 
         const cancelBtn = document.getElementById('btn-cancel-crawl');
@@ -148,8 +160,14 @@ class CrawlProgressOverlayManager {
 
         this.activeInterval = setInterval(async () => {
             try {
+                // Guard against stale polling callback from a replaced session
+                if (this.activeSessionId !== sessionId) {
+                    return;
+                }
+
                 const statusData = await crawlService.getCrawlStatus(projectId, sessionId);
-                
+                if (!statusData) return;
+
                 const statsEl = document.getElementById('crawl-overlay-stats');
                 const percentEl = document.getElementById('crawl-overlay-percent');
                 const barEl = document.getElementById('crawl-overlay-bar');
@@ -195,6 +213,7 @@ class CrawlProgressOverlayManager {
                 if (statusData.status === 'cancelled') {
                     clearInterval(this.activeInterval);
                     this.activeInterval = null;
+                    this.isCrawling = false;
 
                     if (statsEl) statsEl.innerText = `${crawled} page(s) audited before cancellation`;
                     if (statusTextEl) {
@@ -222,50 +241,46 @@ class CrawlProgressOverlayManager {
                     }
 
                     this.setButtonsState(false);
-                    projectStore.fetchProjects().catch(() => {});
-                    window.dispatchEvent(new CustomEvent('seo:crawl-completed', { detail: { projectId, sessionId } }));
+                    await projectStore.fetchProjects().catch(() => {});
+                    window.dispatchEvent(new CustomEvent('seo:crawl-completed', { detail: { projectId, sessionId, ...statusData } }));
 
                 } else if (statusData.status === 'completed' || statusData.status === 'completed_with_errors') {
+                    // 1. Immediately halt polling
                     clearInterval(this.activeInterval);
                     this.activeInterval = null;
+                    this.isCrawling = false;
 
-                    const isPartial = statusData.status === 'completed_with_errors';
+                    // 2. Close/remove crawling progress overlay immediately
+                    if (this.overlayElement) {
+                        this.overlayElement.remove();
+                        this.overlayElement = null;
+                    }
+                    const leftoverOverlay = document.getElementById('global-crawl-overlay');
+                    if (leftoverOverlay) leftoverOverlay.remove();
 
-                    if (statsEl) statsEl.innerText = `${crawled} / ${discovered} page(s) audited`;
-                    if (statusTextEl) {
-                        statusTextEl.innerHTML = isPartial
-                            ? `<span style="color: #f59e0b; font-weight: 600;">⚠ Crawl completed with issues (page timeouts/errors skipped).</span>`
-                            : `<span style="color: #4ade80; font-weight: 600;">✓ Website audit completed successfully!</span>`;
-                    }
-                    if (titleEl) {
-                        titleEl.innerText = isPartial ? "Crawl Completed with Issues" : "Crawl Complete";
-                    }
-                    if (barEl) {
-                        barEl.style.width = "100%";
-                        barEl.style.backgroundColor = isPartial ? "#f59e0b" : "#10b981";
-                        barEl.classList.remove('crawl-progress-striped');
-                    }
-                    if (spinnerEl) {
-                        spinnerEl.outerHTML = isPartial
-                            ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`
-                            : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="3"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
-                    }
-                    if (actionsEl) {
-                        actionsEl.innerHTML = ``;
-                    }
-
+                    // 3. Reset crawl trigger button states
                     this.setButtonsState(false);
 
-                    // Notify store and dispatch async event without page reload
-                    projectStore.fetchProjects().catch(() => {});
-                    window.dispatchEvent(new CustomEvent('seo:crawl-completed', { detail: { projectId, sessionId } }));
+                    // 4. Refresh background project data
+                    await projectStore.fetchProjects().catch(() => {});
 
-                } else if (statusData.status === 'failed') {
+                    // 5. Notify the active view to re-render in the background
+                    window.dispatchEvent(new CustomEvent('seo:crawl-completed', { detail: { projectId, sessionId, ...statusData } }));
+
+                    // 6. Open Crawl Completed popup
+                    crawlCompleteModal.open({
+                        ...statusData,
+                        target_url: targetUrl
+                    });
+
+                } else if (statusData.status === 'failed' || statusData.status === 'blocked_by_protection' || statusData.status === 'blocked_by_robots') {
                     clearInterval(this.activeInterval);
                     this.activeInterval = null;
+                    this.isCrawling = false;
 
-                    if (statusTextEl) statusTextEl.innerHTML = `<span style="color: #f87171; font-weight: 600;">✕ Crawl failed (website connection unreachable).</span>`;
-                    if (titleEl) titleEl.innerText = "Crawl Failed";
+                    const msg = statusData.status_message || "Crawl failed to reach destination server.";
+                    if (statusTextEl) statusTextEl.innerHTML = `<span style="color: #f87171; font-weight: 600;">✕ ${msg}</span>`;
+                    if (titleEl) titleEl.innerText = "Crawl Incomplete";
                     if (barEl) {
                         barEl.style.width = "100%";
                         barEl.style.backgroundColor = "#ef4444";

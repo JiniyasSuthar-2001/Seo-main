@@ -9,6 +9,7 @@ export class Router {
     
     window.addEventListener('popstate', () => this.handleRoute());
     window.addEventListener('project:selected', () => this.handleRoute());
+    window.addEventListener('seo:crawl-completed', () => this.handleRoute());
   }
 
   addRoute(path, ViewComponent) {

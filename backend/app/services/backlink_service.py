@@ -69,114 +69,59 @@ class BacklinkDataService:
             except Exception as e:
                 print(f"[BACKLINK SERVICE] Error reading backlinks file for {domain}: {e}", flush=True)
 
-        # 2. Fetch outbound external links discovered by the crawler
-        latest_path = os.path.join(proj_storage_dir, "latest.json")
-        raw_outbound: List[Dict[str, Any]] = []
-        crawl_timestamp = "Not collected"
-        if os.path.exists(latest_path):
-            try:
-                with open(latest_path, "r") as f:
-                    latest = json.load(f)
-                crawl_dir = normalize_stored_path(latest.get("path"))
-                if crawl_dir:
-                    meta_file = os.path.join(crawl_dir, "metadata.json")
-                    if os.path.exists(meta_file):
-                        try:
-                            with open(meta_file, "r") as mf:
-                                meta_data = json.load(mf)
-                                crawl_timestamp = meta_data.get("timestamp") or "Not collected"
-                        except Exception:
-                            pass
+        # 2. Fetch outbound external links discovered by the crawler using canonical dataset service
+        from app.services.crawl_data.crawl_dataset_service import CrawlDatasetService
 
-                    ext_file = os.path.join(crawl_dir, "external_links.json")
-                    if os.path.exists(ext_file):
-                        with open(ext_file, "r") as ef:
+        artifacts = CrawlDatasetService.load_crawl_artifacts(project.id, domain)
+        grouped_outbound = []
+
+        if artifacts:
+            grouped_outbound = CrawlDatasetService.get_external_links_dataset(artifacts)
+        else:
+            # Fallback to direct snapshot files if legacy structure
+            latest_path = os.path.join(proj_storage_dir, "latest.json")
+            raw_outbound: List[Dict[str, Any]] = []
+            crawl_timestamp = "Not collected"
+            if os.path.exists(latest_path):
+                try:
+                    with open(latest_path, "r") as f:
+                        latest = json.load(f)
+                    crawl_dir = normalize_stored_path(latest.get("path"))
+                    if crawl_dir and os.path.exists(os.path.join(crawl_dir, "external_links.json")):
+                        with open(os.path.join(crawl_dir, "external_links.json"), "r") as ef:
                             raw_outbound = json.load(ef)
-            except Exception as e:
-                print(f"[BACKLINK SERVICE] Error loading external outbound links: {e}", flush=True)
+                except Exception as e:
+                    print(f"[BACKLINK SERVICE] Error loading external outbound links: {e}", flush=True)
+            
+            grouped_outbound = CrawlDatasetService.get_external_links_dataset({
+                "external_links": raw_outbound,
+                "timestamp": crawl_timestamp
+            })
 
-        # Process and normalize outbound links
-        formatted_outbound = []
-        unique_urls = set()
+        # Calculate metrics from canonical grouped dataset
+        total_destinations = len(grouped_outbound)
+        total_outbound_links = sum(g.get("occurrences", 1) for g in grouped_outbound)
         unique_domains = set()
         nofollow_count = 0
         sponsored_count = 0
         ugc_count = 0
         broken_count = 0
 
-        for link in raw_outbound:
-            src = link.get("source") or link.get("source_url") or link.get("source_page") or "Not collected"
-            target = link.get("target") or link.get("destination_url") or link.get("target_url") or "Not collected"
-            
-            dest_domain = "Not collected"
-            if target and target != "Not collected":
-                unique_urls.add(target)
-                try:
-                    parsed_dest = urlparse(target)
-                    dest_domain = parsed_dest.netloc.lower().replace("www.", "") or "Not collected"
-                    if dest_domain != "Not collected":
-                        unique_domains.add(dest_domain)
-                except Exception:
-                    pass
+        for g in grouped_outbound:
+            dom = g.get("destination_domain")
+            if dom and dom not in ("Not collected", "Unknown", ""):
+                unique_domains.add(dom)
 
-            # Classify Link Type (Social, Email, Telephone, External, Nofollow, etc.)
-            target_lower = target.lower()
-            rel_str = str(link.get("rel") or "").lower()
-            rel_types = []
-            
-            if target_lower.startswith("mailto:"):
-                link_type_category = "Email Link"
-            elif target_lower.startswith("tel:"):
-                link_type_category = "Telephone Link"
-            elif any(s in target_lower for s in ["facebook.com", "instagram.com", "twitter.com", "x.com", "linkedin.com", "youtube.com", "pinterest.com", "tiktok.com"]):
-                link_type_category = "Social Link"
-            else:
-                link_type_category = "External Link"
-
+            rel_str = str(g.get("rel") or "").lower()
             if "nofollow" in rel_str:
-                rel_types.append("Nofollow")
                 nofollow_count += 1
             if "sponsored" in rel_str:
-                rel_types.append("Sponsored")
                 sponsored_count += 1
             if "ugc" in rel_str:
-                rel_types.append("UGC")
                 ugc_count += 1
 
-            rel_label = ", ".join(rel_types) if rel_types else "Follow"
-            full_link_type = f"{link_type_category} ({rel_label})" if rel_types else link_type_category
-
-            st_code = link.get("status_code")
-            if isinstance(st_code, int) and st_code >= 400:
+            if g.get("is_broken") or (isinstance(g.get("status_code"), int) and g.get("status_code") >= 400):
                 broken_count += 1
-            formatted_status = st_code if isinstance(st_code, int) and st_code > 0 else "Not checked"
-
-            # Smart Anchor Text Fallback
-            raw_anchor = (link.get("anchor_text") or "").strip()
-            if not raw_anchor or raw_anchor == "[External Link]":
-                if any(ext in target_lower for ext in [".png", ".jpg", ".jpeg", ".svg", ".gif", ".webp", "image", "icon"]):
-                    anchor_display = "Image link"
-                else:
-                    anchor_display = "No anchor text"
-            else:
-                anchor_display = raw_anchor
-
-            formatted_outbound.append({
-                "source_url": src,
-                "source_page": src,
-                "source": src,
-                "destination_url": target,
-                "target_url": target,
-                "target": target,
-                "destination_domain": dest_domain,
-                "anchor_text": anchor_display,
-                "link_type": full_link_type,
-                "rel": rel_str or "Not collected",
-                "status_code": formatted_status,
-                "first_discovered": link.get("first_discovered") or crawl_timestamp,
-                "last_discovered": link.get("last_discovered") or crawl_timestamp,
-                "data_source": "Website Scan"
-            })
 
         # 3. Calculate referring domains for inbound backlinks
         ref_domains = set()
@@ -206,11 +151,12 @@ class BacklinkDataService:
             "summary": {
                 "inbound_backlinks": len(inbound_backlinks),
                 "referring_domains": len(ref_domains),
-                "outbound_external_links": len(formatted_outbound)
+                "outbound_external_links": total_outbound_links,
+                "outbound_destinations": total_destinations
             },
             "outbound_summary": {
-                "total_outbound_links": len(formatted_outbound),
-                "unique_external_urls": len(unique_urls),
+                "total_outbound_links": total_outbound_links,
+                "unique_external_urls": total_destinations,
                 "unique_external_domains": len(unique_domains),
                 "nofollow_count": nofollow_count,
                 "sponsored_count": sponsored_count,
@@ -219,8 +165,8 @@ class BacklinkDataService:
             },
             "backlinks": inbound_backlinks[offset : offset + limit],
             "referring_domains": list(ref_domains),
-            "outbound_links": formatted_outbound,  # Return full list for client filtering/searching or pagination
-            "outbound_links_paginated": formatted_outbound[offset : offset + limit],
+            "outbound_links": grouped_outbound,
+            "outbound_links_paginated": grouped_outbound[offset : offset + limit],
             "provenance": {
                 "source_type": source_type,
                 "source_label": source_label,
@@ -229,3 +175,4 @@ class BacklinkDataService:
                 "message": message
             }
         }
+

@@ -41,8 +41,8 @@ export class GrowthDetailModal {
     static renderFrame({ title, subtitle, badgeHtml, bodyHtml, footerHtml }) {
         const root = this.getRoot();
         root.innerHTML = `
-            <div style="position: fixed; inset: 0; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 16px;">
-                <div class="card" style="width: 100%; max-width: 780px; max-height: 90vh; display: flex; flex-direction: column; background: var(--bg-card); border-radius: 14px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); border: 1px solid var(--border); overflow: hidden; animation: growthModalFadeIn 0.2s ease-out;">
+            <div style="position: fixed; inset: 0; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 999999; padding: 16px;">
+                <div class="card" style="width: 100%; max-width: 820px; max-height: 90vh; display: flex; flex-direction: column; background: var(--bg-card); border-radius: 14px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); border: 1px solid var(--border); overflow: hidden; animation: growthModalFadeIn 0.2s ease-out; position: relative; z-index: 1000000;">
                     <!-- HEADER -->
                     <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; background: var(--bg-subtle);">
                         <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
@@ -101,137 +101,141 @@ export class GrowthDetailModal {
      */
     static showLinkDetail(link) {
         if (!link) return;
+        try {
+            console.log('[GROWTH MODAL] showLinkDetail:', link);
+            const isInternal = link.is_internal !== undefined ? link.is_internal : (link.link_type === 'internal');
+            const scopeLabel = isInternal ? 'Internal Link' : 'External Link';
+            const scopeBadge = isInternal
+                ? `<span class="badge" style="background: rgba(59, 130, 246, 0.15); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.3); font-weight: 700;">INTERNAL</span>`
+                : `<span class="badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); font-weight: 700;">EXTERNAL</span>`;
 
-        const isInternal = link.is_internal !== undefined ? link.is_internal : (link.link_type === 'internal');
-        const scopeLabel = isInternal ? 'Internal Link' : 'External Link';
-        const scopeBadge = isInternal
-            ? `<span class="badge" style="background: rgba(59, 130, 246, 0.15); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.3); font-weight: 700;">INTERNAL</span>`
-            : `<span class="badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); font-weight: 700;">EXTERNAL</span>`;
+            const statusCode = link.status_code !== undefined ? link.status_code : (link.target_status_code || 200);
+            let statusBadgeClass = 'badge-success';
+            if (statusCode >= 400 || statusCode === 0) statusBadgeClass = 'badge-critical';
+            else if (statusCode >= 300) statusBadgeClass = 'badge-warning';
 
-        const statusCode = link.status_code !== undefined ? link.status_code : (link.target_status_code || 200);
-        let statusBadgeClass = 'badge-success';
-        if (statusCode >= 400 || statusCode === 0) statusBadgeClass = 'badge-critical';
-        else if (statusCode >= 300) statusBadgeClass = 'badge-warning';
+            const statusLabel = statusCode === 0 ? 'Unreachable' : `HTTP ${statusCode}`;
 
-        const statusLabel = statusCode === 0 ? 'Unreachable' : `HTTP ${statusCode}`;
+            const safeSource = this.escapeHtml(link.source_page || link.source || 'Not Available');
+            const safeTarget = this.escapeHtml(link.target_page || link.target || link.url || 'Not Available');
+            const safeAnchor = this.escapeHtml(link.anchor_text || '(Empty / Image Link)');
+            const section = link.source_section || link.section || 'Not Available';
+            const heading = link.nearest_heading ? `${this.escapeHtml(link.nearest_heading)} ${link.heading_level ? `<span style="font-size: 11px; opacity: 0.7;">(${String(link.heading_level).toUpperCase()})</span>` : ''}` : 'Not Available';
+            const paragraph = link.paragraph_index !== undefined && link.paragraph_index !== null ? `Paragraph #${link.paragraph_index + 1}` : 'Not Available';
+            const sentence = link.sentence_index !== undefined && link.sentence_index !== null ? `Sentence #${link.sentence_index + 1}` : 'Not Available';
+            const rel = link.rel || (link.is_nofollow ? 'nofollow' : 'follow') || 'follow';
+            const targetType = link.target_type || (safeTarget.endsWith('.pdf') ? 'PDF Document' : (safeTarget.match(/\.(jpg|jpeg|png|webp|svg)$/i) ? 'Image' : 'HTML Page'));
 
-        const safeSource = this.escapeHtml(link.source_page || link.source || 'Not Available');
-        const safeTarget = this.escapeHtml(link.target_page || link.target || link.url || 'Not Available');
-        const safeAnchor = this.escapeHtml(link.anchor_text || '(Empty / Image Link)');
-        const section = link.source_section || link.section || 'Not Available';
-        const heading = link.nearest_heading ? `${this.escapeHtml(link.nearest_heading)} ${link.heading_level ? `<span style="font-size: 11px; opacity: 0.7;">(${link.heading_level.toUpperCase()})</span>` : ''}` : 'Not Available';
-        const paragraph = link.paragraph_index !== undefined && link.paragraph_index !== null ? `Paragraph #${link.paragraph_index + 1}` : 'Not Available';
-        const sentence = link.sentence_index !== undefined && link.sentence_index !== null ? `Sentence #${link.sentence_index + 1}` : 'Not Available';
-        const rel = link.rel || (link.is_nofollow ? 'nofollow' : 'follow') || 'follow';
-        const targetType = link.target_type || (safeTarget.endsWith('.pdf') ? 'PDF Document' : (safeTarget.match(/\.(jpg|jpeg|png|webp|svg)$/i) ? 'Image' : 'HTML Page'));
+            const contextBefore = link.context_before ? this.escapeHtml(link.context_before) : '';
+            const contextText = link.context_text ? this.escapeHtml(link.context_text) : '';
+            const contextAfter = link.context_after ? this.escapeHtml(link.context_after) : '';
+            const htmlSnippet = link.html_snippet ? this.escapeHtml(link.html_snippet) : '';
 
-        const contextBefore = link.context_before ? this.escapeHtml(link.context_before) : '';
-        const contextText = link.context_text ? this.escapeHtml(link.context_text) : '';
-        const contextAfter = link.context_after ? this.escapeHtml(link.context_after) : '';
-        const htmlSnippet = link.html_snippet ? this.escapeHtml(link.html_snippet) : '';
-
-        const bodyHtml = `
-            <!-- URL SUMMARY CARDS -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                <div style="background: var(--bg-subtle); padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border);">
-                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 4px;">Source Page</div>
-                    <div style="font-family: monospace; font-size: 12px; color: var(--primary); word-break: break-all;">
-                        <a href="${safeSource}" target="_blank" rel="noopener noreferrer" style="color: var(--primary); text-decoration: none;">${safeSource} ↗</a>
+            const bodyHtml = `
+                <!-- URL SUMMARY CARDS -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div style="background: var(--bg-subtle); padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border);">
+                        <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 4px;">Source Page</div>
+                        <div style="font-family: monospace; font-size: 12px; color: var(--primary); word-break: break-all;">
+                            <a href="${safeSource}" target="_blank" rel="noopener noreferrer" style="color: var(--primary); text-decoration: none;">${safeSource} ↗</a>
+                        </div>
+                    </div>
+                    <div style="background: var(--bg-subtle); padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border);">
+                        <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 4px;">Target Destination</div>
+                        <div style="font-family: monospace; font-size: 12px; color: ${statusCode >= 400 || statusCode === 0 ? '#ef4444' : 'var(--text-primary)'}; word-break: break-all;">
+                            <a href="${safeTarget}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${safeTarget} ↗</a>
+                        </div>
                     </div>
                 </div>
-                <div style="background: var(--bg-subtle); padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border);">
-                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 4px;">Target Destination</div>
-                    <div style="font-family: monospace; font-size: 12px; color: ${statusCode >= 400 || statusCode === 0 ? '#ef4444' : 'var(--text-primary)'}; word-break: break-all;">
-                        <a href="${safeTarget}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${safeTarget} ↗</a>
-                    </div>
-                </div>
-            </div>
 
-            <!-- LINK PROPERTIES GRID -->
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; background: var(--bg-subtle); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border);">
-                <div>
-                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">HTTP Status</div>
-                    <div style="margin-top: 4px;"><span class="badge ${statusBadgeClass}" style="font-size: 11px;">${statusLabel}</span></div>
-                </div>
-                <div>
-                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">Link Scope</div>
-                    <div style="margin-top: 4px;">${scopeBadge}</div>
-                </div>
-                <div>
-                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">Rel Attribute</div>
-                    <div style="margin-top: 4px; font-family: monospace; font-size: 12px; font-weight: 600;">${rel}</div>
-                </div>
-                <div>
-                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">Target Content Type</div>
-                    <div style="margin-top: 4px; font-size: 12px;">${targetType}</div>
-                </div>
-            </div>
-
-            <!-- ANCHOR TEXT -->
-            <div style="background: var(--bg-subtle); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border);">
-                <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 4px;">Anchor Text</div>
-                <div style="font-size: 13.5px; font-weight: 600; color: var(--text-primary);">${safeAnchor}</div>
-            </div>
-
-            <!-- EXACT DOM LOCATION -->
-            <div>
-                <div style="font-size: 11px; font-weight: 800; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">DOM & Page Location</div>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; background: var(--bg-card); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border);">
+                <!-- LINK PROPERTIES GRID -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; background: var(--bg-subtle); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border);">
                     <div>
-                        <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase;">Section</div>
-                        <div style="font-weight: 600; font-size: 12.5px; margin-top: 2px;">${section}</div>
+                        <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">HTTP Status</div>
+                        <div style="margin-top: 4px;"><span class="badge ${statusBadgeClass}" style="font-size: 11px;">${statusLabel}</span></div>
                     </div>
                     <div>
-                        <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase;">Nearest Heading</div>
-                        <div style="font-weight: 600; font-size: 12.5px; margin-top: 2px;">${heading}</div>
+                        <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">Link Scope</div>
+                        <div style="margin-top: 4px;">${scopeBadge}</div>
                     </div>
                     <div>
-                        <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase;">Paragraph</div>
-                        <div style="font-weight: 600; font-size: 12.5px; margin-top: 2px;">${paragraph}</div>
+                        <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">Rel Attribute</div>
+                        <div style="margin-top: 4px; font-family: monospace; font-size: 12px; font-weight: 600;">${rel}</div>
                     </div>
                     <div>
-                        <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase;">Sentence</div>
-                        <div style="font-weight: 600; font-size: 12.5px; margin-top: 2px;">${sentence}</div>
+                        <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">Target Content Type</div>
+                        <div style="margin-top: 4px; font-size: 12px;">${targetType}</div>
                     </div>
                 </div>
-            </div>
 
-            <!-- CONTEXT SURROUNDING LINK -->
-            ${(contextBefore || contextText || contextAfter) ? `
+                <!-- ANCHOR TEXT -->
+                <div style="background: var(--bg-subtle); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border);">
+                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 4px;">Anchor Text</div>
+                    <div style="font-size: 13.5px; font-weight: 600; color: var(--text-primary);">${safeAnchor}</div>
+                </div>
+
+                <!-- EXACT DOM LOCATION -->
                 <div>
-                    <div style="font-size: 11px; font-weight: 800; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Surrounding Text Context</div>
-                    <div style="background: var(--bg-card); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); font-size: 13px; line-height: 1.6; color: var(--text-secondary); font-style: italic;">
-                        ${contextBefore ? `...${contextBefore} ` : ''}
-                        <mark style="background: rgba(59, 130, 246, 0.2); color: var(--primary); padding: 2px 4px; border-radius: 4px; font-weight: 600; font-style: normal;">${contextText || safeAnchor}</mark>
-                        ${contextAfter ? ` ${contextAfter}...` : ''}
+                    <div style="font-size: 11px; font-weight: 800; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">DOM & Page Location</div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; background: var(--bg-card); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border);">
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase;">Section</div>
+                            <div style="font-weight: 600; font-size: 12.5px; margin-top: 2px;">${section}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase;">Nearest Heading</div>
+                            <div style="font-weight: 600; font-size: 12.5px; margin-top: 2px;">${heading}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase;">Paragraph</div>
+                            <div style="font-weight: 600; font-size: 12.5px; margin-top: 2px;">${paragraph}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase;">Sentence</div>
+                            <div style="font-weight: 600; font-size: 12.5px; margin-top: 2px;">${sentence}</div>
+                        </div>
                     </div>
                 </div>
-            ` : `
-                <div style="padding: 10px 14px; background: var(--bg-subtle); border-radius: 8px; border: 1px solid var(--border); font-size: 12px; color: var(--text-secondary);">
-                    Surrounding sentence context not recorded during crawl.
-                </div>
-            `}
 
-            <!-- RAW HTML SNIPPET -->
-            ${htmlSnippet ? `
-                <div>
-                    <div style="font-size: 11px; font-weight: 800; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Extracted Link HTML</div>
-                    <div style="background: #0f172a; color: #38bdf8; padding: 12px 14px; border-radius: 8px; font-family: monospace; font-size: 12px; overflow-x: auto; border: 1px solid rgba(255,255,255,0.1); white-space: pre-wrap; word-break: break-all;">${htmlSnippet}</div>
-                </div>
-            ` : ''}
-        `;
+                <!-- CONTEXT SURROUNDING LINK -->
+                ${(contextBefore || contextText || contextAfter) ? `
+                    <div>
+                        <div style="font-size: 11px; font-weight: 800; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Surrounding Text Context</div>
+                        <div style="background: var(--bg-card); padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); font-size: 13px; line-height: 1.6; color: var(--text-secondary); font-style: italic;">
+                            ${contextBefore ? `...${contextBefore} ` : ''}
+                            <mark style="background: rgba(59, 130, 246, 0.2); color: var(--primary); padding: 2px 4px; border-radius: 4px; font-weight: 600; font-style: normal;">${contextText || safeAnchor}</mark>
+                            ${contextAfter ? ` ${contextAfter}...` : ''}
+                        </div>
+                    </div>
+                ` : `
+                    <div style="padding: 10px 14px; background: var(--bg-subtle); border-radius: 8px; border: 1px solid var(--border); font-size: 12px; color: var(--text-secondary);">
+                        Surrounding sentence context not recorded during crawl.
+                    </div>
+                `}
 
-        const footerHtml = `
-            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('growth-detail-modal-root').innerHTML=''">Close</button>
-        `;
+                <!-- RAW HTML SNIPPET -->
+                ${htmlSnippet ? `
+                    <div>
+                        <div style="font-size: 11px; font-weight: 800; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Extracted Link HTML</div>
+                        <div style="background: #0f172a; color: #38bdf8; padding: 12px 14px; border-radius: 8px; font-family: monospace; font-size: 12px; overflow-x: auto; border: 1px solid rgba(255,255,255,0.1); white-space: pre-wrap; word-break: break-all;">${htmlSnippet}</div>
+                    </div>
+                ` : ''}
+            `;
 
-        this.renderFrame({
-            title: 'Link Record Evidence',
-            subtitle: `${scopeLabel} Verification`,
-            badgeHtml: scopeBadge,
-            bodyHtml,
-            footerHtml
-        });
+            const footerHtml = `
+                <button class="btn btn-secondary btn-sm" onclick="document.getElementById('growth-detail-modal-root').innerHTML=''">Close</button>
+            `;
+
+            this.renderFrame({
+                title: 'Link Record Evidence',
+                subtitle: `${scopeLabel} Verification`,
+                badgeHtml: scopeBadge,
+                bodyHtml,
+                footerHtml
+            });
+        } catch (err) {
+            console.error('[GROWTH MODAL] Exception in showLinkDetail:', err);
+        }
     }
 
     /**
@@ -240,106 +244,110 @@ export class GrowthDetailModal {
      */
     static showBrokenLinkDetail(brokenItem, allBrokenRecords = []) {
         if (!brokenItem) return;
+        try {
+            console.log('[GROWTH MODAL] showBrokenLinkDetail:', brokenItem);
+            const targetUrl = brokenItem.target || brokenItem.url || '';
+            const statusCode = brokenItem.status_code || 0;
+            const isInternal = brokenItem.link_type === 'internal';
+            const errorType = brokenItem.error_type || (statusCode === 404 ? '404 Not Found' : (statusCode >= 500 ? 'Server Error' : 'Unreachable'));
 
-        const targetUrl = brokenItem.target || brokenItem.url || '';
-        const statusCode = brokenItem.status_code || 0;
-        const isInternal = brokenItem.link_type === 'internal';
-        const errorType = brokenItem.error_type || (statusCode === 404 ? '404 Not Found' : (statusCode >= 500 ? 'Server Error' : 'Unreachable'));
+            // Filter all records with matching target URL to show all sources
+            const sourceMatches = allBrokenRecords.filter(r => (r.target || r.url) === targetUrl);
+            const sourcePages = sourceMatches.length > 0 ? sourceMatches : [brokenItem];
 
-        // Filter all records with matching target URL to show all sources
-        const sourceMatches = allBrokenRecords.filter(r => (r.target || r.url) === targetUrl);
-        const sourcePages = sourceMatches.length > 0 ? sourceMatches : [brokenItem];
+            const safeTarget = this.escapeHtml(targetUrl);
 
-        const safeTarget = this.escapeHtml(targetUrl);
+            let sourcesHtml = sourcePages.map((src, idx) => {
+                const safeSrc = this.escapeHtml(src.source || src.source_page || 'Unknown Source Page');
+                const safeAnc = this.escapeHtml(src.anchor_text || '(No Anchor Text)');
+                const section = src.source_section || 'Main Content';
+                const heading = src.nearest_heading ? this.escapeHtml(src.nearest_heading) : 'Not Available';
+                const paragraph = src.paragraph_index !== undefined && src.paragraph_index !== null ? `P #${src.paragraph_index + 1}` : 'N/A';
 
-        let sourcesHtml = sourcePages.map((src, idx) => {
-            const safeSrc = this.escapeHtml(src.source || src.source_page || 'Unknown Source Page');
-            const safeAnc = this.escapeHtml(src.anchor_text || '(No Anchor Text)');
-            const section = src.source_section || 'Main Content';
-            const heading = src.nearest_heading ? this.escapeHtml(src.nearest_heading) : 'Not Available';
-            const paragraph = src.paragraph_index !== undefined && src.paragraph_index !== null ? `P #${src.paragraph_index + 1}` : 'N/A';
+                return `
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td style="padding: 10px 14px;">
+                            <div style="font-family: monospace; font-size: 12px; color: var(--primary); word-break: break-all;">
+                                ${safeSrc}
+                            </div>
+                        </td>
+                        <td style="padding: 10px 14px; font-weight: 500; font-size: 12.5px;">${safeAnc}</td>
+                        <td style="padding: 10px 14px; font-size: 12px; color: var(--text-secondary);">${section}</td>
+                        <td style="padding: 10px 14px; font-size: 12px; color: var(--text-secondary);">${heading}</td>
+                        <td style="padding: 10px 14px; font-size: 12px; color: var(--text-secondary);">${paragraph}</td>
+                        <td style="padding: 10px 14px; text-align: right;">
+                            <button class="btn btn-secondary btn-sm btn-inspect-broken-source" data-src-idx="${idx}" style="font-size: 11px; padding: 3px 8px;">
+                                Inspect Link
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
 
-            return `
-                <tr style="border-bottom: 1px solid var(--border);">
-                    <td style="padding: 10px 14px;">
-                        <div style="font-family: monospace; font-size: 12px; color: var(--primary); word-break: break-all;">
-                            ${safeSrc}
+            const bodyHtml = `
+                <!-- TARGET STATUS BANNER -->
+                <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); padding: 14px 18px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <div style="font-size: 11px; font-weight: 800; color: #ef4444; text-transform: uppercase;">Broken Target Destination</div>
+                        <div style="font-family: monospace; font-size: 13px; font-weight: 700; color: #ef4444; word-break: break-all; margin-top: 4px;">
+                            ${safeTarget}
                         </div>
-                    </td>
-                    <td style="padding: 10px 14px; font-weight: 500; font-size: 12.5px;">${safeAnc}</td>
-                    <td style="padding: 10px 14px; font-size: 12px; color: var(--text-secondary);">${section}</td>
-                    <td style="padding: 10px 14px; font-size: 12px; color: var(--text-secondary);">${heading}</td>
-                    <td style="padding: 10px 14px; font-size: 12px; color: var(--text-secondary);">${paragraph}</td>
-                    <td style="padding: 10px 14px; text-align: right;">
-                        <button class="btn btn-secondary btn-sm btn-inspect-broken-source" data-src-idx="${idx}" style="font-size: 11px; padding: 3px 8px;">
-                            Inspect Link
-                        </button>
-                    </td>
-                </tr>
-            `;
-        }).join('');
-
-        const bodyHtml = `
-            <!-- TARGET STATUS BANNER -->
-            <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3); padding: 14px 18px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-                <div>
-                    <div style="font-size: 11px; font-weight: 800; color: #ef4444; text-transform: uppercase;">Broken Target Destination</div>
-                    <div style="font-family: monospace; font-size: 13px; font-weight: 700; color: #ef4444; word-break: break-all; margin-top: 4px;">
-                        ${safeTarget}
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <span class="badge badge-critical" style="font-size: 12px; font-weight: 700;">HTTP ${statusCode || 'Dead'}</span>
+                        <span class="badge" style="background: ${isInternal ? 'rgba(59,130,246,0.15)' : 'rgba(168,85,247,0.15)'}; color: ${isInternal ? '#3b82f6' : '#c084fc'}; font-size: 11px; font-weight: 700;">${isInternal ? 'INTERNAL' : 'EXTERNAL'}</span>
                     </div>
                 </div>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                    <span class="badge badge-critical" style="font-size: 12px; font-weight: 700;">HTTP ${statusCode || 'Dead'}</span>
-                    <span class="badge" style="background: ${isInternal ? 'rgba(59,130,246,0.15)' : 'rgba(168,85,247,0.15)'}; color: ${isInternal ? '#3b82f6' : '#c084fc'}; font-size: 11px; font-weight: 700;">${isInternal ? 'INTERNAL' : 'EXTERNAL'}</span>
+
+                <!-- SOURCE PAGES COUNT -->
+                <div>
+                    <div style="font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 8px;">
+                        Found on ${sourcePages.length} Source Page${sourcePages.length === 1 ? '' : 's'}:
+                    </div>
+                    <div style="background: var(--bg-card); border-radius: 8px; border: 1px solid var(--border); overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 12.5px;">
+                            <thead>
+                                <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; color: var(--text-secondary);">
+                                    <th style="padding: 10px 14px;">Source Page URL</th>
+                                    <th style="padding: 10px 14px;">Anchor</th>
+                                    <th style="padding: 10px 14px;">Location</th>
+                                    <th style="padding: 10px 14px;">Heading</th>
+                                    <th style="padding: 10px 14px;">Paragraph</th>
+                                    <th style="padding: 10px 14px; text-align: right;">Evidence</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${sourcesHtml}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-            </div>
+            `;
 
-            <!-- SOURCE PAGES COUNT -->
-            <div>
-                <div style="font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 8px;">
-                    Found on ${sourcePages.length} Source Page${sourcePages.length === 1 ? '' : 's'}:
-                </div>
-                <div style="background: var(--bg-card); border-radius: 8px; border: 1px solid var(--border); overflow-x: auto;">
-                    <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 12.5px;">
-                        <thead>
-                            <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; color: var(--text-secondary);">
-                                <th style="padding: 10px 14px;">Source Page URL</th>
-                                <th style="padding: 10px 14px;">Anchor</th>
-                                <th style="padding: 10px 14px;">Location</th>
-                                <th style="padding: 10px 14px;">Heading</th>
-                                <th style="padding: 10px 14px;">Paragraph</th>
-                                <th style="padding: 10px 14px; text-align: right;">Evidence</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${sourcesHtml}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        `;
+            const footerHtml = `
+                <button class="btn btn-secondary btn-sm" onclick="document.getElementById('growth-detail-modal-root').innerHTML=''">Close</button>
+            `;
 
-        const footerHtml = `
-            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('growth-detail-modal-root').innerHTML=''">Close</button>
-        `;
+            this.renderFrame({
+                title: 'Broken Link Evidence',
+                subtitle: `Error Trace: ${errorType}`,
+                badgeHtml: `<span class="badge badge-critical">${sourcePages.length} Broken Reference${sourcePages.length === 1 ? '' : 's'}</span>`,
+                bodyHtml,
+                footerHtml
+            });
 
-        this.renderFrame({
-            title: 'Broken Link Evidence',
-            subtitle: `Error Trace: ${errorType}`,
-            badgeHtml: `<span class="badge badge-critical">${sourcePages.length} Broken Reference${sourcePages.length === 1 ? '' : 's'}</span>`,
-            bodyHtml,
-            footerHtml
-        });
-
-        // Bind source inspection buttons
-        const root = this.getRoot();
-        root.querySelectorAll('.btn-inspect-broken-source').forEach(btn => {
-            btn.onclick = () => {
-                const idx = parseInt(btn.getAttribute('data-src-idx'), 10);
-                const record = sourcePages[idx];
-                if (record) GrowthDetailModal.showLinkDetail(record);
-            };
-        });
+            // Bind source inspection buttons
+            const root = this.getRoot();
+            root.querySelectorAll('.btn-inspect-broken-source').forEach(btn => {
+                btn.onclick = () => {
+                    const idx = parseInt(btn.getAttribute('data-src-idx'), 10);
+                    const record = sourcePages[idx];
+                    if (record) GrowthDetailModal.showLinkDetail(record);
+                };
+            });
+        } catch (err) {
+            console.error('[GROWTH MODAL] Exception in showBrokenLinkDetail:', err);
+        }
     }
 
     /**
@@ -349,231 +357,258 @@ export class GrowthDetailModal {
      * surrounding text context, and HTML snippet.
      */
     static showGroupedLinkDetail(item, tabType = 'external-links') {
-        if (!item) return;
-
-        const targetUrl = item.destination_url || item.target_url || item.target || item.url || '';
-        const domain = item.destination_domain || (targetUrl ? (() => { try { return new URL(targetUrl).hostname; } catch(e) { return ''; } })() : '');
-        const isInternal = item.link_scope === 'internal' || tabType === 'internal-links' || item.link_type === 'internal';
-        const isBroken = Boolean(item.is_broken || tabType === 'broken-links' || (item.status_code && (item.status_code >= 400 || item.status_code === 0)));
-        
-        const rawStatus = item.status || (item.status_code ? `HTTP ${item.status_code}` : 'Not Checked');
-        const statusCode = item.status_code !== undefined && item.status_code !== null ? item.status_code : (item.destination_status_code || 0);
-        const rawContentType = item.type || item.content_type || 'Not Checked';
-        const contentType = rawContentType.includes('/') ? (rawContentType.includes('html') ? 'HTML' : (rawContentType.includes('pdf') ? 'PDF' : rawContentType)) : rawContentType;
-        const finalUrl = item.final_url || targetUrl;
-        const redirectChain = Array.isArray(item.redirect_chain) ? item.redirect_chain : [];
-        const occurrences = Array.isArray(item.occurrences_list) ? item.occurrences_list : [];
-        const sourcePagesCount = item.source_pages || item.no_pages || (new Set(occurrences.map(o => o.source_url || o.source_page || o.source))).size || 1;
-        const occurrencesCount = item.occurrences || item.total_occurrences || occurrences.length || 1;
-
-        const safeTarget = this.escapeHtml(targetUrl);
-        const safeFinal = this.escapeHtml(finalUrl);
-
-        // Status badge
-        let statusBadgeHtml = '';
-        if (rawStatus === 'Not Checked' || rawStatus === 'Not Available') {
-            statusBadgeHtml = `<span class="badge" style="background: rgba(148, 163, 184, 0.15); color: var(--text-secondary); border: 1px solid var(--border); font-weight: 600; font-size: 11px;">Not Checked</span>`;
-        } else if (isBroken || (typeof statusCode === 'number' && (statusCode >= 400 || statusCode === 0))) {
-            statusBadgeHtml = `<span class="badge badge-critical" style="font-weight: 700; font-size: 11px;">${this.escapeHtml(rawStatus)}</span>`;
-        } else if (String(rawStatus).includes('Redirect') || (typeof statusCode === 'number' && statusCode >= 300 && statusCode < 400)) {
-            statusBadgeHtml = `<span class="badge badge-warning" style="font-weight: 700; font-size: 11px;">${this.escapeHtml(rawStatus)}</span>`;
-        } else {
-            statusBadgeHtml = `<span class="badge badge-success" style="font-weight: 700; font-size: 11px;">${this.escapeHtml(rawStatus)}</span>`;
+        if (!item) {
+            console.warn('[GROWTH MODAL] showGroupedLinkDetail called with null/undefined item');
+            return;
         }
 
-        const scopeBadge = isInternal
-            ? `<span class="badge" style="background: rgba(59, 130, 246, 0.15); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.3); font-weight: 700; font-size: 11px;">INTERNAL</span>`
-            : `<span class="badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); font-weight: 700; font-size: 11px;">EXTERNAL</span>`;
+        try {
+            console.log('[GROWTH MODAL] showGroupedLinkDetail:', item);
+            const targetUrl = item.destination_url || item.target_url || item.target || item.url || '';
+            const domain = item.destination_domain || (targetUrl ? (() => { try { return new URL(targetUrl).hostname; } catch(e) { return ''; } })() : '');
+            const isInternal = item.link_scope === 'internal' || tabType === 'internal-links' || item.link_type === 'internal';
+            const isBroken = Boolean(item.is_broken || tabType === 'broken-links' || (item.status_code && (item.status_code >= 400 || item.status_code === 0)));
+            
+            const rawStatus = String(item.status || (item.status_code ? `HTTP ${item.status_code}` : 'Not Checked'));
+            const statusCode = item.status_code !== undefined && item.status_code !== null ? item.status_code : (item.destination_status_code || 0);
+            const rawContentType = String(item.type || item.content_type || 'Not Checked');
+            const contentType = rawContentType.includes('/') ? (rawContentType.includes('html') ? 'HTML' : (rawContentType.includes('pdf') ? 'PDF' : rawContentType)) : rawContentType;
+            const finalUrl = item.final_url || targetUrl;
+            const redirectChain = Array.isArray(item.redirect_chain) ? item.redirect_chain : [];
+            let occurrences = Array.isArray(item.occurrences_list) ? [...item.occurrences_list] : [];
 
-        let modalTitle = 'External Link Details';
-        if (tabType === 'broken-links' || isBroken) modalTitle = 'Broken Link Details';
-        else if (isInternal) modalTitle = 'Internal Link Details';
+            // Synthesize single occurrence fallback if occurrences_list is empty
+            if (occurrences.length === 0 && (item.source_url || item.source_page || item.source)) {
+                occurrences.push({
+                    source_url: item.source_url || item.source_page || item.source,
+                    anchor_text: item.anchor_text || item.representative_anchor || '(Empty Anchor)',
+                    rel: item.rel || item.representative_rel || 'follow',
+                    nearest_heading: item.nearest_heading,
+                    heading_level: item.heading_level,
+                    source_section: item.source_section || item.section || 'Main Content',
+                    paragraph_index: item.paragraph_index,
+                    sentence_index: item.sentence_index,
+                    context_before: item.context_before,
+                    context_text: item.context_text,
+                    context_after: item.context_after,
+                    html_snippet: item.html_snippet
+                });
+            }
 
-        // Occurrence items renderer
-        let occurrencesHtml = '';
-        if (occurrences.length === 0) {
-            occurrencesHtml = `
-                <div style="padding: 24px; text-align: center; color: var(--text-secondary); background: var(--bg-card); border-radius: 8px; border: 1px solid var(--border);">
-                    No individual source page occurrences recorded for this link.
-                </div>
-            `;
-        } else {
-            occurrencesHtml = `
-                <div style="display: flex; flex-direction: column; gap: 14px;">
-                    ${occurrences.map((occ, idx) => {
-                        const safeSrc = this.escapeHtml(occ.source_url || occ.source_page || occ.source || 'Unknown Page');
-                        const safeAnc = this.escapeHtml(occ.anchor_text || occ.anchor || '(Empty Anchor)');
-                        const heading = occ.nearest_heading ? `${this.escapeHtml(occ.nearest_heading)} ${occ.heading_level ? `<span style="font-size: 10px; opacity: 0.75;">(${occ.heading_level.toUpperCase()})</span>` : ''}` : 'Not available';
-                        const section = occ.source_section || 'Main Content';
-                        
-                        let locStr = 'Not available';
-                        if (occ.paragraph_index !== undefined && occ.paragraph_index !== null) {
-                            locStr = `Paragraph ${occ.paragraph_index + 1}`;
-                            if (occ.sentence_index !== undefined && occ.sentence_index !== null) {
-                                locStr += `, Sentence ${occ.sentence_index + 1}`;
+            const sourcePagesCount = item.source_pages || item.no_pages || (new Set(occurrences.map(o => o.source_url || o.source_page || o.source))).size || 1;
+            const occurrencesCount = item.occurrences || item.total_occurrences || occurrences.length || 1;
+
+            const safeTarget = this.escapeHtml(targetUrl);
+            const safeFinal = this.escapeHtml(finalUrl);
+
+            // Status badge
+            let statusBadgeHtml = '';
+            if (rawStatus === 'Not Checked' || rawStatus === 'Not Available') {
+                statusBadgeHtml = `<span class="badge" style="background: rgba(148, 163, 184, 0.15); color: var(--text-secondary); border: 1px solid var(--border); font-weight: 600; font-size: 11px;">Not Checked</span>`;
+            } else if (isBroken || (typeof statusCode === 'number' && (statusCode >= 400 || statusCode === 0))) {
+                statusBadgeHtml = `<span class="badge badge-critical" style="font-weight: 700; font-size: 11px;">${this.escapeHtml(rawStatus)}</span>`;
+            } else if (String(rawStatus).includes('Redirect') || (typeof statusCode === 'number' && statusCode >= 300 && statusCode < 400)) {
+                statusBadgeHtml = `<span class="badge badge-warning" style="font-weight: 700; font-size: 11px;">${this.escapeHtml(rawStatus)}</span>`;
+            } else {
+                statusBadgeHtml = `<span class="badge badge-success" style="font-weight: 700; font-size: 11px;">${this.escapeHtml(rawStatus)}</span>`;
+            }
+
+            const scopeBadge = isInternal
+                ? `<span class="badge" style="background: rgba(59, 130, 246, 0.15); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.3); font-weight: 700; font-size: 11px;">INTERNAL</span>`
+                : `<span class="badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); font-weight: 700; font-size: 11px;">EXTERNAL</span>`;
+
+            let modalTitle = 'External Link Details';
+            if (tabType === 'broken-links' || isBroken) modalTitle = 'Broken Link Details';
+            else if (isInternal) modalTitle = 'Internal Link Details';
+
+            // Occurrence items renderer
+            let occurrencesHtml = '';
+            if (occurrences.length === 0) {
+                occurrencesHtml = `
+                    <div style="padding: 24px; text-align: center; color: var(--text-secondary); background: var(--bg-card); border-radius: 8px; border: 1px solid var(--border);">
+                        No individual source page occurrences recorded for this link.
+                    </div>
+                `;
+            } else {
+                occurrencesHtml = `
+                    <div style="display: flex; flex-direction: column; gap: 14px;">
+                        ${occurrences.map((occ, idx) => {
+                            const safeSrc = this.escapeHtml(occ.source_url || occ.source_page || occ.source || 'Unknown Page');
+                            const safeAnc = this.escapeHtml(occ.anchor_text || occ.anchor || '(Empty Anchor)');
+                            const heading = occ.nearest_heading ? `${this.escapeHtml(occ.nearest_heading)} ${occ.heading_level ? `<span style="font-size: 10px; opacity: 0.75;">(${String(occ.heading_level).toUpperCase()})</span>` : ''}` : 'Not available';
+                            const section = occ.source_section || 'Main Content';
+                            
+                            let locStr = 'Not available';
+                            if (occ.paragraph_index !== undefined && occ.paragraph_index !== null) {
+                                locStr = `Paragraph ${occ.paragraph_index + 1}`;
+                                if (occ.sentence_index !== undefined && occ.sentence_index !== null) {
+                                    locStr += `, Sentence ${occ.sentence_index + 1}`;
+                                }
                             }
-                        }
 
-                        const occRel = occ.rel || 'follow';
-                        const occType = occ.type || contentType;
-                        const contextBefore = occ.context_before ? this.escapeHtml(occ.context_before) : '';
-                        const contextText = occ.context_text ? this.escapeHtml(occ.context_text) : '';
-                        const contextAfter = occ.context_after ? this.escapeHtml(occ.context_after) : '';
-                        const htmlSnippet = occ.html_snippet ? this.escapeHtml(occ.html_snippet) : '';
+                            const occRel = occ.rel || 'follow';
+                            const occType = occ.type || contentType;
+                            const contextBefore = occ.context_before ? this.escapeHtml(occ.context_before) : '';
+                            const contextText = occ.context_text ? this.escapeHtml(occ.context_text) : '';
+                            const contextAfter = occ.context_after ? this.escapeHtml(occ.context_after) : '';
+                            const htmlSnippet = occ.html_snippet ? this.escapeHtml(occ.html_snippet) : '';
 
-                        return `
-                            <div class="card" style="padding: 16px; background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border);">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
-                                    <div style="flex: 1; min-width: 220px;">
-                                        <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Source Page #${idx + 1}</div>
-                                        <div style="font-family: monospace; font-size: 12.5px; font-weight: 600; color: var(--primary); word-break: break-all; margin-top: 3px;">
-                                            <a href="${safeSrc}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${safeSrc} ↗</a>
+                            return `
+                                <div class="card" style="padding: 16px; background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border);">
+                                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+                                        <div style="flex: 1; min-width: 220px;">
+                                            <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Source Page #${idx + 1}</div>
+                                            <div style="font-family: monospace; font-size: 12.5px; font-weight: 600; color: var(--primary); word-break: break-all; margin-top: 3px;">
+                                                <a href="${safeSrc}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${safeSrc} ↗</a>
+                                            </div>
+                                        </div>
+                                        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                                            <span class="badge badge-secondary" style="font-size: 10.5px; font-family: monospace;">rel="${this.escapeHtml(occRel)}"</span>
+                                            <span class="badge" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6; font-size: 10.5px; font-weight: 600;">${this.escapeHtml(occType)}</span>
                                         </div>
                                     </div>
-                                    <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
-                                        <span class="badge badge-secondary" style="font-size: 10.5px; font-family: monospace;">rel="${this.escapeHtml(occRel)}"</span>
-                                        <span class="badge" style="background: rgba(59, 130, 246, 0.1); color: #3b82f6; font-size: 10.5px; font-weight: 600;">${this.escapeHtml(occType)}</span>
-                                    </div>
-                                </div>
 
-                                <!-- DOM LOCATION METADATA GRID -->
-                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; background: var(--bg-subtle); padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 12px;">
-                                    <div>
-                                        <div style="color: var(--text-tertiary); font-size: 10.5px; font-weight: 700; text-transform: uppercase;">Anchor Text</div>
-                                        <div style="font-weight: 600; color: var(--text-primary); margin-top: 2px;">${safeAnc}</div>
-                                    </div>
-                                    <div>
-                                        <div style="color: var(--text-tertiary); font-size: 10.5px; font-weight: 700; text-transform: uppercase;">Nearest Heading</div>
-                                        <div style="font-weight: 600; color: var(--text-primary); margin-top: 2px;">${heading}</div>
-                                    </div>
-                                    <div>
-                                        <div style="color: var(--text-tertiary); font-size: 10.5px; font-weight: 700; text-transform: uppercase;">DOM & Page Location</div>
-                                        <div style="font-weight: 600; color: var(--text-primary); margin-top: 2px;">${locStr}</div>
-                                    </div>
-                                    <div>
-                                        <div style="color: var(--text-tertiary); font-size: 10.5px; font-weight: 700; text-transform: uppercase;">DOM Section</div>
-                                        <div style="font-weight: 600; color: var(--text-primary); margin-top: 2px;">${this.escapeHtml(section)}</div>
-                                    </div>
-                                </div>
-
-                                <!-- SURROUNDING CONTEXT -->
-                                <div style="margin-bottom: 10px;">
-                                    <div style="color: var(--text-tertiary); font-size: 10.5px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">Context / Evidence</div>
-                                    ${(contextBefore || contextText || contextAfter) ? `
-                                        <div style="background: rgba(0,0,0,0.03); border-left: 3px solid var(--primary); padding: 8px 12px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; font-style: italic; border-radius: 0 6px 6px 0;">
-                                            ${contextBefore ? `...${contextBefore} ` : ''}
-                                            <mark style="background: rgba(59, 130, 246, 0.25); color: var(--primary); padding: 1px 5px; border-radius: 3px; font-weight: 700; font-style: normal;">${contextText || safeAnc}</mark>
-                                            ${contextAfter ? ` ${contextAfter}...` : ''}
+                                    <!-- DOM LOCATION METADATA GRID -->
+                                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; background: var(--bg-subtle); padding: 10px 14px; border-radius: 8px; margin-bottom: 12px; font-size: 12px;">
+                                        <div>
+                                            <div style="color: var(--text-tertiary); font-size: 10.5px; font-weight: 700; text-transform: uppercase;">Anchor Text</div>
+                                            <div style="font-weight: 600; color: var(--text-primary); margin-top: 2px;">${safeAnc}</div>
                                         </div>
-                                    ` : `
-                                        <div style="font-size: 11.5px; color: var(--text-tertiary); font-style: italic;">Surrounding context unavailable</div>
-                                    `}
-                                </div>
+                                        <div>
+                                            <div style="color: var(--text-tertiary); font-size: 10.5px; font-weight: 700; text-transform: uppercase;">Nearest Heading</div>
+                                            <div style="font-weight: 600; color: var(--text-primary); margin-top: 2px;">${heading}</div>
+                                        </div>
+                                        <div>
+                                            <div style="color: var(--text-tertiary); font-size: 10.5px; font-weight: 700; text-transform: uppercase;">DOM & Page Location</div>
+                                            <div style="font-weight: 600; color: var(--text-primary); margin-top: 2px;">${locStr}</div>
+                                        </div>
+                                        <div>
+                                            <div style="color: var(--text-tertiary); font-size: 10.5px; font-weight: 700; text-transform: uppercase;">DOM Section</div>
+                                            <div style="font-weight: 600; color: var(--text-primary); margin-top: 2px;">${this.escapeHtml(section)}</div>
+                                        </div>
+                                    </div>
 
-                                <!-- EXTRACTED HTML SNIPPET -->
-                                <div>
-                                    <div style="color: var(--text-tertiary); font-size: 10.5px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">HTML / DOM Evidence</div>
-                                    ${htmlSnippet ? `
-                                        <div style="background: #0f172a; color: #38bdf8; padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 11.5px; overflow-x: auto; white-space: pre-wrap; word-break: break-all;">${htmlSnippet}</div>
-                                    ` : `
-                                        <div style="font-size: 11.5px; color: var(--text-tertiary); font-style: italic;">HTML snippet unavailable</div>
-                                    `}
+                                    <!-- SURROUNDING CONTEXT -->
+                                    <div style="margin-bottom: 10px;">
+                                        <div style="color: var(--text-tertiary); font-size: 10.5px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">Context / Evidence</div>
+                                        ${(contextBefore || contextText || contextAfter) ? `
+                                            <div style="background: rgba(0,0,0,0.03); border-left: 3px solid var(--primary); padding: 8px 12px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; font-style: italic; border-radius: 0 6px 6px 0;">
+                                                ${contextBefore ? `...${contextBefore} ` : ''}
+                                                <mark style="background: rgba(59, 130, 246, 0.25); color: var(--primary); padding: 1px 5px; border-radius: 3px; font-weight: 700; font-style: normal;">${contextText || safeAnc}</mark>
+                                                ${contextAfter ? ` ${contextAfter}...` : ''}
+                                            </div>
+                                        ` : `
+                                            <div style="font-size: 11.5px; color: var(--text-tertiary); font-style: italic;">Surrounding context unavailable</div>
+                                        `}
+                                    </div>
+
+                                    <!-- EXTRACTED HTML SNIPPET -->
+                                    <div>
+                                        <div style="color: var(--text-tertiary); font-size: 10.5px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;">HTML / DOM Evidence</div>
+                                        ${htmlSnippet ? `
+                                            <div style="background: #0f172a; color: #38bdf8; padding: 8px 12px; border-radius: 6px; font-family: monospace; font-size: 11.5px; overflow-x: auto; white-space: pre-wrap; word-break: break-all;">${htmlSnippet}</div>
+                                        ` : `
+                                            <div style="font-size: 11.5px; color: var(--text-tertiary); font-style: italic;">HTML snippet unavailable</div>
+                                        `}
+                                    </div>
                                 </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            }
+
+            const bodyHtml = `
+                <!-- DESTINATION SUMMARY BANNER -->
+                <div style="background: var(--bg-subtle); border: 1px solid var(--border); padding: 16px 20px; border-radius: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap;">
+                        <div style="flex: 1; min-width: 260px;">
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Destination URL</div>
+                            <div style="font-family: monospace; font-size: 14px; font-weight: 700; color: var(--primary); word-break: break-all; margin-top: 4px;">
+                                <a href="${safeTarget}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${safeTarget} ↗</a>
                             </div>
-                        `;
-                    }).join('')}
-                </div>
-            `;
-        }
-
-        const bodyHtml = `
-            <!-- DESTINATION SUMMARY BANNER -->
-            <div style="background: var(--bg-subtle); border: 1px solid var(--border); padding: 16px 20px; border-radius: 12px;">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap;">
-                    <div style="flex: 1; min-width: 260px;">
-                        <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em;">Destination URL</div>
-                        <div style="font-family: monospace; font-size: 14px; font-weight: 700; color: var(--primary); word-break: break-all; margin-top: 4px;">
-                            <a href="${safeTarget}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">${safeTarget} ↗</a>
+                        </div>
+                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                            ${scopeBadge}
+                            ${statusBadgeHtml}
+                            <span class="badge badge-secondary" style="font-size: 11px; font-weight: 600;">Type: ${this.escapeHtml(contentType)}</span>
                         </div>
                     </div>
-                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                        ${scopeBadge}
-                        ${statusBadgeHtml}
-                        <span class="badge badge-secondary" style="font-size: 11px; font-weight: 600;">Type: ${this.escapeHtml(contentType)}</span>
-                    </div>
-                </div>
 
-                <!-- METRICS STRIP -->
-                <div style="display: flex; gap: 16px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12.5px; flex-wrap: wrap;">
-                    <div>
-                        <span style="color: var(--text-secondary);">Total Source Pages:</span>
-                        <strong style="color: var(--text-primary); margin-left: 4px;">${sourcePagesCount}</strong>
-                    </div>
-                    <div>
-                        <span style="color: var(--text-secondary);">Total Occurrences:</span>
-                        <strong style="color: #3b82f6; margin-left: 4px;">${occurrencesCount}</strong>
-                    </div>
-                    ${domain ? `
+                    <!-- METRICS STRIP -->
+                    <div style="display: flex; gap: 16px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12.5px; flex-wrap: wrap;">
                         <div>
-                            <span style="color: var(--text-secondary);">Domain:</span>
-                            <span style="font-family: monospace; color: var(--text-primary); margin-left: 4px;">${this.escapeHtml(domain)}</span>
+                            <span style="color: var(--text-secondary);">Total Source Pages:</span>
+                            <strong style="color: var(--text-primary); margin-left: 4px;">${sourcePagesCount}</strong>
+                        </div>
+                        <div>
+                            <span style="color: var(--text-secondary);">Total Occurrences:</span>
+                            <strong style="color: #3b82f6; margin-left: 4px;">${occurrencesCount}</strong>
+                        </div>
+                        ${domain ? `
+                            <div>
+                                <span style="color: var(--text-secondary);">Domain:</span>
+                                <span style="font-family: monospace; color: var(--text-primary); margin-left: 4px;">${this.escapeHtml(domain)}</span>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    ${(finalUrl && finalUrl !== targetUrl) ? `
+                        <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 12px;">
+                            <span style="font-weight: 700; color: #f59e0b;">Final Resolved URL (Redirected):</span>
+                            <span style="font-family: monospace; color: var(--text-primary); margin-left: 6px; word-break: break-all;">${safeFinal}</span>
+                        </div>
+                    ` : ''}
+
+                    ${redirectChain.length > 1 ? `
+                        <div style="margin-top: 8px; font-size: 11.5px; color: var(--text-secondary);">
+                            <span style="font-weight: 600;">Redirect Chain:</span>
+                            <div style="margin-top: 4px; display: flex; flex-direction: column; gap: 2px;">
+                                ${redirectChain.map((hop, hIdx) => `
+                                    <div style="font-family: monospace; font-size: 11px; color: var(--text-primary);">
+                                        <span style="color: var(--text-secondary);">${hIdx + 1}.</span> [HTTP ${hop.status_code || 200}] ${this.escapeHtml(hop.url || hop)}
+                                    </div>
+                                `).join('')}
+                            </div>
                         </div>
                     ` : ''}
                 </div>
 
-                ${(finalUrl && finalUrl !== targetUrl) ? `
-                    <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 12px;">
-                        <span style="font-weight: 700; color: #f59e0b;">Final Resolved URL (Redirected):</span>
-                        <span style="font-family: monospace; color: var(--text-primary); margin-left: 6px; word-break: break-all;">${safeFinal}</span>
+                <!-- SOURCE PAGES & OCCURRENCES SECTION TITLE -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
+                    <div style="font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">
+                        Found on ${sourcePagesCount} Source Page${sourcePagesCount === 1 ? '' : 's'} (${occurrencesCount} Total Occurrence${occurrencesCount === 1 ? '' : 's'}):
                     </div>
-                ` : ''}
-
-                ${redirectChain.length > 1 ? `
-                    <div style="margin-top: 8px; font-size: 11.5px; color: var(--text-secondary);">
-                        <span style="font-weight: 600;">Redirect Chain:</span>
-                        <div style="margin-top: 4px; display: flex; flex-direction: column; gap: 2px;">
-                            ${redirectChain.map((hop, hIdx) => `
-                                <div style="font-family: monospace; font-size: 11px; color: var(--text-primary);">
-                                    <span style="color: var(--text-secondary);">${hIdx + 1}.</span> [HTTP ${hop.status_code || 200}] ${this.escapeHtml(hop.url || hop)}
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                ` : ''}
-            </div>
-
-            <!-- SOURCE PAGES & OCCURRENCES SECTION TITLE -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px;">
-                <div style="font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">
-                    Found on ${sourcePagesCount} Source Page${sourcePagesCount === 1 ? '' : 's'} (${occurrencesCount} Total Occurrence${occurrencesCount === 1 ? '' : 's'}):
                 </div>
-            </div>
 
-            <!-- OCCURRENCES LIST -->
-            ${occurrencesHtml}
-        `;
+                <!-- OCCURRENCES LIST -->
+                ${occurrencesHtml}
+            `;
 
-        const footerHtml = `
-            <button class="btn btn-secondary btn-sm" onclick="document.getElementById('growth-detail-modal-root').innerHTML=''">Close</button>
-        `;
+            const footerHtml = `
+                <button class="btn btn-secondary btn-sm" onclick="document.getElementById('growth-detail-modal-root').innerHTML=''">Close</button>
+            `;
 
-        this.renderFrame({
-            title: modalTitle,
-            subtitle: domain ? `Destination Domain: ${domain}` : '',
-            badgeHtml: `<span class="badge badge-secondary">${occurrencesCount} Occurrence${occurrencesCount === 1 ? '' : 's'}</span>`,
-            bodyHtml,
-            footerHtml
-        });
+            this.renderFrame({
+                title: modalTitle,
+                subtitle: domain ? `Destination Domain: ${domain}` : '',
+                badgeHtml: `<span class="badge badge-secondary">${occurrencesCount} Occurrence${occurrencesCount === 1 ? '' : 's'}</span>`,
+                bodyHtml,
+                footerHtml
+            });
 
-        // Bind drill-down buttons
-        const root = this.getRoot();
-        root.querySelectorAll('.btn-drilldown-occurrence').forEach(btn => {
-            btn.onclick = () => {
-                const idx = parseInt(btn.getAttribute('data-occ-idx'), 10);
-                const occ = occurrences[idx];
-                if (occ) GrowthDetailModal.showLinkDetail(occ);
-            };
-        });
+            // Bind drill-down buttons
+            const root = this.getRoot();
+            root.querySelectorAll('.btn-drilldown-occurrence').forEach(btn => {
+                btn.onclick = () => {
+                    const idx = parseInt(btn.getAttribute('data-occ-idx'), 10);
+                    const occ = occurrences[idx];
+                    if (occ) GrowthDetailModal.showLinkDetail(occ);
+                };
+            });
+        } catch (err) {
+            console.error('[GROWTH MODAL] Exception in showGroupedLinkDetail:', err);
+        }
     }
 
     /**

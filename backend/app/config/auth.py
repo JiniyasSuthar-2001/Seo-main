@@ -93,3 +93,66 @@ def get_current_user_id(
         status_code=401,
         detail="Authentication required. Please provide a valid Authorization Bearer token."
     )
+
+MASTER_ROLES = {"SUPER_ADMIN", "ADMIN", "SUPPORT", "ANALYST"}
+
+def require_master_user(allowed_roles: Optional[set] = None):
+    """
+    Returns a FastAPI dependency that verifies the authenticated user has an authorized platform master role.
+    Raises HTTP 403 Forbidden for unauthorized users.
+    Auto-promotes initial user to SUPER_ADMIN if no master user exists.
+    """
+    roles_check = allowed_roles or MASTER_ROLES
+
+    def dependency(
+        authorization: Optional[str] = Header(None),
+        x_user_id: Optional[str] = Header(None)
+    ):
+        user_id = get_current_user_id(authorization=authorization, x_user_id=x_user_id)
+        from app.config.database import SessionLocal
+        from app.models.user import User
+
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                user_count = db.query(User).count()
+                role = "SUPER_ADMIN" if user_count == 0 else "USER"
+                user = User(
+                    id=user_id,
+                    email=user_id if "@" in user_id else f"{user_id}@example.com",
+                    name=user_id,
+                    platform_role=role,
+                    status="ACTIVE"
+                )
+                db.add(user)
+                db.commit()
+                db.refresh(user)
+
+            # Auto-promote single user to SUPER_ADMIN if no admin exists yet
+            if not user.platform_role or user.platform_role == "USER":
+                admin_count = db.query(User).filter(User.platform_role.in_(list(MASTER_ROLES))).count()
+                if admin_count == 0:
+                    user.platform_role = "SUPER_ADMIN"
+                    db.commit()
+                    db.refresh(user)
+
+            current_role = (user.platform_role or "USER").upper()
+            if current_role not in roles_check:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Access denied. Master space requires authorized role ({', '.join(sorted(roles_check))})."
+                )
+
+            if user.status and user.status.upper() == "SUSPENDED":
+                raise HTTPException(
+                    status_code=403,
+                    detail="Account is suspended. Please contact platform administration."
+                )
+
+            return user
+        finally:
+            db.close()
+
+    return dependency
+

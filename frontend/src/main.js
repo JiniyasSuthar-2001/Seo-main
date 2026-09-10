@@ -27,6 +27,20 @@ import { Settings } from './views/Settings.js';
 import { Integrations } from './views/Integrations.js';
 import { Help } from './views/Help.js';
 
+// Master Space Views
+import { MasterDashboard } from './views/master/MasterDashboard.js';
+import { MasterCustomers } from './views/master/MasterCustomers.js';
+import { MasterCustomerDetail } from './views/master/MasterCustomerDetail.js';
+import { MasterWebsites } from './views/master/MasterWebsites.js';
+import { MasterWebsiteDetail } from './views/master/MasterWebsiteDetail.js';
+import { MasterAIAnalytics } from './views/master/MasterAIAnalytics.js';
+import { MasterAIControl } from './views/master/MasterAIControl.js';
+import { MasterCredits } from './views/master/MasterCredits.js';
+import { MasterProviders } from './views/master/MasterProviders.js';
+import { MasterActivity } from './views/master/MasterActivity.js';
+import { MasterSystemHealth } from './views/master/MasterSystemHealth.js';
+import { MasterAuditLogs } from './views/master/MasterAuditLogs.js';
+
 document.addEventListener('DOMContentLoaded', () => {
   themeStore.init();
   const appRoot = document.getElementById('app-root');
@@ -76,6 +90,20 @@ document.addEventListener('DOMContentLoaded', () => {
   router.addRoute('/settings', Settings);
   router.addRoute('/integrations', Integrations);
   router.addRoute('/help', Help);
+
+  // Master Space Routes
+  router.addRoute('/master', MasterDashboard);
+  router.addRoute('/master/customers', MasterCustomers);
+  router.addRoute('/master/customers/detail', MasterCustomerDetail);
+  router.addRoute('/master/websites', MasterWebsites);
+  router.addRoute('/master/websites/detail', MasterWebsiteDetail);
+  router.addRoute('/master/ai-analytics', MasterAIAnalytics);
+  router.addRoute('/master/ai-control', MasterAIControl);
+  router.addRoute('/master/credits', MasterCredits);
+  router.addRoute('/master/providers', MasterProviders);
+  router.addRoute('/master/activity', MasterActivity);
+  router.addRoute('/master/system-health', MasterSystemHealth);
+  router.addRoute('/master/audit-logs', MasterAuditLogs);
 
   router.init();
 });

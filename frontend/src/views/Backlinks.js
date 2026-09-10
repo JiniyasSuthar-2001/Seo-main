@@ -142,48 +142,58 @@ export class Backlinks {
             return;
         }
 
-        // Summary metrics
-        const totalOutbound = links.length;
+        // Summary metrics from destination-grouped dataset
+        const totalDestinations = links.length;
+        const totalOccurrences = links.reduce((acc, l) => acc + (l.occurrences || l.total_occurrences || (Array.isArray(l.occurrences_list) ? l.occurrences_list.length : 1)), 0);
         const domains = new Set(links.map(l => {
-            try {
-                return new URL(l.destination_url || l.target_url || l.target || '').hostname;
-            } catch (e) {
-                return '';
-            }
+            const dest = l.destination_url || l.target_url || l.target || '';
+            const dom = l.destination_domain;
+            if (dom && dom !== 'Not collected' && dom !== 'Unknown') return dom;
+            try { return new URL(dest).hostname; } catch (e) { return ''; }
         }).filter(Boolean));
-        const followCount = links.filter(l => !l.is_nofollow && (l.rel || '').toLowerCase() !== 'nofollow').length;
-        const nofollowCount = links.filter(l => l.is_nofollow || (l.rel || '').toLowerCase().includes('nofollow')).length;
+
+        const followCount = links.filter(l => {
+            const r = (l.rel || l.representative_rel || '').toLowerCase();
+            return !r.includes('nofollow') && !r.includes('sponsored') && !r.includes('ugc');
+        }).length;
+        const annotatedCount = links.filter(l => {
+            const r = (l.rel || l.representative_rel || '').toLowerCase();
+            return r.includes('nofollow') || r.includes('sponsored') || r.includes('ugc') || r.includes('mixed');
+        }).length;
 
         // Pre-pagination filtering
         let filtered = links;
         if (this.outboundRelFilter === 'follow') {
-            filtered = filtered.filter(l => !l.is_nofollow && !(l.rel || '').toLowerCase().includes('nofollow'));
+            filtered = filtered.filter(l => {
+                const r = (l.rel || l.representative_rel || '').toLowerCase();
+                return !r.includes('nofollow') && !r.includes('sponsored') && !r.includes('ugc');
+            });
         } else if (this.outboundRelFilter === 'nofollow') {
-            filtered = filtered.filter(l => l.is_nofollow || (l.rel || '').toLowerCase().includes('nofollow'));
+            filtered = filtered.filter(l => (l.rel || l.representative_rel || '').toLowerCase().includes('nofollow'));
         } else if (this.outboundRelFilter === 'sponsored') {
-            filtered = filtered.filter(l => (l.rel || '').toLowerCase().includes('sponsored'));
+            filtered = filtered.filter(l => (l.rel || l.representative_rel || '').toLowerCase().includes('sponsored'));
         } else if (this.outboundRelFilter === 'ugc') {
-            filtered = filtered.filter(l => (l.rel || '').toLowerCase().includes('ugc'));
+            filtered = filtered.filter(l => (l.rel || l.representative_rel || '').toLowerCase().includes('ugc'));
         }
 
         if (this.outboundStatusFilter === '200') {
-            filtered = filtered.filter(l => (l.status_code || 200) === 200);
+            filtered = filtered.filter(l => (l.status_code || 200) === 200 || (l.status || '').includes('200'));
         } else if (this.outboundStatusFilter === '301') {
-            filtered = filtered.filter(l => (l.status_code || 0) >= 300 && (l.status_code || 0) < 400);
+            filtered = filtered.filter(l => ((l.status_code || 0) >= 300 && (l.status_code || 0) < 400) || (l.status || '').includes('301') || (l.status || '').includes('Redirect'));
         } else if (this.outboundStatusFilter === '404') {
-            filtered = filtered.filter(l => (l.status_code || 0) === 404);
+            filtered = filtered.filter(l => (l.status_code || 0) === 404 || (l.status || '').includes('404'));
         } else if (this.outboundStatusFilter === '500') {
-            filtered = filtered.filter(l => (l.status_code || 0) >= 500);
+            filtered = filtered.filter(l => (l.status_code || 0) >= 500 || (l.status || '').includes('500'));
         }
 
         if (this.outboundSearch.trim()) {
             const q = this.outboundSearch.toLowerCase().trim();
             filtered = filtered.filter(l => {
-                const src = (l.source_url || l.source_page || l.source || '').toLowerCase();
                 const dest = (l.destination_url || l.target_url || l.target || '').toLowerCase();
-                const anc = (l.anchor_text || '').toLowerCase();
-                const typ = (l.link_type || '').toLowerCase();
-                return src.includes(q) || dest.includes(q) || anc.includes(q) || typ.includes(q);
+                const dom = (l.destination_domain || '').toLowerCase();
+                const anc = (l.anchor_text || l.representative_anchor || '').toLowerCase();
+                const srcList = (l.unique_source_urls || []).join(' ').toLowerCase();
+                return dest.includes(q) || dom.includes(q) || anc.includes(q) || srcList.includes(q);
             });
         }
 
@@ -191,50 +201,49 @@ export class Backlinks {
         this.outboundPage = paginated.currentPage;
 
         let rows = paginated.items.map((l, idx) => {
-            const srcUrl = l.source_url || l.source_page || l.source || 'Not available';
             const destUrl = l.destination_url || l.target_url || l.target || 'Not available';
-            const anchorTxt = l.anchor_text || '(No anchor text)';
-            const section = l.source_section || 'Main Content';
-            const heading = l.nearest_heading ? this.escapeHtml(l.nearest_heading) : 'Not Available';
-            const rel = l.rel || (l.is_nofollow ? 'nofollow' : 'follow');
-            const statusCode = l.status_code !== undefined ? l.status_code : 200;
+            const noPages = l.source_pages || l.no_pages || (new Set(l.unique_source_urls || [])).size || 1;
+            const occurrencesCount = l.occurrences || l.total_occurrences || (Array.isArray(l.occurrences_list) ? l.occurrences_list.length : 1);
+            const anchorTxt = l.anchor_text || l.representative_anchor || '(No anchor text)';
+            const rel = l.rel || l.representative_rel || 'follow';
 
-            let statusBadge = '<span class="badge badge-success" style="font-size: 11px;">200 OK</span>';
-            if (statusCode >= 400 || statusCode === 0) {
-                statusBadge = `<span class="badge badge-critical" style="font-size: 11px;">${statusCode === 0 ? 'Dead' : `HTTP ${statusCode}`}</span>`;
-            } else if (statusCode >= 300) {
-                statusBadge = `<span class="badge badge-warning" style="font-size: 11px;">HTTP ${statusCode}</span>`;
+            let domainStr = l.destination_domain;
+            if (!domainStr || domainStr === 'Not collected' || domainStr === 'Unknown') {
+                try { domainStr = new URL(destUrl).hostname; } catch (e) { domainStr = 'External Destination'; }
             }
 
-            let domainStr = '';
-            try { domainStr = new URL(destUrl).hostname; } catch (e) { domainStr = 'External'; }
+            let relBadge = `<span class="badge" style="background: rgba(148, 163, 184, 0.12); color: var(--text-secondary); font-size: 11px; font-family: monospace;">${this.escapeHtml(rel)}</span>`;
+            const relLower = rel.toLowerCase();
+            if (relLower.includes('nofollow')) {
+                relBadge = `<span class="badge badge-warning" style="font-size: 11px; font-family: monospace;">nofollow</span>`;
+            } else if (relLower.includes('sponsored')) {
+                relBadge = `<span class="badge badge-critical" style="font-size: 11px; font-family: monospace;">sponsored</span>`;
+            } else if (relLower.includes('ugc')) {
+                relBadge = `<span class="badge badge-secondary" style="font-size: 11px; font-family: monospace;">ugc</span>`;
+            } else if (relLower.includes('mixed')) {
+                relBadge = `<span class="badge" style="background: rgba(168, 85, 247, 0.15); color: #c084fc; font-size: 11px; font-family: monospace;">Mixed</span>`;
+            }
 
             return `
                 <tr style="border-bottom: 1px solid var(--border);" class="outbound-row" data-idx="${idx}">
-                    <td style="padding: 12px 14px; max-width: 260px;">
-                        <div style="font-family: monospace; font-size: 12px; color: var(--text-primary); word-break: break-all;">
+                    <td style="padding: 12px 14px; max-width: 340px;">
+                        <div style="font-family: monospace; font-size: 12px; color: var(--text-primary); word-break: break-all; font-weight: 500;">
                             <a href="${this.escapeHtml(destUrl)}" target="_blank" rel="noopener noreferrer" style="color: inherit; text-decoration: none;">
                                 ${this.escapeHtml(destUrl)} ↗
                             </a>
                         </div>
                         <div style="font-size: 11px; color: var(--text-secondary); margin-top: 2px;">${this.escapeHtml(domainStr)}</div>
                     </td>
-                    <td style="padding: 12px 14px; max-width: 220px;">
-                        <div style="font-family: monospace; font-size: 12px; color: var(--primary); word-break: break-all;">
-                            ${this.escapeHtml(srcUrl)}
-                        </div>
-                    </td>
-                    <td style="padding: 12px 14px; font-weight: 500; font-size: 12.5px; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${this.escapeHtml(anchorTxt)}">
-                        ${this.escapeHtml(anchorTxt)}
-                    </td>
-                    <td style="padding: 12px 14px; font-family: monospace; font-size: 11px; color: var(--text-secondary);">${this.escapeHtml(rel)}</td>
-                    <td style="padding: 12px 14px;">${statusBadge}</td>
-                    <td style="padding: 12px 14px; font-size: 12px; color: var(--text-secondary);">${this.escapeHtml(section)}</td>
-                    <td style="padding: 12px 14px; text-align: right;">
-                        <button class="btn btn-secondary btn-sm btn-inspect-outbound" data-idx="${idx}" style="font-size: 11px; padding: 3px 8px;">
-                            Inspect Link
+                    <td style="padding: 12px 14px;" class="cell-no-pages" data-idx="${idx}">
+                        <button class="btn-inspect-pages-trigger" data-idx="${idx}" title="Click to inspect source pages" style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); color: var(--primary); padding: 5px 12px; border-radius: 12px; font-size: 12px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all 0.15s ease;">
+                            📄 ${noPages} ${noPages === 1 ? 'page' : 'pages'}
+                            ${occurrencesCount > noPages ? `<span style="font-size: 10.5px; opacity: 0.8; font-weight: 500;">(${occurrencesCount} links)</span>` : ''}
                         </button>
                     </td>
+                    <td style="padding: 12px 14px; font-weight: 500; font-size: 12.5px; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${this.escapeHtml(anchorTxt)}">
+                        ${this.escapeHtml(anchorTxt)}
+                    </td>
+                    <td style="padding: 12px 14px;">${relBadge}</td>
                 </tr>
             `;
         }).join('');
@@ -243,24 +252,24 @@ export class Backlinks {
             <!-- SUMMARY KPI CARDS -->
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; margin-bottom: 20px;">
                 <div class="kpi-card" style="padding: 16px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border);">
-                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">Total Outbound Links</div>
-                    <div style="font-size: 24px; font-weight: 800; color: var(--primary); margin-top: 4px;">${totalOutbound}</div>
-                    <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">External destinations found</div>
+                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">External Destinations</div>
+                    <div style="font-size: 24px; font-weight: 800; color: var(--primary); margin-top: 4px;">${totalDestinations}</div>
+                    <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">Unique Destination URLs</div>
                 </div>
                 <div class="kpi-card" style="padding: 16px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border);">
-                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">Destination Domains</div>
+                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">Total Outbound Links</div>
+                    <div style="font-size: 24px; font-weight: 800; color: var(--text-primary); margin-top: 4px;">${totalOccurrences}</div>
+                    <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">Total link occurrences</div>
+                </div>
+                <div class="kpi-card" style="padding: 16px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border);">
+                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">External Domains</div>
                     <div style="font-size: 24px; font-weight: 800; color: var(--text-primary); margin-top: 4px;">${domains.size}</div>
                     <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">Unique external websites</div>
                 </div>
                 <div class="kpi-card" style="padding: 16px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border);">
-                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">Follow Links</div>
-                    <div style="font-size: 24px; font-weight: 800; color: #10b981; margin-top: 4px;">${followCount}</div>
-                    <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">Passing PageRank authority</div>
-                </div>
-                <div class="kpi-card" style="padding: 16px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border);">
-                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">Nofollow / UGC / Sponsored</div>
-                    <div style="font-size: 24px; font-weight: 800; color: var(--text-secondary); margin-top: 4px;">${nofollowCount}</div>
-                    <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">Annotated external links</div>
+                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">Follow / Annotated</div>
+                    <div style="font-size: 24px; font-weight: 800; color: #10b981; margin-top: 4px;">${followCount} <span style="font-size: 14px; font-weight: 500; color: var(--text-secondary);">/ ${annotatedCount}</span></div>
+                    <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 2px;">Follow vs Nofollow/UGC/Sponsored</div>
                 </div>
             </div>
 
@@ -286,7 +295,7 @@ export class Backlinks {
                             </select>
                         </div>
                     </div>
-                    <input type="text" id="outbound-search-input" value="${this.escapeHtml(this.outboundSearch)}" placeholder="Search destination, source, anchor..." style="padding: 5px 12px; font-size: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); width: 220px;" />
+                    <input type="text" id="outbound-search-input" value="${this.escapeHtml(this.outboundSearch)}" placeholder="Search destination, domain, anchor..." style="padding: 5px 12px; font-size: 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); width: 220px;" />
                 </div>
 
                 <div style="overflow-x: auto;">
@@ -294,16 +303,13 @@ export class Backlinks {
                         <thead>
                             <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
                                 <th style="padding: 12px 14px;">Destination URL</th>
-                                <th style="padding: 12px 14px;">Found On (Source Page)</th>
+                                <th style="padding: 12px 14px;">No. of Pages</th>
                                 <th style="padding: 12px 14px;">Anchor Text</th>
                                 <th style="padding: 12px 14px;">Rel</th>
-                                <th style="padding: 12px 14px;">Status</th>
-                                <th style="padding: 12px 14px;">Location</th>
-                                <th style="padding: 12px 14px; text-align: right;">Action</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${rows.length > 0 ? rows : `<tr><td colspan="7" style="padding: 36px; text-align: center; color: var(--text-secondary);">No external links found matching your filters.</td></tr>`}
+                            ${rows.length > 0 ? rows : `<tr><td colspan="4" style="padding: 36px; text-align: center; color: var(--text-secondary);">No external links found matching your filters.</td></tr>`}
                         </tbody>
                     </table>
                 </div>
@@ -327,15 +333,23 @@ export class Backlinks {
             };
         }
 
-        // Bind inspect buttons
-        container.querySelectorAll('.btn-inspect-outbound').forEach(btn => {
-            btn.onclick = (e) => {
+        // Delegated click listener for No. of Pages cell and button triggers
+        container.onclick = (e) => {
+            const trigger = e.target.closest('.btn-inspect-pages-trigger, .cell-no-pages');
+            if (trigger) {
+                e.preventDefault();
                 e.stopPropagation();
-                const idx = parseInt(btn.getAttribute('data-idx'), 10);
-                const record = paginated.items[idx];
-                if (record) GrowthDetailModal.showLinkDetail(record);
-            };
-        });
+                const idxStr = trigger.getAttribute('data-idx');
+                if (idxStr !== null) {
+                    const idx = parseInt(idxStr, 10);
+                    const record = paginated.items[idx];
+                    if (record) {
+                        GrowthDetailModal.showGroupedLinkDetail(record, 'external-links');
+                    }
+                }
+            }
+        };
+
 
         if (filtered.length > 0) {
             const pageSlot = container.querySelector('#outbound-pagination-slot');

@@ -490,3 +490,28 @@ def get_problem_ai_solution(
 
     PROBLEM_SOLUTION_CACHE[cache_key] = res_body
     return res_body
+
+@router.get("/my-wallet")
+def get_my_wallet(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns customer AI wallet balance and usage limits safely for self-service dashboard display.
+    """
+    from app.services.credit_service import CreditService
+    customer_id = CreditService.get_customer_id_for_user(db, user_id)
+    wallet = CreditService.get_or_create_wallet(customer_id, db)
+    return {
+        "status": "success",
+        "customer_id": customer_id,
+        "ai_enabled": wallet.is_enabled,
+        "remaining_credits": wallet.remaining_credits,
+        "used_credits": wallet.used_credits,
+        "allocated_credits": wallet.allocated_credits,
+        "bonus_credits": wallet.bonus_credits,
+        "monthly_limit": wallet.monthly_limit,
+        "daily_limit": wallet.daily_limit,
+        "per_request_limit": wallet.per_request_limit
+    }
+

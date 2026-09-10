@@ -1,7 +1,13 @@
+import { authStore } from '../core/authStore.js';
+
 export class Sidebar {
   render() {
     const element = document.createElement('aside');
     element.className = 'sidebar-nav';
+
+    const role = (authStore.user?.platform_role || 'SUPER_ADMIN').toUpperCase();
+    const isMasterUser = ['SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'ANALYST'].includes(role);
+
     element.innerHTML = `
       <!-- BRAND HEADER -->
       <div class="sidebar-brand">
@@ -19,6 +25,58 @@ export class Sidebar {
       <!-- NAVIGATION GROUPS -->
       <div class="sidebar-scroll-area">
         
+        ${isMasterUser ? `
+        <!-- MASTER SPACE -->
+        <div class="nav-section" style="border-bottom: 1px solid var(--sidebar-border); padding-bottom: 12px; margin-bottom: 8px;">
+          <div class="nav-section-label" style="color: #a855f7; font-weight: 800; display: flex; align-items: center; justify-content: space-between;">
+            <span>MASTER SPACE</span>
+            <span style="font-size: 9px; background: rgba(168, 85, 247, 0.2); padding: 1px 5px; border-radius: 4px; color: #c084fc;">ADMIN</span>
+          </div>
+          <nav class="nav-group">
+            <a href="/master" data-link class="nav-item">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+              <span>Dashboard</span>
+            </a>
+            <a href="/master/customers" data-link class="nav-item">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+              <span>Customers</span>
+            </a>
+            <a href="/master/websites" data-link class="nav-item">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+              <span>Websites</span>
+            </a>
+            <a href="/master/ai-analytics" data-link class="nav-item">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+              <span>AI Analytics</span>
+            </a>
+            <a href="/master/ai-control" data-link class="nav-item">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+              <span>AI Control</span>
+            </a>
+            <a href="/master/credits" data-link class="nav-item">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+              <span>Credits</span>
+            </a>
+            <a href="/master/providers" data-link class="nav-item">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+              <span>Providers</span>
+            </a>
+            <a href="/master/activity" data-link class="nav-item">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+              <span>Activity</span>
+            </a>
+            <a href="/master/system-health" data-link class="nav-item">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+              <span>System Health</span>
+            </a>
+            <a href="/master/audit-logs" data-link class="nav-item">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line></svg>
+              <span>Audit Logs</span>
+            </a>
+          </nav>
+        </div>
+        ` : ''}
+
         <!-- WEBSITE -->
         <div class="nav-section">
           <div class="nav-section-label">WEBSITE</div>

@@ -5,7 +5,7 @@ from app.config.settings import _DB_PATH
 from app.config.database import Base
 
 # Import all models so Base.metadata contains all table definitions
-from app.models import project, dataset, page, keyword, keyword_group, crawl_session, competitor, external_connection, audit_issue, action_opportunity
+from app.models import project, dataset, page, keyword, keyword_group, crawl_session, competitor, external_connection, audit_issue, action_opportunity, platform_event, audit_log, ai_wallet
 
 def get_sqlite_type(sql_type) -> str:
     st = str(sql_type).upper()
@@ -223,6 +223,8 @@ def _migrate_single_file(db_file: str):
             "name": "TEXT",
             "picture": "TEXT",
             "password_hash": "TEXT",
+            "platform_role": "TEXT",
+            "status": "TEXT",
             "created_at": "DATETIME",
             "updated_at": "DATETIME"
         },
@@ -240,6 +242,73 @@ def _migrate_single_file(db_file: str):
             "token_expires_at": "DATETIME",
             "last_used_at": "DATETIME",
             "created_at": "DATETIME",
+            "updated_at": "DATETIME"
+        },
+        "platform_events": {
+            "id": "TEXT",
+            "user_id": "TEXT",
+            "project_id": "TEXT",
+            "event_type": "TEXT",
+            "title": "TEXT",
+            "description": "TEXT",
+            "severity": "TEXT",
+            "metadata_json": "TEXT",
+            "created_at": "DATETIME"
+        },
+        "audit_logs": {
+            "id": "TEXT",
+            "actor_id": "TEXT",
+            "actor_email": "TEXT",
+            "action": "TEXT",
+            "target_type": "TEXT",
+            "target_id": "TEXT",
+            "status": "TEXT",
+            "reason": "TEXT",
+            "metadata_json": "TEXT",
+            "created_at": "DATETIME"
+        },
+        "ai_wallets": {
+            "id": "TEXT",
+            "customer_id": "TEXT",
+            "allocated_credits": "INTEGER",
+            "bonus_credits": "INTEGER",
+            "used_credits": "INTEGER",
+            "reserved_credits": "INTEGER",
+            "monthly_limit": "INTEGER",
+            "daily_limit": "INTEGER",
+            "per_request_limit": "INTEGER",
+            "is_enabled": "BOOLEAN",
+            "status": "TEXT",
+            "created_at": "DATETIME",
+            "updated_at": "DATETIME"
+        },
+        "ai_credit_transactions": {
+            "id": "TEXT",
+            "wallet_id": "TEXT",
+            "customer_id": "TEXT",
+            "amount": "INTEGER",
+            "transaction_type": "TEXT",
+            "reference_type": "TEXT",
+            "reference_id": "TEXT",
+            "reason": "TEXT",
+            "actor_user_id": "TEXT",
+            "balance_after": "INTEGER",
+            "created_at": "DATETIME"
+        },
+        "platform_ai_settings": {
+            "id": "TEXT",
+            "global_ai_enabled": "BOOLEAN",
+            "new_requests_enabled": "BOOLEAN",
+            "background_ai_enabled": "BOOLEAN",
+            "ai_reports_enabled": "BOOLEAN",
+            "primary_provider": "TEXT",
+            "fallback_provider": "TEXT",
+            "routing_mode": "TEXT",
+            "daily_budget_dollars": "REAL",
+            "monthly_budget_dollars": "REAL",
+            "budget_warning_threshold": "REAL",
+            "budget_critical_threshold": "REAL",
+            "budget_hard_stop": "BOOLEAN",
             "updated_at": "DATETIME"
         }
     }

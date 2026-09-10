@@ -82,7 +82,16 @@ export class Router {
       if (workspaceArea) workspaceArea.style.marginLeft = '250px';
     }
 
-    const ViewComponent = this.routes[path] || this.routes['/'];
+    let ViewComponent = this.routes[path];
+    if (!ViewComponent) {
+      if (path.startsWith('/master/customers/')) {
+        ViewComponent = this.routes['/master/customers/detail'];
+      } else if (path.startsWith('/master/websites/')) {
+        ViewComponent = this.routes['/master/websites/detail'];
+      } else {
+        ViewComponent = this.routes['/'];
+      }
+    }
     
     window.dispatchEvent(new CustomEvent('routechange', { detail: { path } }));
 

@@ -15,3 +15,17 @@ class ReportRecord(Base):
     data_sources = Column(String(255), nullable=True)
     status = Column(String(50), default="Completed")
     generated_at = Column(DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "project_id": self.project_id,
+            "website": self.website,
+            "report_type": self.report_type,
+            "file_type": self.file_type,
+            "filename": self.filename,
+            "crawl_id": self.crawl_id,
+            "data_sources": self.data_sources,
+            "status": self.status,
+            "generated_at": self.generated_at.isoformat() if self.generated_at else None
+        }

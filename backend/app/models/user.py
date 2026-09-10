@@ -11,6 +11,8 @@ class User(Base):
     name = Column(String)
     picture = Column(String, nullable=True)
     password_hash = Column(String, nullable=True)
+    platform_role = Column(String, default="USER", nullable=True, index=True) # SUPER_ADMIN, ADMIN, SUPPORT, ANALYST, USER
+    status = Column(String, default="ACTIVE", nullable=True, index=True) # ACTIVE, SUSPENDED, INACTIVE
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -23,6 +25,8 @@ class User(Base):
             "name": self.name,
             "picture": self.picture,
             "has_password": bool(self.password_hash),
+            "platform_role": self.platform_role or "USER",
+            "status": self.status or "ACTIVE",
             "created_at": self.created_at.isoformat() if self.created_at else None
         }
 

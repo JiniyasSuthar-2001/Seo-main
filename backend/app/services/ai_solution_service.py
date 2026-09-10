@@ -10,6 +10,7 @@ from app.config.settings import settings
 from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 from app.llm.llm_provider import get_llm_provider_for_user
 from app.services.ai_usage_service import AIUsageService
+from app.services.credit_service import CreditService
 
 class AISolutionService:
     """

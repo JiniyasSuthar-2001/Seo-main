@@ -15,6 +15,9 @@ from app.models.report import ReportRecord
 from app.models.notification import Notification
 from app.models.ai_usage_log import AIUsageLog
 from app.models.link_record import LinkRecord
+from app.models.platform_event import PlatformEvent
+from app.models.audit_log import AuditLog
+from app.models.ai_wallet import AIWallet, AICreditTransaction, PlatformAISettings
 
 __all__ = [
     "Project",
@@ -33,5 +36,10 @@ __all__ = [
     "ReportRecord",
     "Notification",
     "AIUsageLog",
-    "LinkRecord"
+    "LinkRecord",
+    "PlatformEvent",
+    "AuditLog",
+    "AIWallet",
+    "AICreditTransaction",
+    "PlatformAISettings"
 ]

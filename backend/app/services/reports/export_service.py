@@ -239,16 +239,76 @@ class CSVExportService:
 
     @staticmethod
     def generate_outbound_links_csv(outbound_links: List[Dict[str, Any]]) -> str:
-        headers = ["Source Page URL", "External Destination URL", "Anchor Text", "Classification", "Where This Data Came From"]
+        headers = [
+            "External Destination URL",
+            "Destination Domain",
+            "Source Page URL",
+            "Anchor Text",
+            "Rel Attribute",
+            "HTTP Status",
+            "Target Content Type",
+            "Total Source Pages",
+            "Total Occurrences",
+            "DOM Section",
+            "Nearest Heading",
+            "Paragraph Location",
+            "Context / Evidence",
+            "Extracted Link HTML"
+        ]
         rows = []
-        for l in outbound_links:
-            rows.append([
-                l.get("source_url") or l.get("source") or "",
-                l.get("destination_url") or l.get("target") or "",
-                l.get("anchor_text") or l.get("anchor") or "[External Link]",
-                "Outbound External Link Found on Website",
-                "Automatic Website Check"
-            ])
+        for g in outbound_links:
+            dest = g.get("destination_url") or g.get("target_url") or g.get("target") or ""
+            dom = g.get("destination_domain") or ""
+            status = g.get("status") or (f"HTTP {g.get('status_code')}" if g.get("status_code") else "Not Checked")
+            c_type = g.get("type") or g.get("content_type") or "Not Checked"
+            no_pages = g.get("source_pages") or g.get("no_pages") or 1
+            occurrences_cnt = g.get("occurrences") or g.get("total_occurrences") or 1
+
+            occ_list = g.get("occurrences_list") or []
+            if not occ_list and (g.get("source_url") or g.get("source_page") or g.get("source")):
+                occ_list = [{
+                    "source_url": g.get("source_url") or g.get("source_page") or g.get("source"),
+                    "anchor_text": g.get("anchor_text") or g.get("representative_anchor") or "(No text)",
+                    "rel": g.get("rel") or g.get("representative_rel") or "follow",
+                    "nearest_heading": g.get("nearest_heading"),
+                    "source_section": g.get("source_section") or "Main Content",
+                    "paragraph_index": g.get("paragraph_index"),
+                    "context_before": g.get("context_before"),
+                    "context_text": g.get("context_text"),
+                    "context_after": g.get("context_after"),
+                    "html_snippet": g.get("html_snippet")
+                }]
+
+            if not occ_list:
+                rows.append([
+                    dest, dom, "Not Available",
+                    g.get("anchor_text") or "(No text)",
+                    g.get("rel") or "follow",
+                    status, c_type, no_pages, occurrences_cnt,
+                    "Main Content", "Not Available", "N/A", "Context unavailable", ""
+                ])
+            else:
+                for occ in occ_list:
+                    src_url = occ.get("source_url") or occ.get("source_page") or occ.get("source") or ""
+                    anc = occ.get("anchor_text") or occ.get("anchor") or "(No text)"
+                    rel = occ.get("rel") or "follow"
+                    section = occ.get("source_section") or "Main Content"
+                    heading = occ.get("nearest_heading") or "Not Available"
+
+                    p_idx = occ.get("paragraph_index")
+                    p_loc = f"Paragraph #{p_idx + 1}" if p_idx is not None else "N/A"
+
+                    cb = occ.get("context_before") or ""
+                    ct = occ.get("context_text") or anc
+                    ca = occ.get("context_after") or ""
+                    ctx = f"...{cb} [{ct}] {ca}..." if (cb or ca) else (ct or "Context unavailable")
+                    html_snip = occ.get("html_snippet") or ""
+
+                    rows.append([
+                        dest, dom, src_url, anc, rel, status, c_type,
+                        no_pages, occurrences_cnt, section, heading, p_loc, ctx, html_snip
+                    ])
+
         return CSVExportService.generate_csv_string(headers, rows)
 
     @staticmethod

@@ -269,6 +269,162 @@ def get_audit_issue_history(
     }
 
 
+@router.get("/crawl-comparison")
+def get_crawl_comparison(
+    project_id: str,
+    crawl_a: Optional[str] = Query(None, description="Snapshot ID / timestamp for Crawl A (defaults to latest)"),
+    crawl_b: Optional[str] = Query(None, description="Snapshot ID / timestamp for Crawl B (defaults to previous)"),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Comprehensive historical crawl comparison engine (Crawl A vs Crawl B).
+    Computes exact differences across:
+      - Issues: New (+X), Fixed (-Y), Still Present (Z)
+      - Pages: New (+A), Removed (-B), Changed (C)
+      - Links: Discovered, Lost
+      - Metadata changes: Titles, Meta Descriptions, Canonicals, Status Codes
+    """
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project or not project.domain:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, project.domain, project.id)
+    crawls_dir = os.path.join(proj_dir, "crawls")
+
+    if not os.path.exists(crawls_dir):
+        return {
+            "has_comparison": False,
+            "message": "No crawl history available for comparison."
+        }
+
+    crawl_folders = sorted(
+        [d for d in os.listdir(crawls_dir) if os.path.isdir(os.path.join(crawls_dir, d))],
+        reverse=True
+    )
+
+    if len(crawl_folders) < 2 and (not crawl_a or not crawl_b):
+        return {
+            "has_comparison": False,
+            "message": "At least two completed crawls are required to perform a historical comparison.",
+            "available_crawls": crawl_folders
+        }
+
+    selected_a = crawl_a if (crawl_a and crawl_a in crawl_folders) else crawl_folders[0]
+    selected_b = crawl_b if (crawl_b and crawl_b in crawl_folders) else (crawl_folders[1] if len(crawl_folders) > 1 else crawl_folders[0])
+
+    dir_a = os.path.join(crawls_dir, selected_a)
+    dir_b = os.path.join(crawls_dir, selected_b)
+
+    def _load_pages(cdir):
+        p_file = os.path.join(cdir, "pages.json")
+        if os.path.exists(p_file):
+            try:
+                with open(p_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return []
+
+    pages_a = _load_pages(dir_a)
+    pages_b = _load_pages(dir_b)
+
+    map_a = {p.get("url"): p for p in pages_a if p.get("url")}
+    map_b = {p.get("url"): p for p in pages_b if p.get("url")}
+
+    # 1. Page differences
+    urls_a = set(map_a.keys())
+    urls_b = set(map_b.keys())
+
+    new_urls = list(urls_a - urls_b)
+    removed_urls = list(urls_b - urls_a)
+    common_urls = urls_a.intersection(urls_b)
+
+    changed_pages = []
+    for u in common_urls:
+        pa = map_a[u]
+        pb = map_b[u]
+        changes = []
+        if pa.get("title") != pb.get("title"):
+            changes.append({"field": "title", "from": pb.get("title"), "to": pa.get("title")})
+        if pa.get("meta_description") != pb.get("meta_description"):
+            changes.append({"field": "meta_description", "from": pb.get("meta_description"), "to": pa.get("meta_description")})
+        if pa.get("canonical") != pb.get("canonical"):
+            changes.append({"field": "canonical", "from": pb.get("canonical"), "to": pa.get("canonical")})
+        if pa.get("status_code") != pb.get("status_code"):
+            changes.append({"field": "status_code", "from": pb.get("status_code"), "to": pa.get("status_code")})
+
+        if changes:
+            changed_pages.append({
+                "url": u,
+                "changes_count": len(changes),
+                "changes": changes
+            })
+
+    # 2. Issue differences
+    audit_a = evaluate_site_audit_rules(pages_a)
+    audit_b = evaluate_site_audit_rules(pages_b)
+
+    issues_a = {i["rule_id"]: i for i in audit_a.get("issues", [])}
+    issues_b = {i["rule_id"]: i for i in audit_b.get("issues", [])}
+
+    all_rule_ids = set(issues_a.keys()).union(set(issues_b.keys()))
+    new_issues = []
+    fixed_issues = []
+    persistent_issues = []
+
+    for rid in sorted(all_rule_ids):
+        ia = issues_a.get(rid)
+        ib = issues_b.get(rid)
+        if ia and not ib:
+            new_issues.append(ia)
+        elif ib and not ia:
+            fixed_issues.append(ib)
+        else:
+            persistent_issues.append({
+                "rule_id": rid,
+                "title": ia.get("title"),
+                "category": ia.get("category"),
+                "severity": ia.get("severity"),
+                "current_count": ia.get("affected_count", 0),
+                "previous_count": ib.get("affected_count", 0),
+                "delta": ia.get("affected_count", 0) - ib.get("affected_count", 0)
+            })
+
+    return {
+        "has_comparison": True,
+        "project_id": project.id,
+        "domain": project.domain,
+        "crawl_a": selected_a,
+        "crawl_b": selected_b,
+        "pages_summary": {
+            "total_pages_current": len(pages_a),
+            "total_pages_previous": len(pages_b),
+            "new_pages_count": len(new_urls),
+            "removed_pages_count": len(removed_urls),
+            "changed_pages_count": len(changed_pages),
+            "new_pages": new_urls[:50],
+            "removed_pages": removed_urls[:50],
+            "changed_pages": changed_pages[:50]
+        },
+        "issues_summary": {
+            "new_issues_count": len(new_issues),
+            "fixed_issues_count": len(fixed_issues),
+            "persistent_issues_count": len(persistent_issues),
+            "new_issues": new_issues,
+            "fixed_issues": fixed_issues,
+            "persistent_issues": persistent_issues
+        },
+        "health_score_comparison": {
+            "current_score": audit_a.get("health_score"),
+            "previous_score": audit_b.get("health_score"),
+            "score_change": (audit_a.get("health_score") or 0) - (audit_b.get("health_score") or 0) if (audit_a.get("health_score") is not None and audit_b.get("health_score") is not None) else None
+        }
+    }
+
+
+
 @router.put("/issues/{issue_id}/status")
 def update_issue_status(
     issue_id: str,

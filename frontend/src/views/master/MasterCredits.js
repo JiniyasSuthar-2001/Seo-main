@@ -245,43 +245,66 @@ export class MasterCredits {
           <p style="font-size: 12px; color: #a1a1aa; margin-bottom: 16px;">Target Customer: <strong>${customer_email}</strong></p>
           
           <div class="form-group" style="margin-bottom: 12px;">
-            <label style="font-size: 12px; color: #a1a1aa;">Credit Amount</label>
-            <input type="number" id="modalAmount" class="form-control" placeholder="e.g. 50000" min="1" required style="width: 100%; padding: 8px; background: #09090b; border: 1px solid #27272a; color: #fff; border-radius: 6px;">
-          </div>
-
-          <div class="form-group" style="margin-bottom: 12px;">
             <label style="font-size: 12px; color: #a1a1aa;">Transaction Type</label>
             <select id="modalType" class="form-control" style="width: 100%; padding: 8px; background: #09090b; border: 1px solid #27272a; color: #fff; border-radius: 6px;">
               <option value="allocation">Allocation (Plan Upgrade / Top-up)</option>
               <option value="bonus">Bonus Credits</option>
-              <option value="adjustment">Manual Adjustment</option>
+              <option value="adjustment">Manual Adjustment (+ / -)</option>
               <option value="refund">Credit Refund</option>
             </select>
           </div>
 
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label style="font-size: 12px; color: #a1a1aa;">Credit Amount</label>
+            <input type="number" id="modalAmount" class="form-control" placeholder="e.g. 50000 or -500" required style="width: 100%; padding: 8px; background: #09090b; border: 1px solid #27272a; color: #fff; border-radius: 6px;">
+            <small id="modalAmountHint" style="font-size: 11px; color: #71717a; display: block; margin-top: 4px;">Enter positive number for additions, negative number for deductions</small>
+          </div>
+
           <div class="form-group" style="margin-bottom: 16px;">
-            <label style="font-size: 12px; color: #a1a1aa;">Reason for Credit Allocation (Audit Log Required)</label>
-            <input type="text" id="modalReason" class="form-control" placeholder="e.g. Upgrade to Pro Tier" required style="width: 100%; padding: 8px; background: #09090b; border: 1px solid #27272a; color: #fff; border-radius: 6px;">
+            <label style="font-size: 12px; color: #a1a1aa;">Reason for Credit Change (Audit Log Mandatory)</label>
+            <input type="text" id="modalReason" class="form-control" placeholder="e.g. Upgrade to Pro Tier or Compensation" required style="width: 100%; padding: 8px; background: #09090b; border: 1px solid #27272a; color: #fff; border-radius: 6px;">
           </div>
 
           <div style="display: flex; justify-content: flex-end; gap: 10px;">
             <button class="btn btn-secondary" id="closeCreditModalBtn">Cancel</button>
-            <button class="btn btn-primary" id="confirmCreditModalBtn">Confirm Allocation</button>
+            <button class="btn btn-primary" id="confirmCreditModalBtn">Confirm Action</button>
           </div>
         </div>
       </div>
     `;
 
+    const typeSelect = modalContainer.querySelector('#modalType');
+    const amountInput = modalContainer.querySelector('#modalAmount');
+    const hintText = modalContainer.querySelector('#modalAmountHint');
+
+    typeSelect.onchange = () => {
+      if (typeSelect.value === 'adjustment') {
+        hintText.innerText = 'For adjustments, enter + amount to add or - amount to deduct (e.g. +1000 or -1000).';
+        amountInput.placeholder = 'e.g. +1000 or -1000';
+      } else {
+        hintText.innerText = 'Enter positive credit amount.';
+        amountInput.placeholder = 'e.g. 50000';
+      }
+    };
+
     modalContainer.querySelector('#closeCreditModalBtn').onclick = () => { modalContainer.innerHTML = ''; };
     modalContainer.querySelector('#confirmCreditModalBtn').onclick = async () => {
       const amount = parseInt(modalContainer.querySelector('#modalAmount').value);
-      const type = modalContainer.querySelector('#modalType').value;
+      const type = typeSelect.value;
       const reason = modalContainer.querySelector('#modalReason').value.trim();
 
-      if (!amount || amount <= 0) {
-        alert("Please enter a valid credit amount.");
-        return;
+      if (type === 'adjustment') {
+        if (isNaN(amount) || amount === 0) {
+          alert("Please enter a valid non-zero adjustment amount (e.g. +1000 or -1000).");
+          return;
+        }
+      } else {
+        if (isNaN(amount) || amount <= 0) {
+          alert("Please enter a valid positive credit amount.");
+          return;
+        }
       }
+
       if (!reason) {
         alert("Please specify a reason for audit logging.");
         return;
@@ -289,14 +312,15 @@ export class MasterCredits {
 
       try {
         await MasterService.allocateCustomerCredits(customer_id, amount, type, reason);
-        alert("Credits allocated successfully!");
+        alert("Credits updated successfully!");
         modalContainer.innerHTML = '';
         this.render(this.container);
       } catch (err) {
-        alert(`Error allocating credits: ${err.message}`);
+        alert(`Error updating credits: ${err.message}`);
       }
     };
   }
+
 
   openLimitsModal(customer_id, is_enabled, daily_limit, monthly_limit) {
     const modalContainer = this.container.querySelector('#creditModalContainer');

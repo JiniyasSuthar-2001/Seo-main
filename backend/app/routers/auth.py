@@ -357,32 +357,41 @@ def create_guest_session(db: Session = Depends(get_db)):
 def get_authenticated_user(user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db)):
     """
     Returns persistent authenticated user session profile details, Google connection,
-    and active project memberships. Supports guest session profile detection.
+    active project memberships, and authoritative server-side platform_role.
     """
     email = user_id.strip().lower()
     is_guest = email.startswith("guest_")
-    user = db.query(User).filter(User.email == email).first()
+    user = db.query(User).filter((User.id == user_id) | (User.email == email) | (User.id == email)).first()
     
     masked = "guest***@guest.local" if is_guest else (email[0] + "***" + email[email.find("@"):] if "@" in email else "user***@gmail.com")
 
     conn = None
     if not is_guest:
+        from app.config.permissions import get_user_id_aliases
+        aliases = get_user_id_aliases(db, user_id)
         conn = db.query(ExternalConnection).filter(
-            ExternalConnection.user_id == email,
+            ExternalConnection.user_id.in_(aliases),
             ExternalConnection.provider == "google"
         ).first()
 
-    memberships = db.query(ProjectMembership).filter(
-        ProjectMembership.user_id == email,
-        ProjectMembership.status == "ACTIVE"
-    ).all()
+    memberships = []
+    if user:
+        from app.config.permissions import get_user_id_aliases
+        aliases = get_user_id_aliases(db, user.id)
+        memberships = db.query(ProjectMembership).filter(
+            ProjectMembership.user_id.in_(aliases),
+            ProjectMembership.status == "ACTIVE"
+        ).all()
 
     return {
-        "user_id": email,
-        "email": email,
+        "user_id": user.id if user else email,
+        "email": user.email if user else email,
         "masked_email": masked,
         "name": user.name if user else ("Guest User" if is_guest else "SEO User"),
         "picture": user.picture if user else None,
+        "platform_role": (user.platform_role if (user and user.platform_role) else "USER").upper(),
+        "permissions": user.get_permissions_list() if user else [],
+        "account_status": user.status if user else "ACTIVE",
         "status": "authenticated",
         "is_guest": is_guest,
         "google_connected": conn is not None and conn.status == "CONNECTED",

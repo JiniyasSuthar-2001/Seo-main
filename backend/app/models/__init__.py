@@ -7,6 +7,7 @@ from app.models.page import Page
 from app.models.keyword import Keyword
 from app.models.keyword_group import KeywordGroup
 from app.models.competitor import Competitor
+from app.models.competitor_ranking import CompetitorRanking
 from app.models.external_connection import ExternalConnection
 from app.models.crawl_session import CrawlSession
 from app.models.audit_issue import AuditIssue
@@ -29,6 +30,7 @@ __all__ = [
     "Keyword",
     "KeywordGroup",
     "Competitor",
+    "CompetitorRanking",
     "ExternalConnection",
     "CrawlSession",
     "AuditIssue",

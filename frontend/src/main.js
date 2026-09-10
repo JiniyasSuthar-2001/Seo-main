@@ -28,6 +28,7 @@ import { Integrations } from './views/Integrations.js';
 import { Help } from './views/Help.js';
 
 // Master Space Views
+import { MasterLogin } from './views/master/MasterLogin.js';
 import { MasterDashboard } from './views/master/MasterDashboard.js';
 import { MasterCustomers } from './views/master/MasterCustomers.js';
 import { MasterCustomerDetail } from './views/master/MasterCustomerDetail.js';
@@ -40,6 +41,7 @@ import { MasterProviders } from './views/master/MasterProviders.js';
 import { MasterActivity } from './views/master/MasterActivity.js';
 import { MasterSystemHealth } from './views/master/MasterSystemHealth.js';
 import { MasterAuditLogs } from './views/master/MasterAuditLogs.js';
+import { MasterAccounts } from './views/master/MasterAccounts.js';
 
 document.addEventListener('DOMContentLoaded', () => {
   themeStore.init();
@@ -92,7 +94,9 @@ document.addEventListener('DOMContentLoaded', () => {
   router.addRoute('/help', Help);
 
   // Master Space Routes
+  router.addRoute('/master/login', MasterLogin);
   router.addRoute('/master', MasterDashboard);
+  router.addRoute('/master/accounts', MasterAccounts);
   router.addRoute('/master/customers', MasterCustomers);
   router.addRoute('/master/customers/detail', MasterCustomerDetail);
   router.addRoute('/master/websites', MasterWebsites);

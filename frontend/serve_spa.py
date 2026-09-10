@@ -27,10 +27,20 @@ class SPAHandler(http.server.SimpleHTTPRequestHandler):
             # If requesting a real static asset file inside frontend/, serve it
             if os.path.isfile(real_path):
                 return super().do_GET()
-            else:
-                # SPA Fallback: Serve frontend/index.html for client-side routing
-                self.path = '/index.html'
-                return super().do_GET()
+
+            # Check if stripped subpath (e.g. /master/styles/... -> /styles/...) matches a real file
+            segments = rel_path.split('/')
+            if len(segments) > 1:
+                for idx in range(1, len(segments)):
+                    sub_rel = '/'.join(segments[idx:])
+                    sub_target = os.path.join(FRONTEND_DIR, sub_rel)
+                    if os.path.isfile(sub_target):
+                        self.path = '/' + sub_rel
+                        return super().do_GET()
+
+            # SPA Fallback: Serve frontend/index.html for client-side routing
+            self.path = '/index.html'
+            return super().do_GET()
         except (ConnectionResetError, BrokenPipeError):
             pass
         except Exception as e:

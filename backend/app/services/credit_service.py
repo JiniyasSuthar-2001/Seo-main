@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, time
 from typing import Optional, Dict, Any, List
 from fastapi import HTTPException
@@ -7,6 +8,17 @@ from sqlalchemy import func, and_, desc
 
 from app.models.ai_wallet import AIWallet, AICreditTransaction, PlatformAISettings
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
+
+class CreditTransactionType:
+    ALLOCATION = "allocation"
+    BONUS = "bonus"
+    CONSUMPTION = "consumption"
+    REFUND = "refund"
+    ADJUSTMENT = "adjustment"
+    EXPIRATION = "expiration"
+    RESET = "reset"
 
 class CreditService:
 
@@ -23,8 +35,12 @@ class CreditService:
         if not settings:
             settings = PlatformAISettings(id="default")
             db.add(settings)
-            db.commit()
-            db.refresh(settings)
+            try:
+                db.commit()
+                db.refresh(settings)
+            except Exception:
+                db.rollback()
+                settings = db.query(PlatformAISettings).filter(PlatformAISettings.id == "default").first()
         return settings
 
     @classmethod
@@ -47,20 +63,24 @@ class CreditService:
                 status="ACTIVE"
             )
             db.add(wallet)
-            db.commit()
-            db.refresh(wallet)
-            # Create initial allocation transaction
-            tx = AICreditTransaction(
-                wallet_id=wallet.id,
-                customer_id=customer_id,
-                amount=50000,
-                transaction_type="allocation",
-                reference_type="plan_allocation",
-                reason="Initial account allocation",
-                balance_after=50000
-            )
-            db.add(tx)
-            db.commit()
+            try:
+                db.commit()
+                db.refresh(wallet)
+                # Create initial allocation transaction
+                tx = AICreditTransaction(
+                    wallet_id=wallet.id,
+                    customer_id=customer_id,
+                    amount=50000,
+                    transaction_type=CreditTransactionType.ALLOCATION,
+                    reference_type="plan_allocation",
+                    reason="Initial account allocation",
+                    balance_after=50000
+                )
+                db.add(tx)
+                db.commit()
+            except Exception:
+                db.rollback()
+                wallet = db.query(AIWallet).filter(AIWallet.customer_id == customer_id).first()
 
         return wallet
 
@@ -135,7 +155,7 @@ class CreditService:
         daily_used_query = db.query(func.sum(AICreditTransaction.amount)).filter(
             and_(
                 AICreditTransaction.customer_id == cid,
-                AICreditTransaction.transaction_type == "consumption",
+                AICreditTransaction.transaction_type == CreditTransactionType.CONSUMPTION,
                 AICreditTransaction.created_at >= today_start
             )
         ).scalar()
@@ -152,7 +172,7 @@ class CreditService:
         monthly_used_query = db.query(func.sum(AICreditTransaction.amount)).filter(
             and_(
                 AICreditTransaction.customer_id == cid,
-                AICreditTransaction.transaction_type == "consumption",
+                AICreditTransaction.transaction_type == CreditTransactionType.CONSUMPTION,
                 AICreditTransaction.created_at >= month_start
             )
         ).scalar()
@@ -171,7 +191,7 @@ class CreditService:
         cls,
         customer_id: str,
         amount: int,
-        transaction_type: str = "allocation",
+        transaction_type: str = CreditTransactionType.ALLOCATION,
         reason: str = "Admin allocation",
         actor_user_id: Optional[str] = None,
         reference_id: Optional[str] = None,
@@ -180,16 +200,32 @@ class CreditService:
         if not db:
             return None
 
+        if not reason or not str(reason).strip():
+            raise HTTPException(status_code=400, detail="A valid reason is required for manual credit operations.")
+
+        tx_type = (transaction_type or "allocation").lower().strip()
         wallet = cls.get_or_create_wallet(customer_id, db)
 
-        if transaction_type == "bonus":
+        if tx_type == CreditTransactionType.BONUS:
+            if amount <= 0:
+                raise HTTPException(status_code=400, detail="Bonus credit amount must be positive.")
             wallet.bonus_credits = (wallet.bonus_credits or 0) + amount
-        elif transaction_type == "adjustment":
-            if amount >= 0:
+        elif tx_type == CreditTransactionType.ADJUSTMENT:
+            if amount == 0:
+                raise HTTPException(status_code=400, detail="Adjustment amount cannot be zero.")
+            # Positive adjustment increases allocated_credits, negative adjustment safely decreases balance
+            if amount > 0:
                 wallet.allocated_credits = (wallet.allocated_credits or 0) + amount
             else:
-                wallet.used_credits = (wallet.used_credits or 0) + abs(amount)
-        else: # allocation or reset
+                wallet.allocated_credits = max(0, (wallet.allocated_credits or 0) + amount)
+        elif tx_type == CreditTransactionType.RESET:
+            wallet.used_credits = 0
+            wallet.reserved_credits = 0
+            if amount > 0:
+                wallet.allocated_credits = amount
+        else: # allocation
+            if amount <= 0:
+                raise HTTPException(status_code=400, detail="Allocation credit amount must be positive.")
             wallet.allocated_credits = (wallet.allocated_credits or 0) + amount
 
         wallet.updated_at = datetime.utcnow()
@@ -203,10 +239,10 @@ class CreditService:
             wallet_id=wallet.id,
             customer_id=customer_id,
             amount=amount,
-            transaction_type=transaction_type,
+            transaction_type=tx_type,
             reference_type="admin_adjustment",
             reference_id=reference_id,
-            reason=reason,
+            reason=reason.strip(),
             actor_user_id=actor_user_id,
             balance_after=wallet.remaining_credits
         )
@@ -228,7 +264,31 @@ class CreditService:
             return None
 
         cid = customer_id or "default_guest"
+
+        # 1. Idempotency Check: Prevent duplicate credit deductions for the same reference_id
+        if reference_id:
+            existing_tx = db.query(AICreditTransaction).filter(
+                and_(
+                    AICreditTransaction.customer_id == cid,
+                    AICreditTransaction.reference_id == reference_id,
+                    AICreditTransaction.transaction_type == CreditTransactionType.CONSUMPTION
+                )
+            ).first()
+            if existing_tx:
+                logger.info(f"[CreditService] Idempotent deduction returned for reference_id={reference_id}")
+                return existing_tx
+
+        # 2. Concurrency Protection & Atomic Deduction Check
         wallet = cls.get_or_create_wallet(cid, db)
+
+        # Ensure wallet has sufficient credits at the moment of deduction
+        if wallet.remaining_credits < amount:
+            wallet.status = "EXHAUSTED"
+            db.commit()
+            raise HTTPException(
+                status_code=402,
+                detail=f"INSUFFICIENT_CREDITS: Cannot deduct {amount} credits. Remaining: {wallet.remaining_credits}."
+            )
 
         wallet.used_credits = (wallet.used_credits or 0) + amount
         wallet.updated_at = datetime.utcnow()
@@ -242,7 +302,7 @@ class CreditService:
             wallet_id=wallet.id,
             customer_id=cid,
             amount=-amount,
-            transaction_type="consumption",
+            transaction_type=CreditTransactionType.CONSUMPTION,
             reference_type="ai_usage_log",
             reference_id=reference_id,
             reason=reason,
@@ -260,12 +320,15 @@ class CreditService:
         amount: int,
         reference_id: Optional[str] = None,
         reason: str = "AI request refund",
+        actor_user_id: Optional[str] = None,
         db: Session = None
     ) -> AICreditTransaction:
         if not db or amount <= 0:
             return None
 
         cid = customer_id or "default_guest"
+
+        # Append-only Compensating ledger transaction
         wallet = cls.get_or_create_wallet(cid, db)
 
         wallet.used_credits = max(0, (wallet.used_credits or 0) - amount)
@@ -280,10 +343,11 @@ class CreditService:
             wallet_id=wallet.id,
             customer_id=cid,
             amount=amount,
-            transaction_type="refund",
-            reference_type="retry_refund",
+            transaction_type=CreditTransactionType.REFUND,
+            reference_type="retry_refund" if reference_id else "manual_refund",
             reference_id=reference_id,
-            reason=reason,
+            reason=reason or "Compensating refund",
+            actor_user_id=actor_user_id,
             balance_after=wallet.remaining_credits
         )
         db.add(tx)
@@ -298,7 +362,6 @@ class CreditService:
     @classmethod
     def refund_ai_credits(cls, customer_id: str, amount: int = 1, reference_id: Optional[str] = None, reason: str = "AI request refund", db: Session = None) -> AICreditTransaction:
         return cls.refund_credits(customer_id=customer_id, amount=amount, reference_id=reference_id, reason=reason, db=db)
-
 
     @classmethod
     def update_customer_ai_settings(

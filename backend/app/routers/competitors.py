@@ -409,6 +409,7 @@ def delete_competitor(
 @router.get("/gap-analysis")
 def get_keyword_gap_analysis(
     project_id: str,
+    competitor_id: Optional[str] = Query(None),
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
@@ -416,7 +417,127 @@ def get_keyword_gap_analysis(
     Returns Keyword Gap Analysis comparing target website vs confirmed competitors.
     """
     project = _get_project_or_404(project_id, db, user_id)
-    return perform_keyword_gap_analysis(project, db)
+    return perform_keyword_gap_analysis(project, db, competitor_id=competitor_id)
+
+from app.models.competitor_ranking import CompetitorRanking
+from app.models.external_connection import ExternalConnection
+from app.providers.serp_provider import SERPRankTrackerProvider
+
+@router.get("/rankings")
+def get_competitor_rankings(
+    project_id: str,
+    competitor_id: Optional[str] = Query(None),
+    keyword: Optional[str] = Query(None),
+    limit: int = Query(50),
+    offset: int = Query(0),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns verified competitor ranking records for the project.
+    """
+    project = _get_project_or_404(project_id, db, user_id)
+    query = db.query(CompetitorRanking).filter(CompetitorRanking.project_id == project.id)
+    if competitor_id:
+        query = query.filter(CompetitorRanking.competitor_id == competitor_id)
+    if keyword:
+        query = query.filter(CompetitorRanking.keyword.ilike(f"%{keyword}%"))
+
+    total = query.count()
+    rankings = query.order_by(CompetitorRanking.checked_at.desc()).offset(offset).limit(limit).all()
+
+    return {
+        "project_id": project.id,
+        "total": total,
+        "rankings": [r.to_dict() for r in rankings]
+    }
+
+@router.post("/rankings")
+def create_competitor_ranking(
+    project_id: str,
+    payload: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Creates or updates a verified competitor ranking record.
+    """
+    project = _get_project_or_404(project_id, db, user_id)
+    competitor_id = payload.get("competitor_id")
+    keyword = (payload.get("keyword") or "").strip()
+    if not competitor_id or not keyword:
+        raise HTTPException(status_code=400, detail="competitor_id and keyword are required.")
+
+    comp = db.query(Competitor).filter(Competitor.id == competitor_id, Competitor.project_id == project.id).first()
+    if not comp:
+        raise HTTPException(status_code=404, detail="Competitor not found in project.")
+
+    raw_pos = payload.get("position")
+    pos_val = int(raw_pos) if (raw_pos is not None and str(raw_pos).isdigit() and int(raw_pos) >= 1) else None
+
+    ranking = CompetitorRanking(
+        project_id=project.id,
+        competitor_id=comp.id,
+        keyword=keyword,
+        position=pos_val,
+        ranking_url=payload.get("ranking_url"),
+        search_engine=payload.get("search_engine", project.search_engine or "Google"),
+        country=payload.get("country", project.target_country or "United States"),
+        location=payload.get("location"),
+        device=payload.get("device", project.target_device or "Desktop"),
+        source=payload.get("source", "manual_import"),
+        checked_at=datetime.utcnow()
+    )
+    db.add(ranking)
+    db.commit()
+    db.refresh(ranking)
+    return {"status": "success", "ranking": ranking.to_dict()}
+
+@router.post("/refresh-rankings")
+def refresh_competitor_rankings(
+    project_id: str,
+    payload: dict = Body(default={}),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Checks real SERP ranking positions for target website keywords across confirmed competitors.
+    Requires SERP Provider API key.
+    """
+    project = _get_project_or_404(project_id, db, user_id)
+    conn = db.query(ExternalConnection).filter(
+        ExternalConnection.user_id == user_id,
+        ExternalConnection.provider.in_(["serp_provider", "serp"])
+    ).first()
+
+    serp_key = conn.get_api_key() if conn else os.environ.get("SERP_API_KEY", "")
+    if not serp_key:
+        return {
+            "status": "not_configured",
+            "message": "SERP Provider API key is not configured. Connect a SERP provider in Connected Accounts to check live rankings.",
+            "checked_count": 0
+        }
+
+    provider = SERPRankTrackerProvider(api_key=serp_key)
+    confirmed_comps = db.query(Competitor).filter(Competitor.project_id == project.id, Competitor.status == "Confirmed").all()
+    keywords = db.query(Keyword).filter(Keyword.project_id == project.id).all()
+
+    kw_list = [k.keyword for k in keywords if k.keyword]
+    comp_list = [{"id": c.id, "domain": c.domain, "name": c.name} for c in confirmed_comps]
+
+    res = provider.check_competitor_rankings(
+        keywords=kw_list,
+        competitors=comp_list,
+        country=project.target_country or "United States",
+        language=project.target_language or "English",
+        device=project.target_device or "Desktop"
+    )
+
+    return {
+        "status": "success",
+        "message": f"Checked rankings for {len(kw_list)} keywords across {len(confirmed_comps)} competitors.",
+        "results": res
+    }
 
 from app.routers.reports import export_competitors_csv
 

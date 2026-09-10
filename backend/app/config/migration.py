@@ -225,6 +225,12 @@ def _migrate_single_file(db_file: str):
             "password_hash": "TEXT",
             "platform_role": "TEXT",
             "status": "TEXT",
+            "permissions_json": "TEXT",
+            "created_by": "TEXT",
+            "last_login_at": "DATETIME",
+            "disabled_at": "DATETIME",
+            "disabled_by": "TEXT",
+            "session_revoked_at": "DATETIME",
             "created_at": "DATETIME",
             "updated_at": "DATETIME"
         },

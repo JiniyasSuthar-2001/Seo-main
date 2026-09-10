@@ -185,48 +185,163 @@ def discover_competitors_for_project(project: Project, db: Session) -> Dict[str,
     }
 
 
-def perform_keyword_gap_analysis(project: Project, db: Session) -> Dict[str, Any]:
+from app.models.competitor_ranking import CompetitorRanking
+
+from sqlalchemy import func
+
+def perform_keyword_gap_analysis(project: Project, db: Session, competitor_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Performs Keyword Gap Analysis comparing Target Website keywords against Confirmed Competitors.
-    Production rule: Based 100% on actual project database data. Never fabricates keywords or metrics.
+    Production rule: Based 100% on actual project database data and verified CompetitorRanking records.
+    Never fabricates keywords, positions, or search metrics.
     """
-    confirmed_competitors = db.query(Competitor).filter(
+    comp_query = db.query(Competitor).filter(
         Competitor.project_id == project.id,
-        Competitor.status == "Confirmed"
-    ).all()
+        func.lower(Competitor.status) == "confirmed"
+    )
+    if competitor_id:
+        comp_query = comp_query.filter(Competitor.id == competitor_id)
+        
+    confirmed_competitors = comp_query.all()
 
+    # Load all project keywords
     keywords = db.query(Keyword).filter(Keyword.project_id == project.id).all()
     
+    # Load all competitor rankings for this project
+    comp_rankings_query = db.query(CompetitorRanking).filter(
+        CompetitorRanking.project_id == project.id
+    )
+    if competitor_id:
+        comp_rankings_query = comp_rankings_query.filter(CompetitorRanking.competitor_id == competitor_id)
+        
+    comp_rankings = comp_rankings_query.order_by(CompetitorRanking.checked_at.desc()).all()
+
+    # Map latest competitor ranking by (keyword.lower(), competitor_id)
+    latest_comp_rankings: Dict[Tuple[str, str], CompetitorRanking] = {}
+    for cr in comp_rankings:
+        key = (cr.keyword.strip().lower(), cr.competitor_id)
+        if key not in latest_comp_rankings:
+            latest_comp_rankings[key] = cr
+
+    # Map confirmed competitors by ID
+    comp_map = {c.id: c for c in confirmed_competitors}
+
     gap_data = []
-    
-    # Process actual project keywords if present
+    processed_keys = set()
+
+    # 1. Process target website keywords
     for kw_record in keywords:
         if not kw_record.keyword:
             continue
         
-        target_pos = kw_record.position
-        comp_pos = None  # Competitor ranking positions would come from verified SERP provider APIs
+        kw_clean = kw_record.keyword.strip()
+        kw_lower = kw_clean.lower()
+        target_pos = kw_record.position  # 1-indexed int or None
+
+        # For each confirmed competitor, evaluate the gap
+        if confirmed_competitors:
+            for comp in confirmed_competitors:
+                processed_keys.add((kw_lower, comp.id))
+                comp_ranking = latest_comp_rankings.get((kw_lower, comp.id))
+                comp_pos = comp_ranking.position if comp_ranking else None
+
+                # Calculate mathematical gap: competitor_pos - target_pos
+                # Positive (+8) => You are 8 spots ahead (e.g. You #1, Comp #9)
+                # Negative (-8) => Competitor is 8 spots ahead (e.g. You #9, Comp #1)
+                pos_diff = None
+                diff_display = "N/A"
+                if target_pos is not None and comp_pos is not None:
+                    pos_diff = comp_pos - target_pos
+                    diff_display = f"+{pos_diff}" if pos_diff > 0 else str(pos_diff)
+
+                # Determine opportunity level
+                if comp_pos is not None and (target_pos is None or target_pos > comp_pos):
+                    opportunity = "HIGH"  # Competitor ranks ahead or you are unranked
+                elif target_pos is not None and comp_pos is not None and target_pos <= comp_pos:
+                    opportunity = "LOW"   # You outrank the competitor
+                elif target_pos is not None and comp_pos is None:
+                    opportunity = "MEDIUM" # You rank, competitor is unranked
+                else:
+                    opportunity = "NOT_CHECKED"
+
+                gap_data.append({
+                    "keyword": kw_clean,
+                    "competitor_id": comp.id,
+                    "competitor_name": comp.name,
+                    "competitor_domain": comp.domain,
+                    "target_position": target_pos,
+                    "target_position_display": f"#{target_pos}" if target_pos is not None else "Not Ranking",
+                    "competitor_position": comp_pos,
+                    "competitor_position_display": f"#{comp_pos}" if comp_pos is not None else "Data Unavailable",
+                    "position_difference": pos_diff,
+                    "position_difference_display": diff_display,
+                    "search_volume": kw_record.search_volume or 0,
+                    "keyword_difficulty": kw_record.difficulty or 0,
+                    "opportunity_level": opportunity,
+                    "ranking_url": comp_ranking.ranking_url if comp_ranking else None,
+                    "source": comp_ranking.source if comp_ranking else "None",
+                    "source_display": (comp_ranking.source.replace("_", " ").title() if comp_ranking else "Not Checked"),
+                    "checked_at": comp_ranking.checked_at.isoformat() if (comp_ranking and comp_ranking.checked_at) else None,
+                    "recommended_action": f"Optimize page content targeting '{kw_clean}'"
+                })
+        else:
+            # No confirmed competitors configured
+            gap_data.append({
+                "keyword": kw_clean,
+                "competitor_id": None,
+                "competitor_name": "No Competitor Configured",
+                "competitor_domain": None,
+                "target_position": target_pos,
+                "target_position_display": f"#{target_pos}" if target_pos is not None else "Not Ranking",
+                "competitor_position": None,
+                "competitor_position_display": "Data Unavailable",
+                "position_difference": None,
+                "position_difference_display": "N/A",
+                "search_volume": kw_record.search_volume or 0,
+                "keyword_difficulty": kw_record.difficulty or 0,
+                "opportunity_level": "NOT_CHECKED",
+                "ranking_url": None,
+                "source": "None",
+                "source_display": "Not Checked",
+                "checked_at": None,
+                "recommended_action": f"Confirm competitors to compare rankings for '{kw_clean}'"
+            })
+
+    # 2. Add any keywords that competitors rank for which are NOT yet in the project's keywords table
+    for (kw_lower, comp_id), comp_ranking in latest_comp_rankings.items():
+        if (kw_lower, comp_id) in processed_keys:
+            continue
         
-        opportunity = "MEDIUM"
-        status_text = "Target Ranking" if target_pos else "Target Unranked"
-        if not target_pos:
-            opportunity = "HIGH"
-            
+        comp = comp_map.get(comp_id)
+        if not comp:
+            continue
+
+        comp_pos = comp_ranking.position
         gap_data.append({
-            "keyword": kw_record.keyword,
-            "target_position": target_pos if target_pos is not None else "Not Ranking",
-            "competitor_position": comp_pos if comp_pos is not None else "Data Unavailable",
-            "position_difference": (target_pos - comp_pos) if (target_pos and comp_pos) else "N/A",
-            "search_volume": kw_record.search_volume or 0,
-            "keyword_difficulty": kw_record.difficulty or 0,
-            "opportunity_level": opportunity,
-            "status_text": status_text,
-            "recommended_action": f"Optimize page content targeting '{kw_record.keyword}'"
+            "keyword": comp_ranking.keyword,
+            "competitor_id": comp.id,
+            "competitor_name": comp.name,
+            "competitor_domain": comp.domain,
+            "target_position": None,
+            "target_position_display": "Not Ranking",
+            "competitor_position": comp_pos,
+            "competitor_position_display": f"#{comp_pos}" if comp_pos is not None else "Data Unavailable",
+            "position_difference": None,
+            "position_difference_display": "N/A",
+            "search_volume": 0,
+            "keyword_difficulty": 0,
+            "opportunity_level": "HIGH" if comp_pos is not None else "NOT_CHECKED",
+            "ranking_url": comp_ranking.ranking_url,
+            "source": comp_ranking.source,
+            "source_display": comp_ranking.source.replace("_", " ").title(),
+            "checked_at": comp_ranking.checked_at.isoformat() if comp_ranking.checked_at else None,
+            "recommended_action": f"Create targeted content to compete for '{comp_ranking.keyword}'"
         })
 
     # Summary metrics
     missing_count = sum(1 for g in gap_data if g["opportunity_level"] == "HIGH")
-    shared_count = sum(1 for g in gap_data if g["target_position"] != "Not Ranking")
+    winning_count = sum(1 for g in gap_data if g["opportunity_level"] == "LOW")
+    shared_count = sum(1 for g in gap_data if g["target_position"] is not None and g["competitor_position"] is not None)
     
     return {
         "project_id": project.id,
@@ -244,8 +359,81 @@ def perform_keyword_gap_analysis(project: Project, db: Session) -> Dict[str, Any
         "summary": {
             "total_keywords_analyzed": len(gap_data),
             "high_opportunity_keywords": missing_count,
+            "winning_keywords": winning_count,
             "shared_keywords": shared_count,
         },
         "keyword_gap": gap_data,
+        "gap_items": gap_data,
         "message": "Keyword gap analysis complete." if gap_data else "No keyword dataset or verified competitor data available for gap analysis."
     }
+
+
+def store_competitor_ranking(
+    db: Session,
+    project_id: str,
+    competitor_id: str,
+    keyword: str,
+    position: Optional[int],
+    ranking_url: Optional[str] = None,
+    search_engine: str = "google",
+    country: Optional[str] = None,
+    location: Optional[str] = None,
+    device: str = "desktop",
+    source: str = "serp_provider",
+    checked_at: Optional[datetime] = None,
+) -> CompetitorRanking:
+    """
+    Persist a single verified competitor ranking record.
+    """
+    if checked_at is None:
+        checked_at = datetime.utcnow()
+
+    rec = CompetitorRanking(
+        id=str(uuid.uuid4()),
+        project_id=project_id,
+        competitor_id=competitor_id,
+        keyword=keyword.strip(),
+        position=position,
+        ranking_url=ranking_url,
+        search_engine=search_engine.lower() if search_engine else "google",
+        country=country,
+        location=location,
+        device=device.lower() if device else "desktop",
+        source=source,
+        checked_at=checked_at,
+    )
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    return rec
+
+
+def bulk_store_competitor_rankings(
+    db: Session,
+    rankings: List[Dict[str, Any]]
+) -> int:
+    """
+    Bulk persist verified competitor ranking records.
+    """
+    count = 0
+    now = datetime.utcnow()
+    for r in rankings:
+        rec = CompetitorRanking(
+            id=str(uuid.uuid4()),
+            project_id=r["project_id"],
+            competitor_id=r["competitor_id"],
+            keyword=r["keyword"].strip(),
+            position=r.get("position"),
+            ranking_url=r.get("ranking_url"),
+            search_engine=r.get("search_engine", "google").lower(),
+            country=r.get("country"),
+            location=r.get("location"),
+            device=r.get("device", "desktop").lower(),
+            source=r.get("source", "serp_provider"),
+            checked_at=r.get("checked_at") or now,
+        )
+        db.add(rec)
+        count += 1
+    db.commit()
+    return count
+

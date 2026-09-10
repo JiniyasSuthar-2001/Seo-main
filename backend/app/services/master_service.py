@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 from datetime import datetime, timedelta, time
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
@@ -17,9 +18,53 @@ from app.models.audit_log import AuditLog
 from app.models.page import Page
 from app.models.audit_issue import AuditIssue
 
-# Cost constants per 1,000 tokens (estimated baseline)
+logger = logging.getLogger(__name__)
+
+# Cost constants per 1,000 tokens (authoritative baseline rates)
 COST_PER_1K_INPUT_TOKENS = 0.00015
 COST_PER_1K_OUTPUT_TOKENS = 0.00060
+
+MODEL_PRICING = {
+    "groq": {
+        "default": {"input": 0.00015, "output": 0.00060},
+        "llama-3.3-70b-versatile": {"input": 0.00059, "output": 0.00079},
+        "llama-3.1-8b-instant": {"input": 0.00005, "output": 0.00008},
+        "openai/gpt-oss-120b": {"input": 0.00015, "output": 0.00060},
+    },
+    "gemini": {
+        "default": {"input": 0.000075, "output": 0.00030},
+        "models/gemini-flash-latest": {"input": 0.000075, "output": 0.00030},
+        "models/gemini-1.5-flash": {"input": 0.000075, "output": 0.00030},
+        "models/gemini-1.5-pro": {"input": 0.00125, "output": 0.00500},
+    },
+    "openai": {
+        "default": {"input": 0.00250, "output": 0.01000},
+        "gpt-4o": {"input": 0.00250, "output": 0.01000},
+        "gpt-4o-mini": {"input": 0.00015, "output": 0.00060},
+    },
+    "claude": {
+        "default": {"input": 0.00300, "output": 0.01500},
+        "claude-3-5-sonnet-20241022": {"input": 0.00300, "output": 0.01500},
+        "claude-3-haiku-20240307": {"input": 0.00025, "output": 0.00125},
+    },
+    "ollama": {
+        "default": {"input": 0.0, "output": 0.0}
+    }
+}
+
+def sanitize_audit_metadata(metadata: Any) -> Any:
+    if isinstance(metadata, dict):
+        sanitized = {}
+        for k, v in metadata.items():
+            k_lower = str(k).lower()
+            if any(secret_term in k_lower for secret_term in ["password", "token", "secret", "jwt", "api_key", "key", "credential", "authorization"]):
+                sanitized[k] = "[REDACTED]"
+            else:
+                sanitized[k] = sanitize_audit_metadata(v)
+        return sanitized
+    elif isinstance(metadata, list):
+        return [sanitize_audit_metadata(x) for x in metadata]
+    return metadata
 
 class MasterService:
 
@@ -53,10 +98,28 @@ class MasterService:
         return now - timedelta(days=30), now
 
     @staticmethod
-    def calculate_estimated_cost(input_tokens: int, output_tokens: int) -> float:
-        input_cost = (input_tokens / 1000.0) * COST_PER_1K_INPUT_TOKENS
-        output_cost = (output_tokens / 1000.0) * COST_PER_1K_OUTPUT_TOKENS
+    def calculate_estimated_cost(input_tokens: int = 0, output_tokens: int = 0, provider: Optional[str] = None, model: Optional[str] = None) -> float:
+        in_t = input_tokens or 0
+        out_t = output_tokens or 0
+        p = (provider or "").lower().strip()
+        m = (model or "").lower().strip()
+
+        if p == "ollama":
+            return 0.0
+
+        in_rate = COST_PER_1K_INPUT_TOKENS
+        out_rate = COST_PER_1K_OUTPUT_TOKENS
+
+        if p in MODEL_PRICING:
+            pricing = MODEL_PRICING[p].get(m) or MODEL_PRICING[p].get("default")
+            if pricing:
+                in_rate = pricing.get("input", COST_PER_1K_INPUT_TOKENS)
+                out_rate = pricing.get("output", COST_PER_1K_OUTPUT_TOKENS)
+
+        input_cost = (in_t / 1000.0) * in_rate
+        output_cost = (out_t / 1000.0) * out_rate
         return round(input_cost + output_cost, 4)
+
 
     # -------------------------------------------------------------------------
     # 1. MASTER DASHBOARD METRICS
@@ -149,6 +212,7 @@ class MasterService:
     # -------------------------------------------------------------------------
     @classmethod
     def get_customers_list(cls, search: str = "", status_filter: str = "all", page: int = 1, page_size: int = 20, db: Session = None) -> Dict[str, Any]:
+        from app.config.permissions import get_user_id_aliases
         query = db.query(User)
 
         if search and search.strip():
@@ -173,16 +237,18 @@ class MasterService:
 
         items = []
         for u in users:
+            aliases = get_user_id_aliases(db, u.id)
+
             # Count user's projects via membership or ownership
             projects_count = db.query(ProjectMembership).filter(
-                and_(ProjectMembership.user_id == u.id, ProjectMembership.status == 'ACTIVE')
+                and_(ProjectMembership.user_id.in_(aliases), ProjectMembership.status == 'ACTIVE')
             ).count()
 
             # Aggregate AI usage for user
             ai_stat = db.query(
                 func.count(AIUsageLog.id).label("req_count"),
                 func.sum(AIUsageLog.input_tokens + AIUsageLog.output_tokens).label("tot_tokens")
-            ).filter(AIUsageLog.user_id == u.id).first()
+            ).filter(AIUsageLog.user_id.in_(aliases)).first()
 
             items.append({
                 "id": u.id,
@@ -207,6 +273,7 @@ class MasterService:
 
     @classmethod
     def get_customer_detail(cls, customer_id: str, db: Session) -> Dict[str, Any]:
+        from app.config.permissions import get_user_id_aliases
         user = db.query(User).filter(User.id == customer_id).first()
         if not user:
             # Fallback if user ID is email or vice versa
@@ -215,9 +282,14 @@ class MasterService:
         if not user:
             return None
 
+        aliases = get_user_id_aliases(db, user.id)
+
         # Memberships & Websites
-        memberships = db.query(ProjectMembership).filter(ProjectMembership.user_id == user.id).all()
-        project_ids = [m.project_id for m in memberships]
+        memberships = db.query(ProjectMembership).filter(
+            ProjectMembership.user_id.in_(aliases),
+            ProjectMembership.status == 'ACTIVE'
+        ).all()
+        project_ids = list(set([m.project_id for m in memberships]))
         projects = db.query(Project).filter(Project.id.in_(project_ids)).all() if project_ids else []
 
         websites = [{
@@ -233,7 +305,7 @@ class MasterService:
             func.count(AIUsageLog.id).label("req_count"),
             func.sum(AIUsageLog.input_tokens).label("in_tok"),
             func.sum(AIUsageLog.output_tokens).label("out_tok")
-        ).filter(AIUsageLog.user_id == user.id).first()
+        ).filter(AIUsageLog.user_id.in_(aliases)).first()
 
         in_tok = ai_query.in_tok or 0
         out_tok = ai_query.out_tok or 0
@@ -245,7 +317,7 @@ class MasterService:
             AIUsageLog.model,
             func.count(AIUsageLog.id),
             func.sum(AIUsageLog.input_tokens + AIUsageLog.output_tokens)
-        ).filter(AIUsageLog.user_id == user.id).group_by(AIUsageLog.model).all()
+        ).filter(AIUsageLog.user_id.in_(aliases)).group_by(AIUsageLog.model).all()
 
         ai_by_model = [{
             "model": r[0] or "Unknown",
@@ -260,7 +332,7 @@ class MasterService:
             reports = [r.to_dict() for r in reps]
 
         # External Connections / Integrations
-        connections = db.query(ExternalConnection).filter(ExternalConnection.user_id == user.id).all()
+        connections = db.query(ExternalConnection).filter(ExternalConnection.user_id.in_(aliases)).all()
         integrations = [{
             "provider": c.provider,
             "account_name": c.provider_account_name or c.provider_email or c.provider,
@@ -269,7 +341,7 @@ class MasterService:
         } for c in connections]
 
         # Activity Stream for Customer
-        events = db.query(PlatformEvent).filter(PlatformEvent.user_id == user.id).order_by(desc(PlatformEvent.created_at)).limit(20).all()
+        events = db.query(PlatformEvent).filter(PlatformEvent.user_id.in_(aliases)).order_by(desc(PlatformEvent.created_at)).limit(20).all()
         activity = [e.to_dict() for e in events]
 
         return {
@@ -360,7 +432,13 @@ class MasterService:
             and_(ProjectMembership.project_id == project.id, ProjectMembership.role == 'OWNER')
         ).first()
 
-        owner_user = db.query(User).filter(User.id == owner_membership.user_id).first() if owner_membership else None
+        owner_user = None
+        if owner_membership:
+            from app.config.permissions import get_user_id_aliases
+            owner_aliases = get_user_id_aliases(db, owner_membership.user_id)
+            owner_user = db.query(User).filter(
+                (User.id.in_(owner_aliases)) | (User.email.in_(owner_aliases))
+            ).first()
 
         # Crawl sessions
         crawls = db.query(CrawlSession).filter(CrawlSession.project_id == project.id).order_by(desc(CrawlSession.started_at)).limit(10).all()
@@ -773,6 +851,7 @@ class MasterService:
     @classmethod
     def log_audit_action(cls, actor_id: str, actor_email: str, action: str, target_type: str = None, target_id: str = None, status: str = "SUCCESS", reason: str = None, metadata: dict = None, db: Session = None):
         try:
+            clean_meta = sanitize_audit_metadata(metadata) if metadata else None
             al = AuditLog(
                 actor_id=actor_id,
                 actor_email=actor_email,
@@ -781,11 +860,12 @@ class MasterService:
                 target_id=target_id,
                 status=status,
                 reason=reason,
-                metadata_json=json.dumps(metadata) if metadata else None
+                metadata_json=json.dumps(clean_meta) if clean_meta else None
             )
             db.add(al)
             db.commit()
         except Exception as e:
+            logger.exception(f"[MasterService] Audit logging failed for action '{action}': {e}")
             db.rollback()
 
     # -------------------------------------------------------------------------
@@ -874,39 +954,41 @@ class MasterService:
     @classmethod
     def get_credits_overview(cls, search: str = "", page: int = 1, page_size: int = 20, db: Session = None) -> Dict[str, Any]:
         from app.models.ai_wallet import AIWallet, AICreditTransaction
-        from app.services.credit_service import CreditService
-
-        users = db.query(User).all()
-        for u in users:
-            CreditService.get_or_create_wallet(u.id, db)
 
         wallets_query = db.query(AIWallet)
         if search and search.strip():
             s = f"%{search.strip().lower()}%"
-            matching_user_ids = [u.id for u in db.query(User).filter(or_(
+            matching_user_ids = [u.id for u in db.query(User.id).filter(or_(
                 func.lower(User.email).like(s),
                 func.lower(User.name).like(s),
                 func.lower(User.id).like(s)
             )).all()]
-            wallets_query = wallets_query.filter(AIWallet.customer_id.in_(matching_user_ids))
+            wallets_query = wallets_query.filter(
+                or_(
+                    AIWallet.customer_id.in_(matching_user_ids),
+                    func.lower(AIWallet.customer_id).like(s)
+                )
+            )
 
         total_wallets = wallets_query.count()
         wallets = wallets_query.order_by(desc(AIWallet.updated_at)).offset((page - 1) * page_size).limit(page_size).all()
 
         total_allocated = db.query(func.sum(AIWallet.allocated_credits)).scalar() or 0
+        total_bonus = db.query(func.sum(AIWallet.bonus_credits)).scalar() or 0
         total_used = db.query(func.sum(AIWallet.used_credits)).scalar() or 0
-        total_remaining = db.query(func.sum(AIWallet.allocated_credits + AIWallet.bonus_credits - AIWallet.used_credits)).scalar() or 0
+        total_remaining = max(0, (total_allocated + total_bonus) - total_used)
 
-        user_map = {u.id: u for u in users}
+        customer_ids = [w.customer_id for w in wallets]
+        page_users = {u.id: u for u in db.query(User).filter(or_(User.id.in_(customer_ids), User.email.in_(customer_ids))).all()} if customer_ids else {}
 
         wallet_items = []
         for w in wallets:
-            u = user_map.get(w.customer_id)
+            u = page_users.get(w.customer_id)
             wallet_items.append({
                 "id": w.id,
                 "customer_id": w.customer_id,
                 "customer_name": u.name if u else w.customer_id,
-                "customer_email": u.email if u else "N/A",
+                "customer_email": u.email if u else ("N/A" if "@" not in w.customer_id else w.customer_id),
                 "allocated_credits": w.allocated_credits,
                 "bonus_credits": w.bonus_credits,
                 "used_credits": w.used_credits,
@@ -920,14 +1002,19 @@ class MasterService:
             })
 
         tx_query = db.query(AICreditTransaction).order_by(desc(AICreditTransaction.created_at)).limit(20).all()
-        recent_txs = [tx.to_dict() for tx in tx_query]
-        for tx_item in recent_txs:
-            u = user_map.get(tx_item.get("customer_id"))
-            tx_item["customer_email"] = u.email if u else tx_item.get("customer_id")
+        tx_cust_ids = [tx.customer_id for tx in tx_query]
+        tx_users = {u.id: u for u in db.query(User).filter(or_(User.id.in_(tx_cust_ids), User.email.in_(tx_cust_ids))).all()} if tx_cust_ids else {}
+
+        recent_txs = []
+        for tx in tx_query:
+            d = tx.to_dict()
+            u = tx_users.get(tx.customer_id)
+            d["customer_email"] = u.email if u else (tx.customer_id if "@" in tx.customer_id else tx.customer_id)
+            recent_txs.append(d)
 
         return {
             "summary": {
-                "total_allocated": total_allocated,
+                "total_allocated": total_allocated + total_bonus,
                 "total_used": total_used,
                 "total_remaining": total_remaining,
                 "total_wallets": total_wallets
@@ -1034,12 +1121,24 @@ class MasterService:
         today_start = datetime.combine(now.date(), time.min)
         month_start = datetime(now.year, now.month, 1)
 
-        daily_tokens = db.query(func.sum(AIUsageLog.input_tokens + AIUsageLog.output_tokens)).filter(AIUsageLog.created_at >= today_start).scalar() or 0
-        monthly_tokens = db.query(func.sum(AIUsageLog.input_tokens + AIUsageLog.output_tokens)).filter(AIUsageLog.created_at >= month_start).scalar() or 0
+        daily_usage = db.query(
+            func.sum(AIUsageLog.input_tokens).label("in_tok"),
+            func.sum(AIUsageLog.output_tokens).label("out_tok")
+        ).filter(AIUsageLog.created_at >= today_start).first()
 
-        # Compute cost
-        daily_cost = round((daily_tokens / 1000.0) * COST_PER_1K_INPUT_TOKENS, 4)
-        monthly_cost = round((monthly_tokens / 1000.0) * COST_PER_1K_INPUT_TOKENS, 4)
+        monthly_usage = db.query(
+            func.sum(AIUsageLog.input_tokens).label("in_tok"),
+            func.sum(AIUsageLog.output_tokens).label("out_tok")
+        ).filter(AIUsageLog.created_at >= month_start).first()
+
+        daily_in = daily_usage.in_tok or 0
+        daily_out = daily_usage.out_tok or 0
+        monthly_in = monthly_usage.in_tok or 0
+        monthly_out = monthly_usage.out_tok or 0
+
+        # Authoritative cost calculation using separate input and output tokens
+        daily_cost = cls.calculate_estimated_cost(daily_in, daily_out)
+        monthly_cost = cls.calculate_estimated_cost(monthly_in, monthly_out)
 
         daily_pct = round((daily_cost / s.daily_budget_usd) * 100, 1) if s.daily_budget_usd > 0 else 0
         monthly_pct = round((monthly_cost / s.monthly_budget_usd) * 100, 1) if s.monthly_budget_usd > 0 else 0
@@ -1064,4 +1163,365 @@ class MasterService:
                 "status": status
             }
         }
+
+    # =========================================================================
+    # MASTER ACCOUNT & RBAC MANAGEMENT
+    # =========================================================================
+    @classmethod
+    def list_master_accounts(
+        cls,
+        search: str = "",
+        role_filter: str = "all",
+        status_filter: str = "all",
+        page: int = 1,
+        page_size: int = 20,
+        db: Session = None
+    ) -> Dict[str, Any]:
+        """Lists all Master administrative accounts with permissions summary and status."""
+        query = db.query(User).filter(
+            User.platform_role.in_(["SUPER_MASTER", "MASTER_ADMIN", "SUPER_ADMIN", "ADMIN", "SUPPORT", "ANALYST"])
+        )
+
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            query = query.filter(or_(User.id.ilike(term), User.email.ilike(term), User.name.ilike(term)))
+
+        if role_filter and role_filter.lower() != "all":
+            query = query.filter(User.platform_role == role_filter.upper())
+
+        if status_filter and status_filter.lower() != "all":
+            query = query.filter(User.status == status_filter.upper())
+
+        total = query.count()
+        users = query.order_by(desc(User.created_at)).offset((page - 1) * page_size).limit(page_size).all()
+
+        return {
+            "items": [u.to_master_dict() for u in users],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size if total > 0 else 1
+        }
+
+    @classmethod
+    def create_master_account(cls, payload: Dict[str, Any], actor_user: User, db: Session) -> Dict[str, Any]:
+        """
+        Creates a new Master Admin account.
+        Strictly enforces:
+        1. Only SUPER_MASTER can create SUPER_MASTER accounts.
+        2. Lower-level Masters can only delegate permissions they hold.
+        3. Never stores plaintext passwords.
+        4. Logs an audit record.
+        """
+        from app.config.security import get_password_hash, validate_password_strength
+        from app.config.master_permissions import get_all_permissions, validate_permission_delegation
+        from fastapi import HTTPException
+
+        login_id = (payload.get("login_id") or payload.get("email") or "").strip()
+        name = (payload.get("name") or "").strip()
+        password = payload.get("password") or ""
+        confirm_password = payload.get("confirm_password") or password
+        role = (payload.get("role") or "MASTER_ADMIN").upper().strip()
+        full_authority = bool(payload.get("full_authority", False))
+        permissions = payload.get("permissions") or []
+
+        if not login_id:
+            raise HTTPException(status_code=400, detail="Login ID / Email is required.")
+        if not password:
+            raise HTTPException(status_code=400, detail="Password is required.")
+        if password != confirm_password:
+            raise HTTPException(status_code=400, detail="Password and Confirm Password do not match.")
+
+        is_valid, err_msg = validate_password_strength(password)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=err_msg)
+
+        # 1. Privilege escalation check: creating SUPER_MASTER
+        actor_role = (actor_user.platform_role or "USER").upper()
+        if role in ("SUPER_MASTER", "SUPER_ADMIN") and actor_role not in ("SUPER_MASTER", "SUPER_ADMIN"):
+            raise HTTPException(
+                status_code=403,
+                detail="PRIVILEGE_ESCALATION_DENIED: Only a Super Master can create Super Master accounts."
+            )
+
+        # 2. Assign permissions
+        if full_authority or role in ("SUPER_MASTER", "SUPER_ADMIN"):
+            assigned_permissions = get_all_permissions() if role not in ("SUPER_MASTER", "SUPER_ADMIN") else ["*"]
+        else:
+            if not isinstance(permissions, list):
+                permissions = [str(permissions)]
+            assigned_permissions = permissions
+
+        # 3. Permission delegation check
+        if actor_role not in ("SUPER_MASTER", "SUPER_ADMIN"):
+            if not validate_permission_delegation(actor_role, actor_user.get_permissions_list(), assigned_permissions):
+                raise HTTPException(
+                    status_code=403,
+                    detail="DELEGATION_DENIED: You cannot grant permissions that you do not hold."
+                )
+
+        # Check for existing account
+        existing = db.query(User).filter(
+            (User.id == login_id) | (User.email == login_id) | (User.id == login_id.lower()) | (User.email == login_id.lower())
+        ).first()
+        if existing:
+            raise HTTPException(status_code=400, detail=f"An account with Login ID '{login_id}' already exists.")
+
+        email_val = login_id.lower() if "@" in login_id else f"{login_id.lower()}@master.local"
+        new_master = User(
+            id=login_id,
+            email=email_val,
+            name=name or login_id,
+            password_hash=get_password_hash(password),
+            platform_role=role,
+            status="ACTIVE",
+            permissions_json=json.dumps(assigned_permissions),
+            created_by=actor_user.id
+        )
+        db.add(new_master)
+        db.commit()
+        db.refresh(new_master)
+
+        cls.log_audit_action(
+            actor_id=actor_user.id,
+            actor_email=actor_user.email,
+            action="MASTER_ACCOUNT_CREATE",
+            target_type="master_user",
+            target_id=new_master.id,
+            status="SUCCESS",
+            reason=f"Created {role} account '{login_id}'",
+            metadata={"role": role, "permissions_count": len(assigned_permissions), "full_authority": full_authority},
+            db=db
+        )
+
+        return {"success": True, "account": new_master.to_master_dict()}
+
+    @classmethod
+    def update_master_account(cls, target_id: str, payload: Dict[str, Any], actor_user: User, db: Session) -> Dict[str, Any]:
+        """Updates Master Admin profile, role, status, and permissions with strict escalation guards."""
+        from app.config.security import get_password_hash, validate_password_strength
+        from app.config.master_permissions import get_all_permissions, validate_permission_delegation
+        from fastapi import HTTPException
+
+        target = db.query(User).filter(
+            (User.id == target_id) | (User.email == target_id)
+        ).first()
+        if not target:
+            raise HTTPException(status_code=404, detail="Master account not found.")
+
+        actor_role = (actor_user.platform_role or "USER").upper()
+        target_role = (target.platform_role or "USER").upper()
+
+        # Super Master Protection: only SUPER_MASTER can edit another SUPER_MASTER
+        if target_role in ("SUPER_MASTER", "SUPER_ADMIN") and actor_role not in ("SUPER_MASTER", "SUPER_ADMIN"):
+            raise HTTPException(
+                status_code=403,
+                detail="SUPER_MASTER_PROTECTED: You are not authorized to modify the Super Master account."
+            )
+
+        # Self-escalation guard: actor cannot modify their own role/permissions to gain privileges
+        if target.id == actor_user.id and actor_role not in ("SUPER_MASTER", "SUPER_ADMIN"):
+            if "role" in payload and payload["role"].upper() != actor_role:
+                raise HTTPException(status_code=403, detail="PRIVILEGE_ESCALATION_DENIED: Cannot modify your own role.")
+            if "permissions" in payload:
+                raise HTTPException(status_code=403, detail="PRIVILEGE_ESCALATION_DENIED: Cannot modify your own permissions.")
+
+        old_meta = target.to_master_dict()
+
+        if "name" in payload and payload["name"]:
+            target.name = str(payload["name"]).strip()
+
+        if "role" in payload and payload["role"]:
+            new_role = str(payload["role"]).upper().strip()
+            if new_role in ("SUPER_MASTER", "SUPER_ADMIN") and actor_role not in ("SUPER_MASTER", "SUPER_ADMIN"):
+                raise HTTPException(status_code=403, detail="PRIVILEGE_ESCALATION_DENIED: Cannot promote to Super Master.")
+            target.platform_role = new_role
+
+        if "full_authority" in payload or "permissions" in payload:
+            full_auth = bool(payload.get("full_authority", False))
+            if full_auth:
+                new_perms = get_all_permissions() if target.platform_role not in ("SUPER_MASTER", "SUPER_ADMIN") else ["*"]
+            else:
+                raw_perms = payload.get("permissions") or []
+                new_perms = raw_perms if isinstance(raw_perms, list) else [str(raw_perms)]
+
+            if actor_role not in ("SUPER_MASTER", "SUPER_ADMIN"):
+                if not validate_permission_delegation(actor_role, actor_user.get_permissions_list(), new_perms):
+                    raise HTTPException(status_code=403, detail="DELEGATION_DENIED: Cannot grant permissions you do not hold.")
+
+            target.permissions_json = json.dumps(new_perms)
+
+        if "password" in payload and payload["password"]:
+            pwd = payload["password"]
+            is_valid, err_msg = validate_password_strength(pwd)
+            if not is_valid:
+                raise HTTPException(status_code=400, detail=err_msg)
+            target.password_hash = get_password_hash(pwd)
+            # Invalidate previous sessions upon password reset
+            target.session_revoked_at = datetime.utcnow()
+
+        if "status" in payload and payload["status"]:
+            new_status = str(payload["status"]).upper().strip()
+            target.status = new_status
+            if new_status in ("DISABLED", "SUSPENDED", "INACTIVE"):
+                target.disabled_at = datetime.utcnow()
+                target.disabled_by = actor_user.id
+                target.session_revoked_at = datetime.utcnow()
+            else:
+                target.disabled_at = None
+                target.disabled_by = None
+
+        target.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(target)
+
+        cls.log_audit_action(
+            actor_id=actor_user.id,
+            actor_email=actor_user.email,
+            action="MASTER_ACCOUNT_UPDATE",
+            target_type="master_user",
+            target_id=target.id,
+            status="SUCCESS",
+            reason=payload.get("reason", "Master account details updated"),
+            metadata={"old": old_meta, "new": target.to_master_dict()},
+            db=db
+        )
+
+        return {"success": True, "account": target.to_master_dict()}
+
+    @classmethod
+    def disable_master_account(cls, target_id: str, reason: str, actor_user: User, db: Session) -> Dict[str, Any]:
+        """Disables a Master account and immediately invalidates all active sessions."""
+        from fastapi import HTTPException
+
+        target = db.query(User).filter(
+            (User.id == target_id) | (User.email == target_id)
+        ).first()
+        if not target:
+            raise HTTPException(status_code=404, detail="Master account not found.")
+
+        target_role = (target.platform_role or "USER").upper()
+        if target_role in ("SUPER_MASTER", "SUPER_ADMIN"):
+            raise HTTPException(status_code=403, detail="SUPER_MASTER_PROTECTED: Root Super Master account cannot be disabled.")
+
+        if target.id == actor_user.id:
+            raise HTTPException(status_code=400, detail="Cannot disable your own active account.")
+
+        target.status = "DISABLED"
+        target.disabled_at = datetime.utcnow()
+        target.disabled_by = actor_user.id
+        target.session_revoked_at = datetime.utcnow()
+        target.updated_at = datetime.utcnow()
+        db.commit()
+
+        cls.log_audit_action(
+            actor_id=actor_user.id,
+            actor_email=actor_user.email,
+            action="MASTER_ACCOUNT_DISABLE",
+            target_type="master_user",
+            target_id=target.id,
+            status="SUCCESS",
+            reason=reason or "Account disabled by administrator",
+            metadata={"disabled_account": target.id},
+            db=db
+        )
+
+        return {"success": True, "message": f"Master account '{target.id}' has been disabled and sessions revoked."}
+
+    @classmethod
+    def enable_master_account(cls, target_id: str, reason: str, actor_user: User, db: Session) -> Dict[str, Any]:
+        """Enables a previously disabled Master account."""
+        from fastapi import HTTPException
+
+        target = db.query(User).filter(
+            (User.id == target_id) | (User.email == target_id)
+        ).first()
+        if not target:
+            raise HTTPException(status_code=404, detail="Master account not found.")
+
+        target.status = "ACTIVE"
+        target.disabled_at = None
+        target.disabled_by = None
+        target.updated_at = datetime.utcnow()
+        db.commit()
+
+        cls.log_audit_action(
+            actor_id=actor_user.id,
+            actor_email=actor_user.email,
+            action="MASTER_ACCOUNT_ENABLE",
+            target_type="master_user",
+            target_id=target.id,
+            status="SUCCESS",
+            reason=reason or "Account enabled by administrator",
+            metadata={"enabled_account": target.id},
+            db=db
+        )
+
+        return {"success": True, "message": f"Master account '{target.id}' has been enabled."}
+
+    @classmethod
+    def revoke_master_sessions(cls, target_id: str, reason: str, actor_user: User, db: Session) -> Dict[str, Any]:
+        """Revokes all active JWT sessions for a Master account by updating session_revoked_at."""
+        from fastapi import HTTPException
+
+        target = db.query(User).filter(
+            (User.id == target_id) | (User.email == target_id)
+        ).first()
+        if not target:
+            raise HTTPException(status_code=404, detail="Master account not found.")
+
+        target.session_revoked_at = datetime.utcnow()
+        target.updated_at = datetime.utcnow()
+        db.commit()
+
+        cls.log_audit_action(
+            actor_id=actor_user.id,
+            actor_email=actor_user.email,
+            action="MASTER_SESSIONS_REVOKE",
+            target_type="master_user",
+            target_id=target.id,
+            status="SUCCESS",
+            reason=reason or "All sessions revoked by administrator",
+            metadata={"target_account": target.id, "revoked_at": target.session_revoked_at.isoformat()},
+            db=db
+        )
+
+        return {"success": True, "message": f"All active sessions for Master account '{target.id}' have been revoked."}
+
+    @classmethod
+    def delete_master_account(cls, target_id: str, reason: str, actor_user: User, db: Session) -> Dict[str, Any]:
+        """Permanently removes a Master Admin account with root Super Master protection."""
+        from fastapi import HTTPException
+
+        target = db.query(User).filter(
+            (User.id == target_id) | (User.email == target_id)
+        ).first()
+        if not target:
+            raise HTTPException(status_code=404, detail="Master account not found.")
+
+        target_role = (target.platform_role or "USER").upper()
+        if target_role in ("SUPER_MASTER", "SUPER_ADMIN"):
+            raise HTTPException(status_code=403, detail="SUPER_MASTER_PROTECTED: Root Super Master account cannot be deleted.")
+
+        if target.id == actor_user.id:
+            raise HTTPException(status_code=400, detail="Cannot delete your own active account.")
+
+        del_id = target.id
+        db.delete(target)
+        db.commit()
+
+        cls.log_audit_action(
+            actor_id=actor_user.id,
+            actor_email=actor_user.email,
+            action="MASTER_ACCOUNT_DELETE",
+            target_type="master_user",
+            target_id=del_id,
+            status="SUCCESS",
+            reason=reason or "Account deleted by administrator",
+            metadata={"deleted_account": del_id},
+            db=db
+        )
+
+        return {"success": True, "message": f"Master account '{del_id}' has been permanently deleted."}
+
 

@@ -9,6 +9,7 @@ from app.importers.keyword_importer import KeywordImporter
 from app.importers.ranking_importer import RankingImporter
 from app.importers.backlink_importer import BacklinkImporter
 from app.importers.competitor_importer import CompetitorImporter
+from app.importers.competitor_ranking_importer import CompetitorRankingImporter
 
 from app.config.auth import get_current_user_id
 from app.config.permissions import get_user_membership
@@ -27,12 +28,14 @@ def get_importer(data_type: str, db: Session, project_id: str, filename: str, so
         return KeywordImporter(db=db, project_id=project_id, filename=filename, source=source)
     elif clean_type == "rankings":
         return RankingImporter(db=db, project_id=project_id, filename=filename, source=source)
+    elif clean_type in ("competitor_rankings", "competitor_ranking"):
+        return CompetitorRankingImporter(db=db, project_id=project_id, filename=filename, source=source)
     elif clean_type == "backlinks":
         return BacklinkImporter(db=db, project_id=project_id, filename=filename, source=source)
     elif clean_type in ("competitors", "competitor"):
         return CompetitorImporter(db=db, project_id=project_id, filename=filename, source=source)
     else:
-        raise HTTPException(status_code=400, detail=f"Unsupported data_type '{data_type}'. Must be keywords, rankings, backlinks, or competitors.")
+        raise HTTPException(status_code=400, detail=f"Unsupported data_type '{data_type}'. Must be keywords, rankings, competitor_rankings, backlinks, or competitors.")
 
 @router.post("/")
 def import_data(

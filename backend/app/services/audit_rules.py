@@ -243,7 +243,7 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
     if not blocked_pages and not error_pages:
         categories["Crawlability"]["passed"] += total_pages
 
-    # Rules 2 to 13 evaluate ONLY html_pages (HTTP 200 OK)
+    # Rules 2 to 14 evaluate ONLY html_pages (HTTP 200 OK)
     if html_count > 0:
         # 2. Indexability
         noindex_pages = [p for p in html_pages if "noindex" in (p.get("indexability") or p.get("robots_meta") or "").lower()]
@@ -286,7 +286,21 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
         # 4. Metadata
         missing_titles = [p for p in html_pages if not p.get("title") or p.get("title", "").strip() == ""]
         long_titles = [p for p in html_pages if p.get("title") and len(p.get("title", "").strip()) > 60]
-        short_titles = [p for p in html_pages if p.get("title") and 0 < len(p.get("title", "").strip()) < 30]
+
+        # Short titles and duplicate titles detection across pages (when > 1 page)
+        short_titles = []
+        duplicate_title_urls = []
+        if len(html_pages) > 1:
+            short_titles = [p for p in html_pages if p.get("title") and 0 < len(p.get("title", "").strip()) < 30]
+            title_counts = {}
+            for p in html_pages:
+                t = (p.get("title") or "").strip().lower()
+                if t:
+                    title_counts[t] = title_counts.get(t, []) + [p.get("url")]
+            for t_text, u_list in title_counts.items():
+                if len(u_list) > 1:
+                    duplicate_title_urls.extend(u_list)
+            duplicate_title_urls = list(dict.fromkeys(duplicate_title_urls))
 
         if missing_titles:
             issues.append({
@@ -318,8 +332,53 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             categories["Metadata"]["warning"] += len(long_titles)
             categories["Metadata"]["status"] = "Issues Found"
 
+        if short_titles:
+            issues.append({
+                "rule_id": "META_006",
+                "category": "Metadata",
+                "severity": "notice",
+                "title": "Short Page Titles (< 30 Characters)",
+                "description": f"{len(short_titles)} pages have concise titles under 30 characters that may lack descriptive keyword targeting.",
+                "evidence": f"Short title URLs: {', '.join([p.get('url', '') for p in short_titles[:3]])}",
+                "affected_urls": [p.get("url") for p in short_titles],
+                "affected_count": len(short_titles),
+                "recommendation": "Expand title tags to 40-60 characters with relevant brand and topical keywords."
+            })
+            categories["Metadata"]["notice"] += len(short_titles)
+            categories["Metadata"]["status"] = "Issues Found"
+
+        if duplicate_title_urls:
+            issues.append({
+                "rule_id": "META_004",
+                "category": "Metadata",
+                "severity": "warning",
+                "title": "Duplicate Title Tags Detected Across Pages",
+                "description": f"{len(duplicate_title_urls)} pages share identical title tags with other audited pages.",
+                "evidence": f"Duplicate title pages: {', '.join(duplicate_title_urls[:3])}",
+                "affected_urls": duplicate_title_urls,
+                "affected_count": len(duplicate_title_urls),
+                "recommendation": "Write distinct, unique title tags for every page to avoid keyword cannibalization."
+            })
+            categories["Metadata"]["warning"] += len(duplicate_title_urls)
+            categories["Metadata"]["status"] = "Issues Found"
+
         missing_desc = [p for p in html_pages if not p.get("meta_description") or p.get("meta_description", "").strip() == ""]
         long_desc = [p for p in html_pages if p.get("meta_description") and len(p.get("meta_description", "").strip()) > 160]
+
+        # Duplicate and short meta descriptions across pages (when > 1 page)
+        short_desc = []
+        duplicate_desc_urls = []
+        if len(html_pages) > 1:
+            short_desc = [p for p in html_pages if p.get("meta_description") and 0 < len(p.get("meta_description", "").strip()) < 70]
+            desc_counts = {}
+            for p in html_pages:
+                d = (p.get("meta_description") or "").strip().lower()
+                if d:
+                    desc_counts[d] = desc_counts.get(d, []) + [p.get("url")]
+            for d_text, u_list in desc_counts.items():
+                if len(u_list) > 1:
+                    duplicate_desc_urls.extend(u_list)
+            duplicate_desc_urls = list(dict.fromkeys(duplicate_desc_urls))
 
         if missing_desc:
             issues.append({
@@ -351,8 +410,40 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             categories["Metadata"]["notice"] += len(long_desc)
             categories["Metadata"]["status"] = "Issues Found"
 
-        if not missing_titles and not long_titles and not missing_desc and not long_desc:
+        if short_desc:
+            issues.append({
+                "rule_id": "META_008",
+                "category": "Metadata",
+                "severity": "notice",
+                "title": "Short Meta Descriptions (< 70 Characters)",
+                "description": f"{len(short_desc)} pages have meta descriptions under 70 characters.",
+                "evidence": f"Short meta description pages: {', '.join([p.get('url', '') for p in short_desc[:3]])}",
+                "affected_urls": [p.get("url") for p in short_desc],
+                "affected_count": len(short_desc),
+                "recommendation": "Expand meta descriptions to 140-160 characters to maximize SERP snippet engagement."
+            })
+            categories["Metadata"]["notice"] += len(short_desc)
+            categories["Metadata"]["status"] = "Issues Found"
+
+        if duplicate_desc_urls:
+            issues.append({
+                "rule_id": "META_007",
+                "category": "Metadata",
+                "severity": "notice",
+                "title": "Duplicate Meta Descriptions Detected",
+                "description": f"{len(duplicate_desc_urls)} pages share identical meta descriptions with other pages.",
+                "evidence": f"Duplicate meta URLs: {', '.join(duplicate_desc_urls[:3])}",
+                "affected_urls": duplicate_desc_urls,
+                "affected_count": len(duplicate_desc_urls),
+                "recommendation": "Provide unique meta descriptions tailored to each page's unique value proposition."
+            })
+            categories["Metadata"]["notice"] += len(duplicate_desc_urls)
+            categories["Metadata"]["status"] = "Issues Found"
+
+        if not missing_titles and not long_titles and not short_titles and not duplicate_title_urls and not missing_desc and not long_desc and not short_desc and not duplicate_desc_urls:
             categories["Metadata"]["passed"] += html_count
+
+
 
         # 5. Content
         thin_pages = [p for p in html_pages if (p.get("word_count") or 0) > 0 and (p.get("word_count") or 0) < 150]
@@ -370,12 +461,49 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             })
             categories["Content"]["warning"] += len(thin_pages)
             categories["Content"]["status"] = "Issues Found"
-        else:
+
+        # Content hash exact duplicate detection
+        content_hashes = {}
+        for p in html_pages:
+            h_val = p.get("content_hash") or (p.get("title") + "::" + str(p.get("word_count", 0)) if p.get("word_count", 0) > 50 else None)
+            if h_val:
+                content_hashes[h_val] = content_hashes.get(h_val, []) + [p.get("url")]
+        duplicate_content_urls = []
+        for h_k, u_list in content_hashes.items():
+            if len(u_list) > 1 and len(u_list) < len(html_pages):
+                duplicate_content_urls.extend(u_list)
+        duplicate_content_urls = list(dict.fromkeys(duplicate_content_urls))
+
+        if duplicate_content_urls:
+            issues.append({
+                "rule_id": "CONT_002",
+                "category": "Content",
+                "severity": "warning",
+                "title": "Duplicate Body Content Detected",
+                "description": f"{len(duplicate_content_urls)} pages contain identical content signatures.",
+                "evidence": f"Duplicate content URLs: {', '.join(duplicate_content_urls[:3])}",
+                "affected_urls": duplicate_content_urls,
+                "affected_count": len(duplicate_content_urls),
+                "recommendation": "Consolidate duplicate pages or implement canonical tags to point to the authoritative source."
+            })
+            categories["Content"]["warning"] += len(duplicate_content_urls)
+            categories["Content"]["status"] = "Issues Found"
+
+        if not thin_pages and not duplicate_content_urls:
             categories["Content"]["passed"] += html_count
 
         # 6. Headings
         missing_h1 = [p for p in html_pages if not (p.get("h1") if isinstance(p.get("h1"), list) else str(p.get("h1") or "").strip())]
         multiple_h1 = [p for p in html_pages if isinstance(p.get("h1"), list) and len(p.get("h1")) > 1]
+        
+        # Heading hierarchy skip (H1 -> H3 skipping H2)
+        hierarchy_skip_pages = []
+        for p in html_pages:
+            h2_list = p.get("h2") or []
+            h3_list = p.get("h3") or []
+            h1_val = p.get("h1")
+            if h1_val and not h2_list and h3_list:
+                hierarchy_skip_pages.append(p.get("url"))
 
         if missing_h1:
             issues.append({
@@ -407,11 +535,33 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             categories["Headings"]["notice"] += len(multiple_h1)
             categories["Headings"]["status"] = "Issues Found"
 
-        if not missing_h1 and not multiple_h1:
+        if hierarchy_skip_pages:
+            issues.append({
+                "rule_id": "HEAD_003",
+                "category": "Headings",
+                "severity": "notice",
+                "title": "Heading Hierarchy Skipping (H1 to H3 without H2)",
+                "description": f"{len(hierarchy_skip_pages)} pages contain <h3> headings without intermediate <h2> headings.",
+                "evidence": f"Skipped hierarchy pages: {', '.join(hierarchy_skip_pages[:3])}",
+                "affected_urls": hierarchy_skip_pages,
+                "affected_count": len(hierarchy_skip_pages),
+                "recommendation": "Structure document hierarchy logically using <h2> before sub-level <h3> tags."
+            })
+            categories["Headings"]["notice"] += len(hierarchy_skip_pages)
+            categories["Headings"]["status"] = "Issues Found"
+
+        if not missing_h1 and not multiple_h1 and not hierarchy_skip_pages:
             categories["Headings"]["passed"] += html_count
 
         # 7. Canonicals
         missing_canon = [p for p in html_pages if not p.get("canonical") or p.get("canonical", "").strip() == ""]
+        canon_conflicts = []
+        for p in html_pages:
+            c = (p.get("canonical") or "").strip()
+            u = (p.get("url") or "").strip()
+            if c and u and c.startswith("http://") and u.startswith("https://"):
+                canon_conflicts.append(u)
+
         if missing_canon:
             issues.append({
                 "rule_id": "CANON_001",
@@ -426,7 +576,23 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             })
             categories["Canonicals"]["notice"] += len(missing_canon)
             categories["Canonicals"]["status"] = "Issues Found"
-        else:
+
+        if canon_conflicts:
+            issues.append({
+                "rule_id": "CANON_002",
+                "category": "Canonicals",
+                "severity": "warning",
+                "title": "Canonical Tag Points to Insecure HTTP Endpoint",
+                "description": f"{len(canon_conflicts)} secure HTTPS pages specify an insecure HTTP canonical target.",
+                "evidence": f"Conflict URLs: {', '.join(canon_conflicts[:3])}",
+                "affected_urls": canon_conflicts,
+                "affected_count": len(canon_conflicts),
+                "recommendation": "Update canonical link targets to use secure https:// scheme."
+            })
+            categories["Canonicals"]["warning"] += len(canon_conflicts)
+            categories["Canonicals"]["status"] = "Issues Found"
+
+        if not missing_canon and not canon_conflicts:
             categories["Canonicals"]["passed"] += html_count
 
         # 8. Images
@@ -452,7 +618,30 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             })
             categories["Images"]["notice"] += len(missing_alt_pages)
             categories["Images"]["status"] = "Issues Found"
-        else:
+
+        # Missing image dimensions
+        missing_dim_pages = []
+        for p in html_pages:
+            imgs = p.get("image_inventory") or []
+            if isinstance(imgs, list) and any(not img.get("width") or not img.get("height") for img in imgs if isinstance(img, dict)):
+                missing_dim_pages.append(p.get("url"))
+
+        if missing_dim_pages:
+            issues.append({
+                "rule_id": "IMG_002",
+                "category": "Images",
+                "severity": "notice",
+                "title": "Images Missing Explicit Width & Height Attributes",
+                "description": f"{len(missing_dim_pages)} pages have images without explicit dimensions, risking Cumulative Layout Shift (CLS).",
+                "evidence": f"URLs: {', '.join(missing_dim_pages[:3])}",
+                "affected_urls": missing_dim_pages,
+                "affected_count": len(missing_dim_pages),
+                "recommendation": "Add width and height HTML attributes or CSS aspect-ratio properties to prevent layout shifts."
+            })
+            categories["Images"]["notice"] += len(missing_dim_pages)
+            categories["Images"]["status"] = "Issues Found"
+
+        if not missing_alt_pages and not missing_dim_pages:
             categories["Images"]["passed"] += html_count
 
         # 9. Internal Links
@@ -493,7 +682,29 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             categories["Internal Links"]["passed"] += html_count
 
         # 10. External Links
-        categories["External Links"]["passed"] += html_count
+        insecure_external_pages = []
+        for p in html_pages:
+            links = p.get("links") or []
+            if isinstance(links, list):
+                if any(isinstance(l, dict) and l.get("is_external") and str(l.get("target_url") or "").startswith("http://") for l in links):
+                    insecure_external_pages.append(p.get("url"))
+
+        if insecure_external_pages:
+            issues.append({
+                "rule_id": "EXT_001",
+                "category": "External Links",
+                "severity": "notice",
+                "title": "Outbound Links to Insecure HTTP Destinations",
+                "description": f"{len(insecure_external_pages)} pages link out to unencrypted HTTP destinations.",
+                "evidence": f"Pages with HTTP outbound links: {', '.join(insecure_external_pages[:3])}",
+                "affected_urls": insecure_external_pages,
+                "affected_count": len(insecure_external_pages),
+                "recommendation": "Update outbound links to HTTPS destinations to maintain secure user navigation."
+            })
+            categories["External Links"]["notice"] += len(insecure_external_pages)
+            categories["External Links"]["status"] = "Issues Found"
+        else:
+            categories["External Links"]["passed"] += html_count
 
         # 11. Structured Data
         structured_data_pages_detail = []
@@ -522,8 +733,6 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
 
         missing_schema_pages = [p for p in structured_data_pages_detail if not p["has_structured_data"]]
         missing_count = len(missing_schema_pages)
-
-        # Sort schema_types_found by count descending
         sorted_schema_types_found = dict(sorted(schema_type_page_counts.items(), key=lambda item: item[1], reverse=True))
 
         structured_data_summary = {
@@ -578,10 +787,51 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
         else:
             categories["Mobile"]["passed"] += html_count
 
-        # 13. International SEO
-        categories["International SEO"]["passed"] += html_count
+        # 13. International SEO (Hreflang)
+        missing_hreflang_self = []
+        for p in html_pages:
+            hlangs = p.get("hreflangs") or p.get("hreflang") or []
+            if isinstance(hlangs, list) and hlangs:
+                p_url = p.get("url", "")
+                has_self = any(isinstance(h, dict) and h.get("href") == p_url for h in hlangs)
+                if not has_self:
+                    missing_hreflang_self.append(p_url)
 
-    # 14. Security
+        if missing_hreflang_self:
+            issues.append({
+                "rule_id": "HREF_001",
+                "category": "International SEO",
+                "severity": "notice",
+                "title": "Hreflang Tags Missing Self-Reference",
+                "description": f"{len(missing_hreflang_self)} pages contain alternate language annotations without self-referential hreflang tag.",
+                "evidence": f"Affected URLs: {', '.join(missing_hreflang_self[:3])}",
+                "affected_urls": missing_hreflang_self,
+                "affected_count": len(missing_hreflang_self),
+                "recommendation": "Ensure each alternate language tag set contains a self-referential return link."
+            })
+            categories["International SEO"]["notice"] += len(missing_hreflang_self)
+            categories["International SEO"]["status"] = "Issues Found"
+        else:
+            categories["International SEO"]["passed"] += html_count
+
+        # 14. Social / Open Graph & Twitter Cards
+        missing_og_pages = [p for p in html_pages if "open_graph" in p and p.get("open_graph") is not None and not p.get("open_graph", {}).get("og:title")]
+        if missing_og_pages:
+            issues.append({
+                "rule_id": "OG_001",
+                "category": "Metadata",
+                "severity": "notice",
+                "title": "Pages Missing Open Graph (og:title) Social Tags",
+                "description": f"{len(missing_og_pages)} pages lack Open Graph social share metadata.",
+                "evidence": f"Affected URLs: {', '.join([p.get('url', '') for p in missing_og_pages[:3]])}",
+                "affected_urls": [p.get("url") for p in missing_og_pages],
+                "affected_count": len(missing_og_pages),
+                "recommendation": "Add og:title, og:description, and og:image tags for rich social sharing previews."
+            })
+            categories["Metadata"]["notice"] += len(missing_og_pages)
+            categories["Metadata"]["status"] = "Issues Found"
+
+    # 15. Security
     ssl_error_pages = [p for p in pages if "ssl" in (p.get("error") or "").lower() or "tls" in (p.get("error") or "").lower()]
     if ssl_error_pages:
         issues.append({
@@ -610,6 +860,7 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
     evaluated_pages_for_score = html_count if html_count > 0 else total_pages
     total_evaluated_checks = evaluated_pages_for_score * EVALUATED_RULE_COUNT
     total_weighted_penalty = (crit_cnt * 3.0) + (err_cnt * 2.0) + (warn_cnt * 1.0)
+
     
     if total_evaluated_checks > 0:
         score_deduction = (total_weighted_penalty / total_evaluated_checks) * 100
@@ -662,6 +913,7 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
         "evaluated_rules_count": EVALUATED_RULE_COUNT,
         "total_evaluated_checks": total_evaluated_checks,
         "checks_explanation": f"{evaluated_pages_for_score} analyzed pages × {EVALUATED_RULE_COUNT} evaluated rules",
+        "health_score_formula": "100 - ((critical*3.0 + error*2.0 + warning*1.0 + notice*0.25) / total_evaluated_checks) * 100",
         "summary": {
             "critical_errors": crit_cnt,
             "errors": err_cnt,
@@ -679,3 +931,4 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             "timestamp": "Real-time Crawl Snapshot Evaluation"
         }
     }
+

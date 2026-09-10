@@ -65,6 +65,8 @@ class AuthStore {
           masked_email: data.masked_email,
           name: data.name,
           picture: data.picture,
+          platform_role: data.platform_role || 'USER',
+          permissions: data.permissions || ((data.platform_role || '').toUpperCase() === 'SUPER_MASTER' ? ['*'] : []),
           is_guest: !!(data.is_guest || data.auth_provider === 'guest' || (data.user_id && String(data.user_id).startsWith('guest_'))),
           auth_provider: data.auth_provider || (data.is_guest ? 'guest' : 'google')
         };
@@ -84,6 +86,38 @@ class AuthStore {
       this.isCheckingSession = false;
       return this.isAuthenticated;
     }
+  }
+
+  hasMasterPermission(perm) {
+    if (!this.user) return false;
+    const role = (this.user.platform_role || '').toUpperCase();
+    if (role === 'SUPER_MASTER' || role === 'SUPER_ADMIN') return true;
+    const perms = this.user.permissions || [];
+    return perms.includes('*') || perms.includes('ALL') || perms.includes(perm);
+  }
+
+  async masterLogin(loginId, password) {
+    const res = await fetch(`${API_BASE_URL}/api/master/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login_id: loginId, password })
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || 'Master authentication failed. Please verify credentials.');
+    }
+
+    const data = await res.json();
+    this.token = data.access_token;
+    this.user = data.user;
+    this.isAuthenticated = true;
+
+    localStorage.setItem(this.TOKEN_KEY, this.token);
+    localStorage.setItem(this.USER_KEY, JSON.stringify(this.user));
+
+    this.notify();
+    return data;
   }
 
   async login(email, password) {

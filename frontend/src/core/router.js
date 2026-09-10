@@ -17,12 +17,14 @@ export class Router {
   }
 
   navigate(path) {
-    window.history.pushState({}, '', path);
+    const cleanPath = path && path.length > 1 ? path.replace(/\/+$/, '') : (path || '/');
+    window.history.pushState({}, '', cleanPath);
     this.handleRoute();
   }
 
   async handleRoute() {
-    let path = window.location.pathname;
+    const rawPath = window.location.pathname || '/';
+    let path = rawPath.length > 1 ? rawPath.replace(/\/+$/, '') : rawPath;
 
     // 1. Check for token in URL query parameters (Google Auth callback)
     const urlParams = new URLSearchParams(window.location.search);
@@ -57,22 +59,48 @@ export class Router {
       this.sessionAlreadyInitialized = true;
     }
 
+    const isLoginPage = path === '/login' || path === '/master/login';
+
     if (path === '/login' && hasSession) {
-      // Valid session exists — skip login and continue to authorized area
+      // Valid session exists — skip customer login and continue to authorized area
       window.history.replaceState({}, '', '/');
       path = '/';
-    } else if (path !== '/login' && !hasSession) {
-      // Unauthenticated — redirect to /login
-      console.warn('[AUTH] Unauthenticated user. Redirecting to /login.');
-      window.history.replaceState({}, '', '/login');
-      path = '/login';
+    } else if (path === '/master/login' && hasSession) {
+      const userRole = (authStore.user?.platform_role || 'USER').toUpperCase();
+      const isMasterUser = ['SUPER_MASTER', 'MASTER_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'ANALYST'].includes(userRole);
+      if (isMasterUser) {
+        window.history.replaceState({}, '', '/master');
+        path = '/master';
+      }
+    } else if (!isLoginPage && !hasSession) {
+      // Unauthenticated — redirect to appropriate login
+      if (path.startsWith('/master')) {
+        console.warn('[AUTH] Unauthenticated Master access attempt. Redirecting to /master/login.');
+        window.history.replaceState({}, '', '/master/login');
+        path = '/master/login';
+      } else {
+        console.warn('[AUTH] Unauthenticated user. Redirecting to /login.');
+        window.history.replaceState({}, '', '/login');
+        path = '/login';
+      }
+    }
+
+    // Master Route Protection Guard for Authenticated Users
+    if (path.startsWith('/master') && path !== '/master/login') {
+      const userRole = (authStore.user?.platform_role || 'USER').toUpperCase();
+      const isMasterUser = ['SUPER_MASTER', 'MASTER_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'SUPPORT', 'ANALYST'].includes(userRole);
+      if (!isMasterUser) {
+        console.warn(`[ROUTER GUARD] Unauthorized Master route attempt (${path}) by non-master role '${userRole}'. Redirecting to /master/login.`);
+        window.history.replaceState({}, '', '/master/login');
+        path = '/master/login';
+      }
     }
 
     const sidebarContainer = document.getElementById('sidebar-container');
     const topbarContainer = document.getElementById('topbar-container');
     const workspaceArea = document.querySelector('.workspace-area');
 
-    if (path === '/login') {
+    if (path === '/login' || path === '/master/login') {
       if (sidebarContainer) sidebarContainer.style.display = 'none';
       if (topbarContainer) topbarContainer.style.display = 'none';
       if (workspaceArea) workspaceArea.style.marginLeft = '0';
@@ -88,6 +116,8 @@ export class Router {
         ViewComponent = this.routes['/master/customers/detail'];
       } else if (path.startsWith('/master/websites/')) {
         ViewComponent = this.routes['/master/websites/detail'];
+      } else if (path.startsWith('/master')) {
+        ViewComponent = this.routes['/master'] || this.routes['/'];
       } else {
         ViewComponent = this.routes['/'];
       }

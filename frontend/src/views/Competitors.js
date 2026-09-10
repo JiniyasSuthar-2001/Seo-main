@@ -569,10 +569,14 @@ export class Competitors {
         if (!this.gapAnalysis || !this.gapAnalysis.keyword_gap || this.gapAnalysis.keyword_gap.length === 0) {
             return `
                 <div class="card" style="text-align: center; padding: 48px 24px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color);">
-                    <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">Keyword Gap Analysis</div>
-                    <p style="color: var(--text-secondary); max-width: 480px; margin: 0 auto 20px;">
-                        Add confirmed competitors to view head-to-head keyword gaps, target vs competitor positions, and high-impact SEO opportunities.
+                    <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">Keyword Gap & Competitor Rankings</div>
+                    <p style="color: var(--text-secondary); max-width: 520px; margin: 0 auto 20px;">
+                        Add confirmed competitors and import competitor rankings or connect a SERP provider to view real head-to-head ranking gaps.
                     </p>
+                    <div style="display: flex; justify-content: center; gap: 10px;">
+                        <a href="/import" data-link class="btn btn-secondary btn-sm">Import Competitor Rankings CSV</a>
+                        <a href="/integrations" data-link class="btn btn-primary btn-sm">Configure SERP Provider</a>
+                    </div>
                 </div>
             `;
         }
@@ -584,55 +588,112 @@ export class Competitors {
 
         return `
             <div>
-                <div style="display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap;">
-                    <div style="flex: 1; min-width: 200px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 16px; border-radius: 8px;">
-                        <div style="font-size: 12px; color: var(--text-secondary);">Target Domain</div>
-                        <div style="font-size: 18px; font-weight: 700; color: var(--accent-primary);">${this.escapeHtml(this.gapAnalysis.target_domain)}</div>
+                <!-- KPI SUMMARY CARDS -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px;">
+                    <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 16px; border-radius: 10px;">
+                        <div style="font-size: 12px; color: var(--text-secondary);">Target Website</div>
+                        <div style="font-size: 16px; font-weight: 700; color: var(--accent-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${this.escapeHtml(this.gapAnalysis.target_domain)}</div>
                     </div>
-                    <div style="flex: 1; min-width: 200px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 16px; border-radius: 8px;">
+                    <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 16px; border-radius: 10px;">
                         <div style="font-size: 12px; color: var(--text-secondary);">High-Impact Opportunities</div>
                         <div style="font-size: 18px; font-weight: 700; color: #ef4444;">${summary.high_opportunity_keywords || 0} Keywords</div>
                     </div>
-                    <div style="flex: 1; min-width: 200px; background: var(--bg-card); border: 1px solid var(--border-color); padding: 16px; border-radius: 8px;">
-                        <div style="font-size: 12px; color: var(--text-secondary);">Shared Keywords</div>
-                        <div style="font-size: 18px; font-weight: 700; color: #10b981;">${summary.shared_keywords || 0} Keywords</div>
+                    <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 16px; border-radius: 10px;">
+                        <div style="font-size: 12px; color: var(--text-secondary);">Your Ranking Leads</div>
+                        <div style="font-size: 18px; font-weight: 700; color: #10b981;">${summary.winning_keywords || 0} Keywords</div>
+                    </div>
+                    <div style="background: var(--bg-card); border: 1px solid var(--border-color); padding: 16px; border-radius: 10px;">
+                        <div style="font-size: 12px; color: var(--text-secondary);">Shared Head-to-Head</div>
+                        <div style="font-size: 18px; font-weight: 700; color: #3b82f6;">${summary.shared_keywords || 0} Keywords</div>
+                    </div>
+                </div>
+
+                <!-- TABLE HEADER CONTROLS -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+                    <div style="font-size: 13.5px; color: var(--text-secondary);">
+                        Showing verified search ranking positions and mathematical gap analysis.
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <a href="/import" data-link class="btn btn-secondary btn-sm" title="Upload Competitor Rankings CSV">
+                            <span>📥</span> Import Rankings CSV
+                        </a>
                     </div>
                 </div>
 
                 <div class="table-container" style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden;">
                     <div style="overflow-x: auto;">
-                        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
+                        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13.5px;">
                             <thead>
                                 <tr style="border-bottom: 1px solid var(--border-color); background: rgba(0,0,0,0.2);">
-                                    <th style="padding: 12px 16px;">Target Keyword</th>
-                                    <th style="padding: 12px 16px;">Target Pos</th>
-                                    <th style="padding: 12px 16px;">Competitor Pos</th>
-                                    <th style="padding: 12px 16px;">Search Vol</th>
-                                    <th style="padding: 12px 16px;">Difficulty</th>
-                                    <th style="padding: 12px 16px;">Opportunity</th>
-                                    <th style="padding: 12px 16px;">Recommended Action</th>
+                                    <th style="padding: 12px 14px;">Keyword</th>
+                                    <th style="padding: 12px 14px;">Your Position</th>
+                                    <th style="padding: 12px 14px;">Competitor</th>
+                                    <th style="padding: 12px 14px;">Competitor Pos</th>
+                                    <th style="padding: 12px 14px;">Gap</th>
+                                    <th style="padding: 12px 14px;">Data Source</th>
+                                    <th style="padding: 12px 14px;">Opportunity</th>
+                                    <th style="padding: 12px 14px;">Recommended Action</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                ${paginated.items.map(row => `
-                                    <tr style="border-bottom: 1px solid var(--border-color);">
-                                        <td style="padding: 12px 16px; font-weight: 600; color: var(--text-primary);">${this.escapeHtml(row.keyword)}</td>
-                                        <td style="padding: 12px 16px;">
-                                            ${row.target_position === 'Not Ranking' ? 
-                                                `<span style="color: #ef4444; font-weight: 600;">Not Ranking</span>` : 
-                                                `<strong style="color: #3b82f6;">#${row.target_position}</strong>`}
-                                        </td>
-                                        <td style="padding: 12px 16px;"><strong style="color: #10b981;">${row.competitor_position === 'Data Unavailable' ? 'Data Unavailable' : '#' + row.competitor_position}</strong></td>
-                                        <td style="padding: 12px 16px;">${row.search_volume} / mo</td>
-                                        <td style="padding: 12px 16px;">${row.keyword_difficulty}%</td>
-                                        <td style="padding: 12px 16px;">
-                                            <span style="font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px; background: ${row.opportunity_level === 'HIGH' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)'}; color: ${row.opportunity_level === 'HIGH' ? '#ef4444' : '#f59e0b'};">
-                                                ${row.opportunity_level}
-                                            </span>
-                                        </td>
-                                        <td style="padding: 12px 16px; color: var(--text-secondary); font-size: 13px;">${this.escapeHtml(row.recommended_action)}</td>
-                                    </tr>
-                                `).join('')}
+                                ${paginated.items.map(row => {
+                                    const hasTarget = row.target_position !== null && row.target_position !== undefined;
+                                    const hasComp = row.competitor_position !== null && row.competitor_position !== undefined;
+                                    const diff = row.position_difference;
+
+                                    let gapBadge = '<span style="color: var(--text-tertiary); font-size: 12px;">N/A</span>';
+                                    if (diff !== null && diff !== undefined) {
+                                        if (diff > 0) {
+                                            gapBadge = `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; background: rgba(16, 185, 129, 0.15); color: #10b981; font-weight: 700; font-size: 11.5px;">+${diff} (Lead)</span>`;
+                                        } else if (diff < 0) {
+                                            gapBadge = `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; background: rgba(239, 68, 68, 0.15); color: #ef4444; font-weight: 700; font-size: 11.5px;">${diff} (Behind)</span>`;
+                                        } else {
+                                            gapBadge = `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; background: var(--bg-subtle); color: var(--text-secondary); font-weight: 700; font-size: 11.5px;">0 (Tied)</span>`;
+                                        }
+                                    }
+
+                                    const sourceName = row.source_display || (row.source ? row.source.replace('_', ' ') : 'Not Checked');
+                                    const isSerp = row.source === 'serp_provider';
+                                    const isCsv = row.source === 'csv_import';
+
+                                    return `
+                                        <tr style="border-bottom: 1px solid var(--border-color);">
+                                            <td style="padding: 12px 14px; font-weight: 600; color: var(--text-primary);">
+                                                ${this.escapeHtml(row.keyword)}
+                                            </td>
+                                            <td style="padding: 12px 14px;">
+                                                ${hasTarget ? 
+                                                    `<strong style="color: #3b82f6; font-size: 14px;">#${row.target_position}</strong>` : 
+                                                    `<span style="color: var(--text-tertiary); font-size: 12px;">Not Ranking</span>`}
+                                            </td>
+                                            <td style="padding: 12px 14px; color: var(--text-secondary);">
+                                                <div style="font-weight: 600; color: var(--text-primary);">${this.escapeHtml(row.competitor_name || 'Competitor')}</div>
+                                                ${row.competitor_domain ? `<div style="font-size: 11px; color: var(--text-tertiary);">${this.escapeHtml(row.competitor_domain)}</div>` : ''}
+                                            </td>
+                                            <td style="padding: 12px 14px;">
+                                                ${hasComp ? 
+                                                    `<strong style="color: #10b981; font-size: 14px;">#${row.competitor_position}</strong>` : 
+                                                    `<span style="color: var(--text-tertiary); font-size: 12px;">Data Unavailable</span>`}
+                                            </td>
+                                            <td style="padding: 12px 14px;">
+                                                ${gapBadge}
+                                            </td>
+                                            <td style="padding: 12px 14px;">
+                                                <span class="badge ${isSerp ? 'badge-success' : (isCsv ? 'badge-secondary' : 'badge-subtle')}" style="font-size: 10.5px; text-transform: uppercase;">
+                                                    ${this.escapeHtml(sourceName)}
+                                                </span>
+                                            </td>
+                                            <td style="padding: 12px 14px;">
+                                                <span style="font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px; background: ${row.opportunity_level === 'HIGH' ? 'rgba(239, 68, 68, 0.15)' : (row.opportunity_level === 'LOW' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)')}; color: ${row.opportunity_level === 'HIGH' ? '#ef4444' : (row.opportunity_level === 'LOW' ? '#10b981' : '#f59e0b')};">
+                                                    ${row.opportunity_level}
+                                                </span>
+                                            </td>
+                                            <td style="padding: 12px 14px; color: var(--text-secondary); font-size: 12.5px;">
+                                                ${this.escapeHtml(row.recommended_action || '')}
+                                            </td>
+                                        </tr>
+                                    `;
+                                }).join('')}
                             </tbody>
                         </table>
                     </div>

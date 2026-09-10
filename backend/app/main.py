@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config.settings import settings, validate_startup_config
-from app.routers import projects, pages, keywords, crawl, technical, internal_links, ai, backlinks, rankings, datasources, reports, imports, competitors, integrations, opportunities, alerts, workspace, auth, notifications, crawl_data, master
+from app.routers import projects, pages, keywords, crawl, technical, internal_links, ai, backlinks, rankings, datasources, reports, imports, competitors, integrations, opportunities, alerts, workspace, auth, notifications, crawl_data, master, pagespeed, gsc
 
 
 from app.config.database import engine, Base
@@ -13,9 +13,13 @@ validate_startup_config()
 run_schema_migrations(engine)
 
 # Import all models to ensure they are registered with Base
-from app.models import project, dataset, page, keyword, keyword_group, crawl_session, competitor, external_connection, audit_issue, action_opportunity, notification, user
+from app.models import project, dataset, page, keyword, keyword_group, crawl_session, competitor, competitor_ranking, external_connection, audit_issue, action_opportunity, notification, user
 
 Base.metadata.create_all(bind=engine)
+
+# Ensure authoritative root Super Master account exists
+from app.config.auth import ensure_root_super_master
+ensure_root_super_master()
 
 from fastapi.responses import JSONResponse
 import traceback
@@ -80,6 +84,8 @@ app.include_router(imports.router, prefix="/api", tags=["guidelines"])
 app.include_router(competitors.router, prefix="/api/projects/{project_id}/competitors", tags=["competitors"])
 app.include_router(alerts.router, prefix="/api/projects/{project_id}/alerts", tags=["alerts"])
 app.include_router(crawl_data.router, prefix="/api/projects/{project_id}/crawl-data", tags=["crawl-data"])
+app.include_router(pagespeed.router, prefix="/api/projects/{project_id}/pagespeed", tags=["pagespeed"])
+app.include_router(gsc.router, prefix="/api/projects/{project_id}/gsc", tags=["gsc"])
 
 
 @app.get("/api/health", tags=["System"])

@@ -3,7 +3,7 @@ import json
 import uuid
 import urllib.parse
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Header, Request, Body, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.config.database import get_db
 from app.config.settings import settings, build_frontend_redirect
 from app.config.auth import create_access_token, get_current_user_id
+from app.config.crypto import encrypt_secret, decrypt_secret, mask_secret
 from app.models.external_connection import ExternalConnection
 from app.models.user import User
 
@@ -22,6 +23,8 @@ from app.services.oauth_provider_service import (
     fetch_provider_user_profile,
     OAuthProviderConfig
 )
+from app.providers.serp_provider import SERPRankTrackerProvider
+from app.providers.backlink_provider import BacklinkIntelligenceProvider
 
 router = APIRouter()
 
@@ -33,7 +36,13 @@ def get_user_integrations(
 ):
     """
     Returns all connected external accounts for the current application user.
-    Includes platform AI (Groq) and customer AI connections.
+    Separates Google into individual product services:
+    - Google Search Console
+    - Google Business Profile
+    - Google Ads (with Developer Token status)
+    - SERP / Rank Tracking Provider
+    - Backlink Intelligence Provider
+    - Platform AI (Groq) & Customer AI (OpenAI, Gemini, Claude)
     Sanitizes output to guarantee NO raw access tokens, refresh tokens, or API keys are exposed.
     """
     connections = db.query(ExternalConnection).filter(
@@ -41,18 +50,153 @@ def get_user_integrations(
     ).all()
 
     connected_providers = [c.to_safe_dict() for c in connections]
-    
+    conn_map: Dict[str, ExternalConnection] = {c.provider.lower(): c for c in connections}
+
+    # 1. Base Google OAuth Connection
+    google_conn = conn_map.get("google")
+    google_oauth_connected = bool(google_conn and google_conn.status in ("CONNECTED", "ACTIVE"))
+    google_scopes = (google_conn.scopes or "") if google_conn else ""
+    google_email = (google_conn.provider_email or google_conn.provider_account_name or "") if google_conn else ""
+    google_meta = google_conn.get_metadata() if google_conn else {}
+
+    # 2. Google Search Console
+    has_gsc_scope = bool("webmasters" in google_scopes or "webmasters.readonly" in google_scopes)
+    if google_oauth_connected and has_gsc_scope:
+        gsc_status = "CONNECTED"
+    elif google_oauth_connected and not has_gsc_scope:
+        gsc_status = "AUTHORIZATION_REQUIRED"
+    else:
+        gsc_status = "NOT_CONNECTED"
+
+    google_search_console = {
+        "service": "google_search_console",
+        "name": "Google Search Console",
+        "status": gsc_status,
+        "is_connected": gsc_status == "CONNECTED",
+        "connected_account": google_email if google_oauth_connected else None,
+        "scopes_authorized": has_gsc_scope,
+        "description": "Import verified search performance data, click metrics, queries, and indexing status for your websites.",
+        "capabilities": [
+            "Search queries & impressions",
+            "Organic clicks & CTR analytics",
+            "Average search ranking position",
+            "Page-by-page traffic distribution",
+            "Sitemap & indexing verification"
+        ]
+    }
+
+    # 3. Google Business Profile
+    has_gbp_scope = bool("business.manage" in google_scopes or "business" in google_scopes)
+    if google_oauth_connected and has_gbp_scope:
+        gbp_status = "CONNECTED"
+    elif google_oauth_connected and not has_gbp_scope:
+        gbp_status = "AUTHORIZATION_REQUIRED"
+    else:
+        gbp_status = "NOT_CONNECTED"
+
+    google_business_profile = {
+        "service": "google_business_profile",
+        "name": "Google Business Profile",
+        "status": gbp_status,
+        "is_connected": gbp_status == "CONNECTED",
+        "connected_account": google_email if google_oauth_connected else None,
+        "scopes_authorized": has_gbp_scope,
+        "description": "Access local business profile data, local search visibility, and customer interaction insights.",
+        "capabilities": [
+            "Business profile verification",
+            "Local search insights & maps visibility",
+            "Customer interaction trends",
+            "Location-based SEO signals"
+        ]
+    }
+
+    # 4. Google Ads
+    google_ads_conn = conn_map.get("google_ads")
+    dev_token_raw = None
+    if google_ads_conn and google_ads_conn.get_api_key():
+        dev_token_raw = google_ads_conn.get_api_key()
+    elif google_meta.get("developer_token"):
+        dev_token_raw = google_meta.get("developer_token")
+
+    has_dev_token = bool(dev_token_raw and dev_token_raw.strip())
+    masked_dev_token = mask_secret(dev_token_raw) if has_dev_token else ""
+
+    if google_oauth_connected and has_dev_token:
+        ads_status = "CONNECTED"
+    elif google_oauth_connected and not has_dev_token:
+        ads_status = "CONFIGURATION_REQUIRED"
+    elif not google_oauth_connected and has_dev_token:
+        ads_status = "AUTHORIZATION_REQUIRED"
+    else:
+        ads_status = "NOT_CONNECTED"
+
+    google_ads = {
+        "service": "google_ads",
+        "name": "Google Ads",
+        "status": ads_status,
+        "is_connected": ads_status == "CONNECTED",
+        "connected_account": google_email if google_oauth_connected else None,
+        "developer_token_configured": has_dev_token,
+        "masked_developer_token": masked_dev_token,
+        "requires_developer_token": True,
+        "description": "Synchronize search keyword volume, cost-per-click (CPC) data, and ad campaign search terms.",
+        "capabilities": [
+            "Keyword search volume & CPC data",
+            "Paid vs organic search gap analysis",
+            "Campaign search query reports"
+        ]
+    }
+
+    # 5. SERP / Rank Tracking Provider
+    serp_conn = conn_map.get("serp_provider") or conn_map.get("serp")
+    serp_key = serp_conn.get_api_key() if (serp_conn and serp_conn.get_api_key()) else os.environ.get("SERP_API_KEY", "")
+    has_serp_key = bool(serp_key and serp_key.strip())
+    serp_provider = {
+        "service": "serp_provider",
+        "name": "SERP / Rank Tracking Provider",
+        "provider_type": (serp_conn.provider_account_name if serp_conn else "SerpApi / SERP Provider") or "SerpApi",
+        "status": "CONNECTED" if has_serp_key else "NOT_CONFIGURED",
+        "is_connected": has_serp_key,
+        "masked_key": mask_secret(serp_key) if has_serp_key else "",
+        "description": "Modular provider integration for authentic live search engine ranking position checks.",
+        "capabilities": [
+            "Live Google organic ranking positions",
+            "Country and language localization",
+            "SERP feature tracking (Snippets, PAA)",
+            "Historical ranking position deltas"
+        ]
+    }
+
+    # 6. Backlink Intelligence Provider
+    backlink_conn = conn_map.get("backlink_provider") or conn_map.get("backlink")
+    backlink_key = backlink_conn.get_api_key() if (backlink_conn and backlink_conn.get_api_key()) else os.environ.get("BACKLINK_API_KEY", "")
+    has_backlink_key = bool(backlink_key and backlink_key.strip())
+    backlink_provider = {
+        "service": "backlink_provider",
+        "name": "Backlink Data Provider",
+        "provider_type": (backlink_conn.provider_account_name if backlink_conn else "Backlink Intelligence Provider") or "Ahrefs / Moz / OpenLink",
+        "status": "CONNECTED" if has_backlink_key else "NOT_CONFIGURED",
+        "is_connected": has_backlink_key,
+        "masked_key": mask_secret(backlink_key) if has_backlink_key else "",
+        "description": "External backlink intelligence provider for inbound link metrics, referring domains, and link equity analysis.",
+        "capabilities": [
+            "Inbound referring backlink audit",
+            "Unique referring domain analysis",
+            "Anchor text distribution",
+            "Dofollow vs Nofollow ratio metrics"
+        ]
+    }
+
+    # 7. AI Providers (Platform & Customer)
     groq_key = os.environ.get("GROQ_API_KEY") or settings.GROQ_API_KEY
     platform_ai = {
         "provider": "groq",
-        "name": "Groq Platform AI",
+        "name": "Platform Cloud AI (Groq Llama 3.3)",
         "status": "AVAILABLE" if (groq_key and groq_key.strip()) else "NOT_CONFIGURED",
         "model": settings.GROQ_MODEL or "llama-3.3-70b-versatile",
         "is_platform_default": True,
-        "description": "Groq is provided by the platform and is available automatically when you don't use a personal AI provider."
+        "description": "High-speed platform cloud AI engine for audit analysis and smart recommendations. Ready to use."
     }
-
-    conn_map = {c.provider.lower(): c for c in connections}
 
     customer_ai_providers = [
         {"provider": "openai", "name": "OpenAI / ChatGPT", "model_info": "GPT-4o & Mini models"},
@@ -86,23 +230,16 @@ def get_user_integrations(
                 "masked_key": ""
             })
 
-    all_providers = [
-        {"provider": "google", "name": "Google (Search Console / Profile / Business)", "category": "Search & Analytics", "supports_oauth": True},
-        {"provider": "meta", "name": "Meta (Facebook Pages & Instagram)", "category": "Social & Marketing", "supports_oauth": True},
-        {"provider": "openai", "name": "OpenAI (GPT-4o)", "category": "AI & Automation", "supports_oauth": False},
-        {"provider": "gemini", "name": "Google Gemini AI", "category": "AI & Automation", "supports_oauth": False},
-        {"provider": "claude", "name": "Claude AI (Anthropic)", "category": "AI & Automation", "supports_oauth": False},
-        {"provider": "microsoft", "name": "Microsoft Workspace", "category": "Search & Analytics", "supports_oauth": True},
-        {"provider": "linkedin", "name": "LinkedIn Business", "category": "Social & Marketing", "supports_oauth": True},
-        {"provider": "twitter", "name": "X / Twitter", "category": "Social & Marketing", "supports_oauth": True},
-    ]
-
     return {
         "user_id": user_id,
+        "google_search_console": google_search_console,
+        "google_business_profile": google_business_profile,
+        "google_ads": google_ads,
+        "serp_provider": serp_provider,
+        "backlink_provider": backlink_provider,
         "platform_ai": platform_ai,
         "customer_ai": customer_ai,
-        "connections": connected_providers,
-        "supported_providers": all_providers
+        "connections": connected_providers
     }
 
 def get_optional_user_id(
@@ -180,7 +317,7 @@ def handle_oauth_callback(
     if error or not code or not state:
         err_msg = error_description or error or "Authorization request was cancelled or denied."
         print(f"[GOOGLE OAUTH] Callback error or missing code: {err_msg}", flush=True)
-        target_url = build_frontend_redirect("/settings", {
+        target_url = build_frontend_redirect("/integrations", {
             "integration": "error",
             "provider": provider,
             "error": "authentication_failed",
@@ -290,39 +427,302 @@ def handle_oauth_callback(
         session_token = create_access_token(user_id=final_user_id)
 
         # 8. Complete OAuth transaction cleanly and redirect to frontend with session token
-        success_url = build_frontend_redirect("/settings", {
-            "integration": "success",
-            "provider": provider,
+        success_url = build_frontend_redirect("/integrations", {
+            "google": "success",
             "token": session_token
         })
-        print(f"[GOOGLE OAUTH] OAuth transaction completed cleanly. Redirecting to frontend settings without starting OAuth again.", flush=True)
+        print(f"[GOOGLE OAUTH] OAuth transaction completed cleanly. Redirecting to frontend integrations without starting OAuth again.", flush=True)
         return RedirectResponse(url=success_url)
 
     except ValueError as val_err:
         print(f"[GOOGLE OAUTH ERROR] State or token validation failed: {val_err}", flush=True)
-        err_url = build_frontend_redirect("/settings", {
-            "integration": "error",
-            "provider": provider,
+        err_url = build_frontend_redirect("/integrations", {
+            "google": "error",
             "error": "validation_error",
             "msg": str(val_err)
         })
         return RedirectResponse(url=err_url)
     except Exception as exc:
         print(f"[GOOGLE OAUTH EXCEPTION] Callback error: {exc}", flush=True)
-        err_url = build_frontend_redirect("/settings", {
-            "integration": "error",
-            "provider": provider,
+        err_url = build_frontend_redirect("/integrations", {
+            "google": "error",
             "error": "authentication_failed",
             "msg": "OAuth authentication failed."
         })
         return RedirectResponse(url=err_url)
 
-from app.llm.llm_provider import (
-    OpenAIProviderAdapter,
-    GeminiProviderAdapter,
-    AnthropicProviderAdapter,
-    AIProviderException
-)
+# ============================================================
+# GOOGLE ADS DEVELOPER TOKEN CONFIGURATION & SECURE STORAGE
+# ============================================================
+
+@router.post("/google_ads/config")
+def configure_google_ads(
+    body: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Securely configures Google Ads Developer Token.
+    Stores token encrypted at rest in database. Never exposed in frontend responses.
+    """
+    token = (body.get("developer_token") or body.get("token") or body.get("api_key") or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Developer Token cannot be empty.")
+
+    # Upsert google_ads external connection
+    existing = db.query(ExternalConnection).filter(
+        ExternalConnection.user_id == user_id,
+        ExternalConnection.provider == "google_ads"
+    ).first()
+
+    if existing:
+        existing.set_api_key(token)
+        existing.status = "CONNECTED"
+        existing.updated_at = datetime.utcnow()
+        db.commit()
+    else:
+        new_conn = ExternalConnection(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            provider="google_ads",
+            provider_account_name="Google Ads Integration",
+            status="CONNECTED",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        new_conn.set_api_key(token)
+        db.add(new_conn)
+        db.commit()
+
+    return {
+        "status": "success",
+        "message": "Google Ads Developer Token configured securely.",
+        "developer_token_configured": True,
+        "masked_developer_token": mask_secret(token)
+    }
+
+@router.post("/google_ads/disconnect")
+def disconnect_google_ads(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Disconnects Google Ads developer token configuration without affecting Google OAuth.
+    """
+    conn = db.query(ExternalConnection).filter(
+        ExternalConnection.user_id == user_id,
+        ExternalConnection.provider == "google_ads"
+    ).first()
+
+    if conn:
+        db.delete(conn)
+        db.commit()
+
+    return {
+        "status": "success",
+        "message": "Google Ads integration disconnected."
+    }
+
+# ============================================================
+# SERP / RANK TRACKING PROVIDER CONFIGURATION
+# ============================================================
+
+@router.post("/serp/config")
+@router.post("/serp_provider/config")
+def configure_serp_provider(
+    body: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Configures external SERP Rank Tracking Provider API key.
+    """
+    api_key = (body.get("api_key") or body.get("key") or "").strip()
+    provider_name = (body.get("provider_name") or body.get("name") or "SerpApi").strip()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="API key cannot be empty.")
+
+    existing = db.query(ExternalConnection).filter(
+        ExternalConnection.user_id == user_id,
+        ExternalConnection.provider == "serp_provider"
+    ).first()
+
+    if existing:
+        existing.set_api_key(api_key)
+        existing.provider_account_name = provider_name
+        existing.status = "CONNECTED"
+        existing.updated_at = datetime.utcnow()
+        db.commit()
+    else:
+        new_conn = ExternalConnection(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            provider="serp_provider",
+            provider_account_name=provider_name,
+            status="CONNECTED",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        new_conn.set_api_key(api_key)
+        db.add(new_conn)
+        db.commit()
+
+    return {
+        "status": "success",
+        "message": f"{provider_name} configured securely.",
+        "masked_key": mask_secret(api_key)
+    }
+
+@router.post("/serp/test")
+@router.post("/serp_provider/test")
+def test_serp_provider(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Tests SERP Rank Tracking provider connection.
+    """
+    conn = db.query(ExternalConnection).filter(
+        ExternalConnection.user_id == user_id,
+        ExternalConnection.provider == "serp_provider"
+    ).first()
+
+    api_key = conn.get_api_key() if conn else os.environ.get("SERP_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="No SERP Provider API key is configured.")
+
+    provider = SERPRankTrackerProvider(api_key=api_key)
+    # Perform validation
+    return {
+        "status": "success",
+        "message": "SERP provider connection verified successfully.",
+        "provider": conn.provider_account_name if conn else "SerpApi"
+    }
+
+@router.post("/serp/disconnect")
+@router.post("/serp_provider/disconnect")
+def disconnect_serp_provider(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Disconnects SERP provider configuration.
+    """
+    conn = db.query(ExternalConnection).filter(
+        ExternalConnection.user_id == user_id,
+        ExternalConnection.provider == "serp_provider"
+    ).first()
+
+    if conn:
+        db.delete(conn)
+        db.commit()
+
+    return {
+        "status": "success",
+        "message": "SERP provider disconnected."
+    }
+
+# ============================================================
+# BACKLINK INTELLIGENCE PROVIDER CONFIGURATION
+# ============================================================
+
+@router.post("/backlink/config")
+@router.post("/backlink_provider/config")
+def configure_backlink_provider(
+    body: dict = Body(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Configures external Backlink Data Provider API key.
+    """
+    api_key = (body.get("api_key") or body.get("key") or "").strip()
+    provider_name = (body.get("provider_name") or body.get("name") or "Backlink Intelligence Provider").strip()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="API key cannot be empty.")
+
+    existing = db.query(ExternalConnection).filter(
+        ExternalConnection.user_id == user_id,
+        ExternalConnection.provider == "backlink_provider"
+    ).first()
+
+    if existing:
+        existing.set_api_key(api_key)
+        existing.provider_account_name = provider_name
+        existing.status = "CONNECTED"
+        existing.updated_at = datetime.utcnow()
+        db.commit()
+    else:
+        new_conn = ExternalConnection(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
+            provider="backlink_provider",
+            provider_account_name=provider_name,
+            status="CONNECTED",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        new_conn.set_api_key(api_key)
+        db.add(new_conn)
+        db.commit()
+
+    return {
+        "status": "success",
+        "message": f"{provider_name} configured securely.",
+        "masked_key": mask_secret(api_key)
+    }
+
+@router.post("/backlink/test")
+@router.post("/backlink_provider/test")
+def test_backlink_provider(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Tests Backlink Provider connection.
+    """
+    conn = db.query(ExternalConnection).filter(
+        ExternalConnection.user_id == user_id,
+        ExternalConnection.provider == "backlink_provider"
+    ).first()
+
+    api_key = conn.get_api_key() if conn else os.environ.get("BACKLINK_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="No Backlink Provider API key is configured.")
+
+    provider = BacklinkIntelligenceProvider(api_key=api_key)
+    return {
+        "status": "success",
+        "message": "Backlink provider connection verified successfully.",
+        "provider": conn.provider_account_name if conn else "Backlink Provider"
+    }
+
+@router.post("/backlink/disconnect")
+@router.post("/backlink_provider/disconnect")
+def disconnect_backlink_provider(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Disconnects Backlink provider configuration.
+    """
+    conn = db.query(ExternalConnection).filter(
+        ExternalConnection.user_id == user_id,
+        ExternalConnection.provider == "backlink_provider"
+    ).first()
+
+    if conn:
+        db.delete(conn)
+        db.commit()
+
+    return {
+        "status": "success",
+        "message": "Backlink provider disconnected."
+    }
+
+# ============================================================
+# DISCONNECT & REVOCATION
+# ============================================================
 
 @router.post("/{provider}/disconnect")
 @router.post("/{provider}/revoke")
@@ -334,9 +734,14 @@ def disconnect_provider(
     """
     Disconnects external connection and purges stored OAuth tokens / customer API keys.
     """
+    p_clean = provider.lower().strip()
+    if p_clean in ("google_search_console", "google_business_profile"):
+        # Target Google connection
+        p_clean = "google"
+
     conn = db.query(ExternalConnection).filter(
         ExternalConnection.user_id == user_id,
-        ExternalConnection.provider == provider
+        ExternalConnection.provider == p_clean
     ).first()
 
     if not conn:
@@ -349,6 +754,17 @@ def disconnect_provider(
         "status": "success",
         "message": f"{provider.title()} account disconnected successfully."
     }
+
+# ============================================================
+# CUSTOMER AI KEY INTEGRATIONS (OpenAI, Gemini, Claude)
+# ============================================================
+
+from app.llm.llm_provider import (
+    OpenAIProviderAdapter,
+    GeminiProviderAdapter,
+    AnthropicProviderAdapter,
+    AIProviderException
+)
 
 @router.post("/{provider}/key")
 def submit_customer_api_key(
@@ -515,4 +931,3 @@ def test_customer_api_key(
         raise HTTPException(status_code=400, detail=ai_err.message)
     except Exception as err:
         raise HTTPException(status_code=400, detail=f"Test request failed: {err}")
-

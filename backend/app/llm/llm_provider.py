@@ -411,6 +411,9 @@ class AnthropicProviderAdapter(LLMProvider):
         raise AIProviderException("No compatible Anthropic model available.", status_code=404, code="NO_MODEL_AVAILABLE")
 
 
+_GROQ_MODELS_CACHE = {}
+
+
 class GroqProviderAdapter(LLMProvider):
     def __init__(self, api_key: str, model: Optional[str] = None):
         if not api_key or not api_key.strip():
@@ -419,11 +422,22 @@ class GroqProviderAdapter(LLMProvider):
         g_model = (model or os.environ.get("GROQ_MODEL") or "").strip()
         self.model = g_model if g_model else None
 
-    def fetch_available_models(self, timeout: float = 8.0) -> List[Dict[str, Any]]:
+    def fetch_available_models(self, timeout: float = 1.5) -> List[Dict[str, Any]]:
         """
         Queries official Groq GET https://api.groq.com/openai/v1/models endpoint using self.api_key.
-        Discovers models active for text/chat completions, excluding audio or prompt-guard models.
+        Caches results for 10 minutes to ensure instant response times.
         """
+        now = time.time()
+        cache_entry = _GROQ_MODELS_CACHE.get(self.api_key)
+        if cache_entry and (now - cache_entry["ts"] < 600):
+            return cache_entry["models"]
+
+        fallback_models = [
+            {"id": "llama-3.3-70b-versatile", "name": "llama-3.3-70b-versatile", "owned_by": "Groq"},
+            {"id": "llama-3.1-8b-instant", "name": "llama-3.1-8b-instant", "owned_by": "Groq"},
+            {"id": "mixtral-8x7b-32768", "name": "mixtral-8x7b-32768", "owned_by": "Groq"},
+        ]
+
         endpoint = "https://api.groq.com/openai/v1/models"
         req = urllib.request.Request(
             endpoint,
@@ -441,24 +455,26 @@ class GroqProviderAdapter(LLMProvider):
                 for m in models_data:
                     m_id = m.get("id", "")
                     active = m.get("active", True)
-                    # Filter out whisper audio models, prompt guards, and inactive models
                     if active and m_id and not any(sub in m_id.lower() for sub in ["whisper", "prompt-guard", "safeguard"]):
                         valid_models.append({
                             "id": m_id,
                             "name": m_id,
                             "owned_by": m.get("owned_by", "Groq")
                         })
-                return valid_models
+                if valid_models:
+                    _GROQ_MODELS_CACHE[self.api_key] = {"ts": now, "models": valid_models}
+                    return valid_models
+                return fallback_models
         except urllib.error.HTTPError as e:
             if e.code in (401, 403):
                 raise AIProviderException("Groq API key is invalid or unauthorized.", status_code=401, code="AUTH_FAILED")
             elif e.code == 429:
                 raise AIProviderException("Groq API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
             logger.warning(f"Failed to query Groq models endpoint (HTTP {e.code})")
-            return []
+            return fallback_models
         except Exception as e:
             logger.warning(f"Error querying Groq models endpoint: {e}")
-            return []
+            return fallback_models
 
     def _get_model_candidates(self) -> List[str]:
         candidates = []

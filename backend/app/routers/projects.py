@@ -182,6 +182,24 @@ def get_projects(
             continue
         
         metrics = get_project_metrics(p.domain, project_id=p.id)
+
+        # Derive a rich crawl_status label and health_score for the project list view
+        has_crawled = metrics.get("has_crawled", False)
+        raw_health = metrics.get("health_score")
+        critical_cnt = metrics.get("critical_issues", 0)
+
+        if has_crawled and raw_health is not None:
+            if raw_health >= 85 and critical_cnt == 0:
+                status_label = "Healthy"
+            elif raw_health < 70 or critical_cnt > 3:
+                status_label = "Critical"
+            else:
+                status_label = "Needs Attention"
+        elif has_crawled:
+            status_label = "Crawled"
+        else:
+            status_label = "Never Crawled"
+
         p_dict = {
             "id": p.id,
             "name": p.name,
@@ -194,13 +212,15 @@ def get_projects(
             "notes": p.notes or "",
             "created_at": p.created_at.isoformat() if p.created_at else None,
             "updated_at": p.updated_at.isoformat() if p.updated_at else None,
-            "user_role": m.role, # OWNER or MEMBER
+            "user_role": m.role,  # OWNER or MEMBER
             "role_label": "Lead" if m.role == "OWNER" else "Team Member",
+            "crawl_status": status_label,
             **metrics
         }
         result.append(p_dict)
 
     return result
+
 
 @router.post("")
 @router.post("/")

@@ -2,7 +2,8 @@ import os
 import json
 import time
 import urllib.request
-import urllib.error
+import socket
+import urllib.parse
 from typing import Dict, Any, List, Optional
 
 from app.config.logger import get_logger
@@ -14,6 +15,18 @@ DEFAULT_OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11
 DEFAULT_OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
 
 
+def _is_local_port_open(url_str: str, timeout: float = 0.1) -> bool:
+    try:
+        parsed = urllib.parse.urlparse(url_str)
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or 11434
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(timeout)
+            return sock.connect_ex((host, port)) == 0
+    except Exception:
+        return False
+
+
 class OllamaProviderAdapter(LLMProvider):
     provider_name = "ollama"
 
@@ -22,8 +35,12 @@ class OllamaProviderAdapter(LLMProvider):
         self.base_url = url.rstrip("/")
         self.model = (model or os.environ.get("OLLAMA_MODEL") or DEFAULT_OLLAMA_MODEL).strip()
 
-    def get_installed_models(self, timeout: float = 1.5) -> List[Dict[str, Any]]:
+    def get_installed_models(self, timeout: float = 0.5) -> List[Dict[str, Any]]:
         """Queries local Ollama /api/tags endpoint to discover installed models."""
+        if any(h in self.base_url for h in ("localhost", "127.0.0.1", "::1")):
+            if not _is_local_port_open(self.base_url, timeout=0.1):
+                return []
+
         endpoint = f"{self.base_url}/api/tags"
         req = urllib.request.Request(endpoint, headers={"User-Agent": "SEO-Intelligence-Platform/1.0"}, method="GET")
         try:

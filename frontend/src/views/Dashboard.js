@@ -522,7 +522,7 @@ export class Dashboard {
         }
 
         if (this.statusFilter !== 'all') {
-            list = list.filter(p => (p.status || 'Never Crawled') === this.statusFilter);
+            list = list.filter(p => (p.crawl_status || p.status || 'Never Crawled') === this.statusFilter);
         }
 
         if (this.sortOption === 'health_desc') {
@@ -532,7 +532,7 @@ export class Dashboard {
         } else if (this.sortOption === 'name_asc') {
             list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
         } else if (this.sortOption === 'issues_desc') {
-            list.sort((a, b) => (a.critical_issues_count || 0) - (b.critical_issues_count || 0));
+            list.sort((a, b) => (b.critical_issues || b.critical_issues_count || 0) - (a.critical_issues || a.critical_issues_count || 0));
         }
 
         if (list.length === 0) {
@@ -547,7 +547,7 @@ export class Dashboard {
         const rows = list.map(p => {
             const hScore = (p.health_score !== undefined && p.health_score !== null) ? p.health_score : null;
             const healthColor = hScore !== null ? (hScore >= 80 ? '#10b981' : (hScore >= 60 ? '#f59e0b' : '#ef4444')) : 'var(--text-tertiary)';
-            const st = p.status || 'Never Scanned';
+            const st = p.crawl_status || p.status || 'Never Scanned';
             const badgeClass = st === 'Healthy' ? 'badge-success' : (st === 'Needs Attention' ? 'badge-warning' : (st === 'Critical' ? 'badge-critical' : 'badge-secondary'));
 
             return `
@@ -568,9 +568,9 @@ export class Dashboard {
                     </td>
                     <td style="padding: 14px 20px; font-weight: 600;">${p.pages_crawled || 0}</td>
                     <td style="padding: 14px 20px;">
-                        <span style="font-weight: 700; color: ${(p.critical_issues_count || 0) > 0 ? '#ef4444' : '#10b981'};">${p.critical_issues_count || 0}</span>
+                        <span style="font-weight: 700; color: ${(p.critical_issues || p.critical_issues_count || 0) > 0 ? '#ef4444' : '#10b981'};">${p.critical_issues || p.critical_issues_count || 0}</span>
                     </td>
-                    <td style="padding: 14px 20px; font-size: 12px; color: var(--text-secondary);">${p.last_crawled_at ? p.last_crawled_at.split('T')[0] : 'Never'}</td>
+                    <td style="padding: 14px 20px; font-size: 12px; color: var(--text-secondary);">${(p.last_crawl || p.last_crawled_at) ? (p.last_crawl || p.last_crawled_at).split('T')[0] : 'Never'}</td>
                     <td style="padding: 14px 20px; text-align: right;">
                         <div style="display: flex; gap: 6px; justify-content: flex-end;">
                             <button class="btn btn-secondary btn-sm" onclick="window.startCrawlFromOverview('${p.id}', '${p.domain || p.url}')" style="font-size: 11px; padding: 4px 10px;">Scan My Website</button>

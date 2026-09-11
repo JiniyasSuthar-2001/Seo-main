@@ -321,6 +321,9 @@ export class Technical {
                 return `
                     <div class="category-card-item" 
                          data-category="${this.escapeHtml(c.category)}"
+                         tabindex="0"
+                         role="button"
+                         aria-label="Filter findings by ${this.escapeHtml(plainCatName)}"
                          style="border: ${isSelected ? '2px solid var(--primary)' : '1px solid var(--border)'}; box-shadow: ${isSelected ? '0 0 0 1px var(--primary)' : 'none'};">
                         
                         <!-- CARD CONTENT TOP & MIDDLE -->
@@ -545,51 +548,65 @@ export class Technical {
                     checksExplanation,
                     categoryTable,
                     domain: selectedProj.domain,
-                    onSelectCategory: (cat) => {
+                    onSelectCategory: async (cat) => {
                         this.selectedCategoryFilter = cat;
                         this.issuesPage = 1;
-                        this.mounted();
-                        setTimeout(() => {
-                            const section = document.getElementById('problems-we-found-section');
-                            if (section) section.scrollIntoView({ behavior: 'smooth' });
-                        }, 50);
+                        await this.mounted();
+                        this.scrollToProblemsFound(true);
                     }
                 });
             });
 
-            document.getElementById('kpi-problems-found')?.addEventListener('click', () => {
+            // Bind KPI Problems Found Click & Keydown
+            const handleProblemsFoundClick = async () => {
                 this.selectedCategoryFilter = 'all';
                 this.issuesPage = 1;
-                this.mounted();
-                setTimeout(() => {
-                    const section = document.getElementById('problems-we-found-section');
-                    if (section) {
-                        section.scrollIntoView({ behavior: 'smooth' });
-                        section.style.boxShadow = '0 0 0 2px var(--primary)';
-                        setTimeout(() => { section.style.boxShadow = 'none'; }, 1500);
-                    }
-                }, 50);
+                await this.mounted();
+                this.scrollToProblemsFound(true);
+            };
+            const kpiProblemsFoundEl = document.getElementById('kpi-problems-found');
+            kpiProblemsFoundEl?.addEventListener('click', handleProblemsFoundClick);
+            kpiProblemsFoundEl?.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleProblemsFoundClick();
+                }
             });
 
-            // Bind Category Card Click Events (FILTER / REVEAL INTERACTION)
+            // Bind Category Card Click & Keyboard Events (FILTER / REVEAL INTERACTION)
             container.querySelectorAll('.category-card-item').forEach(card => {
-                card.addEventListener('click', (e) => {
-                    const cat = e.currentTarget.getAttribute('data-category');
-                    if (this.selectedCategoryFilter.toLowerCase() === cat.toLowerCase()) {
+                const handleCategorySelection = async () => {
+                    const cat = card.getAttribute('data-category');
+                    if (this.selectedCategoryFilter.toLowerCase() === (cat || '').toLowerCase()) {
                         this.selectedCategoryFilter = 'all';
                     } else {
                         this.selectedCategoryFilter = cat;
                     }
                     this.issuesPage = 1;
-                    this.mounted();
+                    await this.mounted();
+                    this.scrollToProblemsFound(true);
+                };
+
+                card.addEventListener('click', (e) => {
+                    if (e.target.closest('.btn-open-sd-modal')) return;
+                    handleCategorySelection();
+                });
+
+                card.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        if (e.target.closest('.btn-open-sd-modal')) return;
+                        e.preventDefault();
+                        handleCategorySelection();
+                    }
                 });
             });
 
             // Bind Filter Reset Badge Click Event
-            document.getElementById('btn-reset-category-filter')?.addEventListener('click', () => {
+            document.getElementById('btn-reset-category-filter')?.addEventListener('click', async () => {
                 this.selectedCategoryFilter = 'all';
                 this.issuesPage = 1;
-                this.mounted();
+                await this.mounted();
+                this.scrollToProblemsFound(false);
             });
 
             // Bind Evidence Modal Triggers
@@ -630,6 +647,22 @@ export class Technical {
         } catch (e) {
             renderBackendOfflineState(container, `We couldn't load this information right now. Please try again.`, () => this.mounted());
         }
+    }
+
+    scrollToProblemsFound(highlight = true) {
+        requestAnimationFrame(() => {
+            const section = document.getElementById('problems-we-found-section');
+            if (section) {
+                section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                if (highlight) {
+                    section.style.boxShadow = '0 0 0 2px var(--primary)';
+                    setTimeout(() => {
+                        const sec = document.getElementById('problems-we-found-section');
+                        if (sec) sec.style.boxShadow = 'none';
+                    }, 1500);
+                }
+            }
+        });
     }
 
     escapeHtml(str) {

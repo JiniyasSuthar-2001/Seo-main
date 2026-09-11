@@ -70,5 +70,22 @@ export const crawlDataService = {
         a.click();
         a.remove();
         window.URL.revokeObjectURL(downloadUrl);
+    },
+
+    async getAISuggestion({ projectId, pageUrl, taskType, currentValue = null, issue = null, provider = null, model = null }) {
+        const id = resolveProjectId(projectId);
+        if (!id) throw new Error('No active project ID found.');
+
+        const payload = {
+            project_id: id,
+            page_url: pageUrl,
+            task_type: taskType,
+            current_value: currentValue,
+            issue: issue,
+            provider: provider,
+            model: model
+        };
+
+        return await apiClient.post('/api/ai/crawl-suggest', payload);
     }
 };

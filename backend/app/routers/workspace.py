@@ -204,12 +204,16 @@ def get_workspace_overview(
 
     return {
         "workspace_summary": {
+            "total_websites": total_projects,
             "total_projects": total_projects,
             "active_projects": active_projects,
             "total_crawls": total_crawls,
+            "total_crawled_pages": total_pages_crawled,
             "total_pages_crawled": total_pages_crawled,
+            "total_critical_issues": total_critical_issues,
             "critical_issues": total_critical_issues,
             "warnings": total_warnings,
+            "average_health_score": avg_health,
             "average_health": avg_health
         },
         "projects": projects_summary,

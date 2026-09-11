@@ -3,7 +3,7 @@ import json
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 
-from app.config.settings import settings
+from app.config.settings import settings, get_active_groq_key
 from app.config.logger import get_logger
 from app.models.external_connection import ExternalConnection
 from app.llm.llm_provider import (
@@ -44,7 +44,7 @@ class AIService:
         ollama_adapter = OllamaProviderAdapter()
         ollama_status = {"available": False, "provider": "ollama", "name": "Ollama Local AI"}
         try:
-            o_test = ollama_adapter.test_connection(timeout=3.0)
+            o_test = ollama_adapter.test_connection(timeout=0.2)
             ollama_status.update({
                 "available": True,
                 "status": "AVAILABLE",
@@ -70,14 +70,14 @@ class AIService:
             })
 
         # 2. Groq Status
-        groq_key = os.environ.get("GROQ_API_KEY") or settings.GROQ_API_KEY
-        groq_configured = bool(groq_key and groq_key.strip())
+        groq_key = get_active_groq_key()
+        groq_configured = bool(groq_key)
         groq_models = []
-        active_groq_model = settings.GROQ_MODEL or "openai/gpt-oss-120b"
+        active_groq_model = settings.GROQ_MODEL or "llama-3.3-70b-versatile"
         if groq_configured:
             try:
                 g_adapter = GroqProviderAdapter(api_key=groq_key)
-                groq_models = g_adapter.fetch_available_models(timeout=5.0)
+                groq_models = g_adapter.fetch_available_models(timeout=1.0)
                 if groq_models and not settings.GROQ_MODEL:
                     active_groq_model = groq_models[0]["id"]
             except Exception as e:
@@ -203,7 +203,7 @@ class AIService:
         if p_pref == "ollama":
             adapter = OllamaProviderAdapter(model=selected_model)
             try:
-                adapter.test_connection(timeout=2.0)
+                adapter.test_connection(timeout=0.2)
                 return adapter
             except Exception as e:
                 logger.warning(f"Preferred provider 'ollama' is not available: {e}")
@@ -224,8 +224,8 @@ class AIService:
                 return GeminiProviderAdapter(api_key=conn.get_api_key())
 
         elif p_pref == "groq":
-            groq_key = os.environ.get("GROQ_API_KEY") or settings.GROQ_API_KEY
-            if groq_key and groq_key.strip():
+            groq_key = get_active_groq_key()
+            if groq_key:
                 return GroqProviderAdapter(api_key=groq_key, model=settings.GROQ_MODEL or DEFAULT_GROQ_MODEL)
 
         # 2. Customer-provided active external connection (scoped to user_id)
@@ -254,15 +254,15 @@ class AIService:
                 logger.warning(f"Error checking customer connection: {e}")
 
         # 3. Platform Default Groq Provider
-        groq_key = os.environ.get("GROQ_API_KEY") or settings.GROQ_API_KEY
-        if groq_key and groq_key.strip():
+        groq_key = get_active_groq_key()
+        if groq_key:
             groq_model = os.environ.get("GROQ_MODEL") or settings.GROQ_MODEL or DEFAULT_GROQ_MODEL
             return GroqProviderAdapter(api_key=groq_key, model=groq_model)
 
         # 4. Ollama Local AI Check
         try:
             o_adapter = OllamaProviderAdapter(model=selected_model)
-            o_adapter.test_connection(timeout=2.0)
+            o_adapter.test_connection(timeout=0.2)
             return o_adapter
         except Exception:
             pass

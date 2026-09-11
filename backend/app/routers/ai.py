@@ -17,6 +17,8 @@ from app.llm.ai_service import AIService
 from app.services.keyword_discovery import KeywordDiscoveryService
 from app.services.competitor_engine import CompetitorEngineService
 from app.services.ai_solution_service import AISolutionService
+from app.services.crawl_ai_suggest_service import CrawlSuggestOrchestrator, CrawlPageContextBuilder
+from app.providers.serp_adapter import SERPAdapterFactory
 
 router = APIRouter()
 
@@ -52,6 +54,19 @@ class SolveRequest(BaseModel):
     affected_url: str
     evidence_text: Optional[str] = None
     force_regenerate: Optional[bool] = False
+
+class CrawlSuggestRequest(BaseModel):
+    project_id: str
+    page_url: str
+    task_type: str  # meta_description | meta_title | image_alt | hreflang
+    # Optional additional context the frontend can send
+    current_value: Optional[str] = None
+    issue: Optional[str] = None
+
+class SERPProviderTestRequest(BaseModel):
+    provider: str  # serpapi | openserp
+    api_key: str
+    base_url: Optional[str] = None
 
 def _get_project_or_404(project_id: str, db: Session, user_id: str) -> Project:
     from app.config.utils import get_sanitized_domain
@@ -600,3 +615,88 @@ def get_my_wallet(
         "per_request_limit": wallet.per_request_limit
     }
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CRAWL DATA AI SUGGEST  (Part 2)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/crawl-suggest")
+@router.post("/crawl-suggest/")
+def crawl_ai_suggest(
+    payload: CrawlSuggestRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Generate an AI SEO suggestion for a specific page + task type."""
+    valid_tasks = {"meta_description", "meta_title", "image_alt", "hreflang"}
+    if payload.task_type not in valid_tasks:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid task_type '{payload.task_type}'. Must be one of: {sorted(valid_tasks)}"
+        )
+
+    project = _get_project_or_404(payload.project_id, db, user_id)
+
+    context = CrawlPageContextBuilder.build(
+        project_id=project.id,
+        domain=project.domain,
+        page_url=payload.page_url,
+        task_type=payload.task_type,
+    )
+
+    if context.get("error"):
+        raise HTTPException(status_code=404, detail=context["error"])
+
+    if payload.current_value:
+        context["current_value_provided_by_user"] = payload.current_value
+    if payload.issue:
+        context["reported_issue"] = payload.issue
+
+    try:
+        result = CrawlSuggestOrchestrator.suggest(
+            task_type=payload.task_type,
+            context=context,
+            user_id=user_id,
+            db=db,
+        )
+        return {"status": "success", **result}
+    except AIProviderException as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI suggestion failed: {str(e)[:200]}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SERP PROVIDER MANAGEMENT
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/serp-providers")
+def list_serp_providers():
+    return {
+        "providers": SERPAdapterFactory.list_providers(),
+        "default": "serpapi",
+    }
+
+
+@router.post("/serp-test")
+def test_serp_provider(
+    payload: SERPProviderTestRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Test a SERP provider API key. Never returns the key in the response."""
+    if not payload.api_key or not payload.api_key.strip():
+        raise HTTPException(status_code=400, detail="API key is required.")
+    try:
+        adapter = SERPAdapterFactory.get(
+            payload.provider,
+            payload.api_key,
+            **({"base_url": payload.base_url} if payload.base_url else {})
+        )
+        result = adapter.test_connection()
+        result.pop("api_key", None)
+        result.pop("key", None)
+        return {"status": "connected", **result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"SERP provider test failed: {str(e)[:200]}")

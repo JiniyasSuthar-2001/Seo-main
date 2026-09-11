@@ -10,7 +10,20 @@ _ENV_PATH = os.path.join(_BACKEND_DIR, ".env")
 
 # Automatically load environment variables from backend/.env into os.environ
 if os.path.exists(_ENV_PATH):
-    load_dotenv(_ENV_PATH)
+    load_dotenv(_ENV_PATH, override=True)
+
+
+def reload_env():
+    """Forces reloading backend/.env file to pick up live edits to API keys."""
+    if os.path.exists(_ENV_PATH):
+        load_dotenv(_ENV_PATH, override=True)
+
+
+def get_active_groq_key() -> str:
+    """Returns current GROQ_API_KEY dynamically from environment or .env file."""
+    reload_env()
+    return (os.environ.get("GROQ_API_KEY") or "").strip()
+
 
 KNOWN_INSECURE_SECRETS = {
     "seo-platform-secure-default-encryption-secret-key-32b",

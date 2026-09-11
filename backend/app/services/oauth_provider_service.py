@@ -86,8 +86,13 @@ class OAuthProviderConfig:
 
         
         if p in ("google", "gemini"):
-            client_id = os.environ.get("GOOGLE_CLIENT_ID", "")
-            client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+            from dotenv import load_dotenv
+            env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env")
+            if os.path.exists(env_file):
+                load_dotenv(env_file, override=True)
+
+            client_id = (os.environ.get("GOOGLE_CLIENT_ID") or getattr(settings, "GOOGLE_CLIENT_ID", "") or "").strip()
+            client_secret = (os.environ.get("GOOGLE_CLIENT_SECRET") or getattr(settings, "GOOGLE_CLIENT_SECRET", "") or "").strip()
             google_callback_url = f"{base_url}/api/integrations/google/callback"
             return {
                 "auth_url": "https://accounts.google.com/o/oauth2/v2/auth",

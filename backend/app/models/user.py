@@ -28,6 +28,7 @@ class User(Base):
     disabled_at = Column(DateTime, nullable=True)
     disabled_by = Column(String, nullable=True)
     session_revoked_at = Column(DateTime, nullable=True) # Used to invalidate JWTs issued before this time
+    preferred_ai_provider = Column(String, default="groq", nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

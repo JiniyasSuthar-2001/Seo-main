@@ -1,3 +1,25 @@
+// Global error handler to intercept third-party browser extension / PerformanceObserver telemetry errors
+window.addEventListener('error', (event) => {
+    if (event?.message && (
+        event.message.includes("Cannot read properties of undefined (reading 'startTime')") ||
+        event.message.includes("reportAllChanges")
+    )) {
+        event.stopImmediatePropagation();
+        event.preventDefault();
+        return true;
+    }
+}, true);
+
+window.addEventListener('unhandledrejection', (event) => {
+    if (event?.reason?.message && (
+        event.reason.message.includes("Cannot read properties of undefined (reading 'startTime')") ||
+        event.reason.message.includes("reportAllChanges")
+    )) {
+        event.stopImmediatePropagation();
+        event.preventDefault();
+    }
+}, true);
+
 import { themeStore } from './core/themeStore.js';
 import { authStore } from './core/authStore.js';
 import { Router } from './core/router.js';

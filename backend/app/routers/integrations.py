@@ -928,3 +928,50 @@ def test_customer_api_key(
         raise HTTPException(status_code=400, detail=ai_err.message)
     except Exception as err:
         raise HTTPException(status_code=400, detail=f"Test request failed: {err}")
+
+
+@router.post("/{provider}/disconnect")
+@router.delete("/{provider}")
+def disconnect_provider_connection(
+    provider: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Disconnects and removes external connection record for any service (Google, SERP, Backlink, OpenAI, Gemini, Claude).
+    When removing custom AI providers, automatically resets user's preferred AI provider back to default 'groq'.
+    """
+    p_clean = provider.lower().strip()
+
+    conns = db.query(ExternalConnection).filter(
+        ExternalConnection.user_id == user_id,
+        ExternalConnection.provider.in_([p_clean, provider])
+    ).all()
+
+    for conn in conns:
+        db.delete(conn)
+
+    # Check remaining active customer AI keys
+    remaining_ai = db.query(ExternalConnection).filter(
+        ExternalConnection.user_id == user_id,
+        ExternalConnection.provider.in_(["openai", "gemini", "claude", "anthropic"]),
+        ExternalConnection.status == "CONNECTED"
+    ).count()
+
+    from app.models.user import User
+    user = db.query(User).filter(User.id == user_id).first()
+
+    # Reset preference to default groq if no customer keys remain or if disconnected provider was active
+    if user:
+        if remaining_ai == 0 or getattr(user, "preferred_ai_provider", None) in (p_clean, provider):
+            user.preferred_ai_provider = "groq"
+            db.add(user)
+
+    db.commit()
+
+    return {
+        "status": "success",
+        "provider": p_clean,
+        "active_provider": getattr(user, "preferred_ai_provider", "groq") if user else "groq",
+        "message": f"Disconnected provider '{provider}' successfully. Reverted AI engine to default platform Groq."
+    }

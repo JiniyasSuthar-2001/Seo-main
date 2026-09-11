@@ -2,6 +2,15 @@ from sqlalchemy import Column, String, DateTime
 from datetime import datetime
 from app.config.database import Base
 
+class AccountStatus:
+    ACTIVE = "ACTIVE"
+    SUSPENDED = "SUSPENDED"
+    DISABLED = "DISABLED"
+    INACTIVE = "INACTIVE"
+
+    CANONICAL_SET = {ACTIVE, SUSPENDED, DISABLED, INACTIVE}
+    BLOCKED_SET = {SUSPENDED, DISABLED, INACTIVE}
+
 class User(Base):
     __tablename__ = "users"
 

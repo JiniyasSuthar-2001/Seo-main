@@ -278,7 +278,13 @@ def update_customer_status(
     if not user:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    new_status = payload.get("status", "ACTIVE").upper()
+    from app.models.user import AccountStatus
+    new_status = (payload.get("status") or "ACTIVE").upper().strip()
+    if new_status not in AccountStatus.CANONICAL_SET:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status '{new_status}'. Allowed statuses are: {', '.join(sorted(AccountStatus.CANONICAL_SET))}"
+        )
     reason = payload.get("reason", "Admin status update")
 
     old_status = user.status or "ACTIVE"

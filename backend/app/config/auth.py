@@ -8,7 +8,9 @@ import time
 import jwt
 from typing import Optional, Dict, Any
 from fastapi import Header, HTTPException, Depends
+from sqlalchemy.orm import Session
 from app.config.settings import settings
+from app.config.database import get_db, SessionLocal
 
 ALGORITHM = "HS256"
 DEFAULT_EXPIRE_SECONDS = 86400 * 7  # 7 days
@@ -68,7 +70,8 @@ def is_dev_user_header_allowed() -> bool:
 
 def get_current_user_id(
     authorization: Optional[str] = Header(None),
-    x_user_id: Optional[str] = Header(None)
+    x_user_id: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
 ) -> str:
     """
     FastAPI dependency that extracts and validates the authenticated application user ID.
@@ -95,18 +98,14 @@ def get_current_user_id(
         )
 
     # Database account status check
-    from app.config.database import SessionLocal
-    from app.models.user import User
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter((User.id == resolved_id) | (User.email == resolved_id)).first()
-        if user and user.status and user.status.upper() == "SUSPENDED":
-            raise HTTPException(
-                status_code=403,
-                detail="ACCOUNT_SUSPENDED: Your customer account is currently suspended. Please contact platform administration."
-            )
-    finally:
-        db.close()
+    from app.models.user import User, AccountStatus
+    user = db.query(User).filter((User.id == resolved_id) | (User.email == resolved_id)).first()
+    if user and user.status and user.status.upper() in AccountStatus.BLOCKED_SET:
+        st = user.status.upper()
+        raise HTTPException(
+            status_code=403,
+            detail=f"ACCOUNT_{st}: Your customer account is currently {st.lower()}. Please contact platform administration."
+        )
 
     return resolved_id
 
@@ -180,7 +179,8 @@ def require_master_user(required_permission: Optional[str] = None):
     """
     def dependency(
         authorization: Optional[str] = Header(None),
-        x_user_id: Optional[str] = Header(None)
+        x_user_id: Optional[str] = Header(None),
+        db: Session = Depends(get_db)
     ):
         token_iat = None
         resolved_id = None
@@ -202,61 +202,56 @@ def require_master_user(required_permission: Optional[str] = None):
                 detail="Master authentication required. Please provide a valid Authorization Bearer token."
             )
 
-        from app.config.database import SessionLocal
         from app.models.user import User
         from app.config.master_permissions import user_has_master_permission
 
-        db = SessionLocal()
-        try:
-            user = db.query(User).filter(
-                (User.id == resolved_id) | (User.email == resolved_id) | (User.id == resolved_id.lower()) | (User.email == resolved_id.lower())
-            ).first()
+        user = db.query(User).filter(
+            (User.id == resolved_id) | (User.email == resolved_id) | (User.id == resolved_id.lower()) | (User.email == resolved_id.lower())
+        ).first()
 
-            if not user:
+        if not user:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied. Master account record not found."
+            )
+
+        user_status = (user.status or "ACTIVE").upper()
+        if user_status in ("SUSPENDED", "DISABLED", "INACTIVE"):
+            raise HTTPException(
+                status_code=403,
+                detail=f"ACCOUNT_{user_status}: This Master account has been {user_status.lower()} by platform administration."
+            )
+
+        # Check if active session was revoked
+        if user.session_revoked_at and token_iat:
+            revoked_ts = int(user.session_revoked_at.timestamp())
+            if token_iat < revoked_ts:
+                raise HTTPException(
+                    status_code=401,
+                    detail="SESSION_REVOKED: This Master session has been revoked. Please sign in again."
+                )
+
+        current_role = (user.platform_role or "USER").upper()
+        if current_role not in MASTER_ROLES:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Access denied. Master space requires authorized administrative role."
+            )
+
+        # Check granular permission if required
+        if required_permission:
+            has_perm = user_has_master_permission(
+                user_role=current_role,
+                user_permissions=user.get_permissions_list(),
+                required_permission=required_permission
+            )
+            if not has_perm:
                 raise HTTPException(
                     status_code=403,
-                    detail="Access denied. Master account record not found."
+                    detail=f"PERMISSION_DENIED: You do not have the required '{required_permission}' permission."
                 )
 
-            user_status = (user.status or "ACTIVE").upper()
-            if user_status in ("SUSPENDED", "DISABLED", "INACTIVE"):
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"ACCOUNT_{user_status}: This Master account has been {user_status.lower()} by platform administration."
-                )
-
-            # Check if active session was revoked
-            if user.session_revoked_at and token_iat:
-                revoked_ts = int(user.session_revoked_at.timestamp())
-                if token_iat < revoked_ts:
-                    raise HTTPException(
-                        status_code=401,
-                        detail="SESSION_REVOKED: This Master session has been revoked. Please sign in again."
-                    )
-
-            current_role = (user.platform_role or "USER").upper()
-            if current_role not in MASTER_ROLES:
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"Access denied. Master space requires authorized administrative role."
-                )
-
-            # Check granular permission if required
-            if required_permission:
-                has_perm = user_has_master_permission(
-                    user_role=current_role,
-                    user_permissions=user.get_permissions_list(),
-                    required_permission=required_permission
-                )
-                if not has_perm:
-                    raise HTTPException(
-                        status_code=403,
-                        detail=f"PERMISSION_DENIED: You do not have the required '{required_permission}' permission."
-                    )
-
-            return user
-        finally:
-            db.close()
+        return user
 
     return dependency
 

@@ -21,32 +21,30 @@ def get_lan_ip():
 def check_port(host, port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
-            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind((host, port))
             return False
         except OSError:
             return True
 
-def free_port_if_in_use(port):
-    """
-    Cross-platform port reclamation.
-    Identifies and terminates ONLY the specific process occupying the target port.
-    Never kills unrelated processes.
-    Supports Windows, macOS, and Linux.
-    """
-    if not check_port("0.0.0.0", port):
-        return True
-
-    print(f"[PORT] Port {port} is currently occupied. Attempting cross-platform reclamation...", flush=True)
-
+def get_pids_for_port(port):
+    pids = set()
     try:
         if sys.platform == "win32":
-            # Windows: Extract specific PID for port from netstat and kill ONLY that PID
-            cmd = f'for /f "tokens=5" %a in (\'netstat -aon ^| findstr /r /c:":{port} "\') do taskkill /F /PID %a'
-            subprocess.run(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            res = subprocess.run(
+                ["netstat", "-ano"],
+                capture_output=True,
+                text=True,
+                errors="replace"
+            )
+            for line in res.stdout.splitlines():
+                line = line.strip()
+                if f":{port} " in line or line.endswith(f":{port}"):
+                    parts = line.split()
+                    if len(parts) >= 5 and parts[-1].isdigit():
+                        pid = int(parts[-1])
+                        if pid > 0 and pid != os.getpid():
+                            pids.add(pid)
         else:
-            # macOS / Linux: Use lsof or fuser to target ONLY the specific PID
-            freed = False
             try:
                 res = subprocess.run(
                     ["lsof", "-t", f"-i:{port}"],
@@ -55,32 +53,49 @@ def free_port_if_in_use(port):
                     text=True
                 )
                 if res.returncode == 0 and res.stdout.strip():
-                    pids = res.stdout.strip().split()
-                    for p in pids:
-                        try:
-                            os.kill(int(p), signal.SIGKILL)
-                        except Exception:
-                            pass
-                    freed = True
+                    for p in res.stdout.strip().split():
+                        if p.isdigit() and int(p) != os.getpid():
+                            pids.add(int(p))
             except FileNotFoundError:
                 pass
+    except Exception:
+        pass
+    return pids
 
-            if not freed:
-                try:
-                    subprocess.run(
-                        ["fuser", "-k", "-n", "tcp", str(port)],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
-                    freed = True
-                except FileNotFoundError:
-                    print(f"[WARNING] Neither 'lsof' nor 'fuser' is installed on this system to auto-free port {port}.", flush=True)
+def free_port_if_in_use(port):
+    """
+    Cross-platform port reclamation.
+    Identifies and terminates ONLY the specific process occupying the target port,
+    including any orphaned multiprocessing child workers.
+    Never kills unrelated processes.
+    Supports Windows, macOS, and Linux.
+    """
+    pids = get_pids_for_port(port)
+    is_busy = check_port("0.0.0.0", port) or len(pids) > 0
 
-        time.sleep(1.0)
-    except Exception as e:
-        print(f"[WARNING] Exception during port {port} reclamation: {e}", flush=True)
+    if not is_busy:
+        return True
 
-    is_free = not check_port("0.0.0.0", port)
+    print(f"[PORT] Port {port} is currently occupied (detected PIDs: {list(pids) or 'system'}). Attempting reclamation...", flush=True)
+
+    for pid in pids:
+        try:
+            if sys.platform == "win32":
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
+                wmic_res = subprocess.run(["wmic", "process", "where", f"CommandLine like '%parent_pid={pid}%'", "get", "ProcessId"], capture_output=True, text=True, errors="replace")
+                for line in wmic_res.stdout.splitlines():
+                    line = line.strip()
+                    if line.isdigit() and int(line) != os.getpid():
+                        subprocess.run(["taskkill", "/F", "/PID", line], capture_output=True)
+            else:
+                os.kill(pid, signal.SIGKILL)
+        except Exception:
+            pass
+
+    time.sleep(1.0)
+    remaining = get_pids_for_port(port)
+    is_free = not check_port("0.0.0.0", port) and len(remaining) == 0
+
     if is_free:
         print(f"[PORT] Port {port} successfully freed.", flush=True)
     else:
@@ -88,10 +103,14 @@ def free_port_if_in_use(port):
 
     return is_free
 
-def wait_for_server(url, name, port=None, timeout=30):
+def wait_for_server(url, name, port=None, process=None, timeout=25):
     print(f"[{name}] Waiting for server to respond at {url}...", flush=True)
     start_time = time.time()
     while time.time() - start_time < timeout:
+        if process and process.poll() is not None:
+            print(f"[{name}] FAILED: Server process terminated prematurely (exit code {process.returncode})", flush=True)
+            return False
+
         try:
             req = urllib.request.Request(url, method="GET", headers={"User-Agent": "SEO-Platform-Checker/1.0"})
             with urllib.request.urlopen(req, timeout=2.0) as response:
@@ -99,15 +118,7 @@ def wait_for_server(url, name, port=None, timeout=30):
                     print(f"[{name}] READY (HTTP {response.getcode()})", flush=True)
                     return True
         except Exception:
-            if port:
-                try:
-                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                        s.settimeout(1.0)
-                        if s.connect_ex(("127.0.0.1", port)) == 0:
-                            print(f"[{name}] READY (Socket connected)", flush=True)
-                            return True
-                except Exception:
-                    pass
+            pass
         time.sleep(0.5)
 
     print(f"[{name}] FAILED to respond within {timeout} seconds.", flush=True)
@@ -115,8 +126,8 @@ def wait_for_server(url, name, port=None, timeout=30):
 
 def stream_logs(process, prefix):
     try:
-        for line in iter(process.stdout.readline, b''):
-            decoded_line = line.decode('utf-8', errors='replace').rstrip()
+        for line in iter(process.stdout.readline, ''):
+            decoded_line = line.rstrip()
             if decoded_line:
                 print(f"[{prefix}] {decoded_line}", flush=True)
     except Exception:
@@ -158,38 +169,39 @@ def main():
     backend_process = None
     frontend_process = None
 
-    # Windows flags to run in same console without popup windows
-    creation_flags = 0
-    if sys.platform == "win32":
-        creation_flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
-
     try:
         print(f"[STARTUP] Starting backend on {host}:{port}...", flush=True)
         env_backend = os.environ.copy()
         env_backend["HOST"] = host
         env_backend["PORT"] = str(port)
+        env_backend["PYTHONUNBUFFERED"] = "1"
         backend_process = subprocess.Popen(
             [backend_python, "-m", "uvicorn", "app.main:app", "--host", host, "--port", str(port), "--reload"],
             cwd=backend_dir,
             env=env_backend,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            text=True,
             bufsize=1,
-            creationflags=creation_flags
+            encoding="utf-8",
+            errors="replace"
         )
 
         print(f"[STARTUP] Starting frontend on {frontend_host}:{frontend_port}...", flush=True)
         env_frontend = os.environ.copy()
         env_frontend["FRONTEND_HOST"] = frontend_host
         env_frontend["FRONTEND_PORT"] = str(frontend_port)
+        env_frontend["PYTHONUNBUFFERED"] = "1"
         frontend_process = subprocess.Popen(
             [frontend_python, "serve_spa.py"],
             cwd=frontend_dir,
             env=env_frontend,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            text=True,
             bufsize=1,
-            creationflags=creation_flags
+            encoding="utf-8",
+            errors="replace"
         )
 
         # Output streaming threads to keep terminal active
@@ -198,9 +210,9 @@ def main():
         t1.start()
         t2.start()
 
-        # Perform health checks using loopback IP
-        backend_ready = wait_for_server(f"http://127.0.0.1:{port}/api/health", "HEALTH (Backend)", port=port)
-        frontend_ready = wait_for_server(f"http://127.0.0.1:{frontend_port}", "HEALTH (Frontend)", port=frontend_port)
+        # Perform health checks using loopback IP (checking actual HTTP responses)
+        backend_ready = wait_for_server(f"http://127.0.0.1:{port}/api/health", "HEALTH (Backend)", port=port, process=backend_process)
+        frontend_ready = wait_for_server(f"http://127.0.0.1:{frontend_port}/", "HEALTH (Frontend)", port=frontend_port, process=frontend_process)
 
         if backend_ready and frontend_ready:
             print("\n============================================================", flush=True)
@@ -218,7 +230,10 @@ def main():
             print("Press CTRL+C to stop both servers", flush=True)
             print("============================================================\n", flush=True)
             
-            webbrowser.open(f"http://127.0.0.1:{frontend_port}/")
+            try:
+                webbrowser.open(f"http://127.0.0.1:{frontend_port}/")
+            except Exception:
+                pass
         else:
             print("\n[ERROR] Server health checks failed.", flush=True)
             raise KeyboardInterrupt

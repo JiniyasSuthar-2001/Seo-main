@@ -332,6 +332,8 @@ def discover_project_competitors(
     _get_project_or_404(project_id, db, user_id)
     return CompetitorEngineService.discover_competitors_from_evidence(project_id, db)
 
+from app.services.ai_access_service import AIAccessService
+
 @router.post("/seo-analysis")
 def perform_seo_analysis(
     req: AnalysisRequest,
@@ -339,10 +341,28 @@ def perform_seo_analysis(
     user_id: str = Depends(get_current_user_id)
 ):
     project = _get_project_or_404(req.project_id, db, user_id)
+    AIAccessService.check_authorization(customer_id=user_id, db=db, task_type="project_analysis", estimated_credits=5)
     agent = SEOAnalystAgent()
     try:
-        return agent.analyze_project(project.id, domain=project.domain, user_id=user_id, db=db)
+        res = agent.analyze_project(project.id, domain=project.domain, user_id=user_id, db=db)
+        if res.get("is_llm_generated"):
+            AIAccessService.record_successful_ai_consumption(
+                customer_id=user_id,
+                project_id=project.id,
+                task_type="project_analysis",
+                units_consumed=5,
+                model=res.get("provider"),
+                db=db
+            )
+        return res
     except AIProviderException as e:
+        AIAccessService.record_failed_ai_attempt(
+            customer_id=user_id,
+            project_id=project.id,
+            task_type="project_analysis",
+            error_message=e.message,
+            db=db
+        )
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 @router.post("/{project_id}/ai/analyze")
@@ -352,10 +372,28 @@ def analyze_project_ai(
     user_id: str = Depends(get_current_user_id)
 ):
     project = _get_project_or_404(project_id, db, user_id)
+    AIAccessService.check_authorization(customer_id=user_id, db=db, task_type="project_analysis", estimated_credits=5)
     agent = SEOAnalystAgent()
     try:
-        return agent.analyze_project(project.id, domain=project.domain, user_id=user_id, db=db)
+        res = agent.analyze_project(project.id, domain=project.domain, user_id=user_id, db=db)
+        if res.get("is_llm_generated"):
+            AIAccessService.record_successful_ai_consumption(
+                customer_id=user_id,
+                project_id=project.id,
+                task_type="project_analysis",
+                units_consumed=5,
+                model=res.get("provider"),
+                db=db
+            )
+        return res
     except AIProviderException as e:
+        AIAccessService.record_failed_ai_attempt(
+            customer_id=user_id,
+            project_id=project.id,
+            task_type="project_analysis",
+            error_message=e.message,
+            db=db
+        )
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 @router.get("/{project_id}/ai/insights")
@@ -365,10 +403,28 @@ def get_project_insights(
     user_id: str = Depends(get_current_user_id)
 ):
     project = _get_project_or_404(project_id, db, user_id)
+    AIAccessService.check_authorization(customer_id=user_id, db=db, task_type="project_analysis", estimated_credits=5)
     agent = SEOAnalystAgent()
     try:
-        return agent.analyze_project(project.id, domain=project.domain, user_id=user_id, db=db)
+        res = agent.analyze_project(project.id, domain=project.domain, user_id=user_id, db=db)
+        if res.get("is_llm_generated"):
+            AIAccessService.record_successful_ai_consumption(
+                customer_id=user_id,
+                project_id=project.id,
+                task_type="project_analysis",
+                units_consumed=5,
+                model=res.get("provider"),
+                db=db
+            )
+        return res
     except AIProviderException as e:
+        AIAccessService.record_failed_ai_attempt(
+            customer_id=user_id,
+            project_id=project.id,
+            task_type="project_analysis",
+            error_message=e.message,
+            db=db
+        )
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 @router.post("/{project_id}/ai/chat")
@@ -382,10 +438,28 @@ def chat_with_project_ai(
         raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
     project = _get_project_or_404(project_id, db, user_id)
+    AIAccessService.check_authorization(customer_id=user_id, db=db, task_type="chat", estimated_credits=1)
     agent = SEOAnalystAgent()
     try:
-        return agent.chat_with_data(request.query, key=project.id, domain=project.domain, user_id=user_id, db=db)
+        res = agent.chat_with_data(request.query, key=project.id, domain=project.domain, user_id=user_id, db=db)
+        if res.get("is_llm_generated"):
+            AIAccessService.record_successful_ai_consumption(
+                customer_id=user_id,
+                project_id=project.id,
+                task_type="chat",
+                units_consumed=1,
+                model=res.get("provider"),
+                db=db
+            )
+        return res
     except AIProviderException as e:
+        AIAccessService.record_failed_ai_attempt(
+            customer_id=user_id,
+            project_id=project.id,
+            task_type="chat",
+            error_message=e.message,
+            db=db
+        )
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
 PROBLEM_SOLUTION_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -415,7 +489,8 @@ def solve_problem_with_ai(
         evidence_text=payload.evidence_text,
         db=db,
         user_id=user_id,
-        force_regenerate=bool(payload.force_regenerate)
+        force_regenerate=bool(payload.force_regenerate),
+        is_interactive=True
     )
     return {
         "status": "success",
@@ -437,6 +512,14 @@ def get_problem_ai_solution(
         return PROBLEM_SOLUTION_CACHE[cache_key]
 
     affected_urls = payload.affected_urls or []
+    est_credits = max(1, min(len(affected_urls), 20))
+    AIAccessService.check_authorization(
+        customer_id=user_id,
+        db=db,
+        task_type="problem_solution",
+        estimated_credits=est_credits
+    )
+
     first_url = affected_urls[0] if affected_urls else f"https://{project.domain}"
 
     page_solutions: Dict[str, str] = {}
@@ -455,7 +538,8 @@ def get_problem_ai_solution(
             affected_url=url,
             evidence_text=payload.evidence_text,
             db=db,
-            user_id=user_id
+            user_id=user_id,
+            is_interactive=True
         )
         if sol and sol.get("ai_solution"):
             page_solutions[url] = sol["ai_solution"]
@@ -471,7 +555,8 @@ def get_problem_ai_solution(
         affected_url=first_url,
         evidence_text=payload.evidence_text,
         db=db,
-        user_id=user_id
+        user_id=user_id,
+        is_interactive=True
     )
     default_solution = def_sol.get("ai_solution") if def_sol else payload.recommendation
 

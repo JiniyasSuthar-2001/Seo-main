@@ -120,7 +120,15 @@ def google_oauth_callback(
         raise HTTPException(status_code=400, detail="Unverified Google email accounts are not permitted for security reasons.")
 
     # 4. Upsert User identity in database
+    from app.models.user import AccountStatus
     user = db.query(User).filter((User.google_id == google_sub) | (User.email == email)).first()
+    if user and user.status and user.status.upper() in AccountStatus.BLOCKED_SET:
+        st = user.status.upper()
+        raise HTTPException(
+            status_code=403,
+            detail=f"ACCOUNT_{st}: Your customer account is currently {st.lower()}. Please contact platform administration."
+        )
+
     if not user:
         user = User(
             id=email,
@@ -273,7 +281,15 @@ def google_oauth_login(payload: dict = Body(default={}), db: Session = Depends(g
     if not email or not google_sub or not email_verified:
         raise HTTPException(status_code=401, detail="Unverified or invalid Google identity token.")
 
+    from app.models.user import AccountStatus
     user = db.query(User).filter((User.google_id == google_sub) | (User.email == email)).first()
+    if user and user.status and user.status.upper() in AccountStatus.BLOCKED_SET:
+        st = user.status.upper()
+        raise HTTPException(
+            status_code=403,
+            detail=f"ACCOUNT_{st}: Your customer account is currently {st.lower()}. Please contact platform administration."
+        )
+
     if not user:
         user = User(
             id=email,
@@ -871,6 +887,15 @@ def platform_login(payload: dict = Body(...), db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=401,
             detail="Invalid email or password."
+        )
+
+    # 4. Account status check (Block SUSPENDED, DISABLED, INACTIVE)
+    from app.models.user import AccountStatus
+    if user.status and user.status.upper() in AccountStatus.BLOCKED_SET:
+        st = user.status.upper()
+        raise HTTPException(
+            status_code=403,
+            detail=f"ACCOUNT_{st}: Your customer account is currently {st.lower()}. Please contact platform administration."
         )
 
     token = create_access_token(user_id=user.id or user.email)

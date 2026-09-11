@@ -572,7 +572,7 @@ class MasterService:
             })
 
         # Usage by Provider
-        provider_names = ["Gemini", "OpenAI", "Anthropic", "DeepSeek"]
+        provider_names = ["Gemini", "OpenAI", "Anthropic", "DeepSeek", "Groq", "Ollama"]
         by_provider = []
         for prov in provider_names:
             p_stat = db.query(
@@ -581,9 +581,9 @@ class MasterService:
                 func.sum(AIUsageLog.output_tokens)
             ).filter(and_(base_filter, func.lower(AIUsageLog.model).like(f"%{prov.lower()}%"))).first()
 
-            reqs = p_stat[0] or (totals.total_req if prov == "Gemini" else 0)
-            in_t = p_stat[1] or (in_tok if prov == "Gemini" else 0)
-            out_t = p_stat[2] or (out_tok if prov == "Gemini" else 0)
+            reqs = p_stat[0] or 0
+            in_t = p_stat[1] or 0
+            out_t = p_stat[2] or 0
 
             by_provider.append({
                 "provider": prov,
@@ -644,11 +644,19 @@ class MasterService:
     # -------------------------------------------------------------------------
     @classmethod
     def get_providers_summary(cls, db: Session) -> List[Dict[str, Any]]:
+        from app.services.credit_service import CreditService
+        from app.config.settings import settings
+        
+        platform_settings = CreditService.get_or_create_platform_settings(db)
+        primary_key = (platform_settings.primary_provider or "gemini").lower()
+        
         providers = [
-            {"name": "Google Gemini", "key": "gemini", "is_primary": True},
-            {"name": "OpenAI", "key": "openai", "is_primary": False},
-            {"name": "Anthropic Claude", "key": "anthropic", "is_primary": False},
-            {"name": "DeepSeek", "key": "deepseek", "is_primary": False}
+            {"name": "Google Gemini", "key": "gemini", "env_key": settings.GEMINI_API_KEY},
+            {"name": "OpenAI", "key": "openai", "env_key": getattr(settings, "OPENAI_API_KEY", None)},
+            {"name": "Anthropic Claude", "key": "anthropic", "env_key": getattr(settings, "ANTHROPIC_API_KEY", None)},
+            {"name": "Groq Fast LLM", "key": "groq", "env_key": getattr(settings, "GROQ_API_KEY", None)},
+            {"name": "Ollama Local", "key": "ollama", "env_key": "local_ready"},
+            {"name": "DeepSeek", "key": "deepseek", "env_key": getattr(settings, "DEEPSEEK_API_KEY", None)}
         ]
 
         result = []
@@ -659,7 +667,7 @@ class MasterService:
                 func.sum(AIUsageLog.output_tokens).label("out_t")
             ).filter(func.lower(AIUsageLog.model).like(f"%{p['key']}%")).first()
 
-            reqs = logs.cnt or (db.query(AIUsageLog).count() if p["key"] == "gemini" else 0)
+            reqs = logs.cnt or 0
             in_t = logs.in_t or 0
             out_t = logs.out_t or 0
 
@@ -667,15 +675,18 @@ class MasterService:
                 and_(func.lower(AIUsageLog.model).like(f"%{p['key']}%"), AIUsageLog.status == 'failed')
             ).count()
 
-            last_log = db.query(AIUsageLog).order_by(desc(AIUsageLog.created_at)).first()
+            last_log = db.query(AIUsageLog).filter(
+                func.lower(AIUsageLog.model).like(f"%{p['key']}%")
+            ).order_by(desc(AIUsageLog.created_at)).first()
 
-            status = "Healthy" if (p["key"] == "gemini" or reqs > 0) else "Disconnected"
+            is_configured = bool(p["env_key"])
+            status = "Healthy" if is_configured else ("Disconnected" if reqs == 0 else "Warning")
 
             result.append({
                 "name": p["name"],
                 "key": p["key"],
                 "status": status,
-                "is_primary": p["is_primary"],
+                "is_primary": (p["key"] == primary_key),
                 "requests": reqs,
                 "successful": max(0, reqs - fails),
                 "failed": fails,
@@ -689,13 +700,49 @@ class MasterService:
     @classmethod
     def check_provider_health(cls, provider_key: str, db: Session) -> Dict[str, Any]:
         """Safely test connection to configured provider without exposing keys."""
-        if provider_key.lower() == 'gemini':
-            from app.config.settings import settings
+        from app.config.settings import settings
+        pk = (provider_key or "").lower().strip()
+
+        if pk == 'gemini':
             key_present = bool(settings.GEMINI_API_KEY)
             return {
                 "provider": "Google Gemini",
                 "status": "Healthy" if key_present else "Critical",
-                "message": "API key configured and operational" if key_present else "Missing GEMINI_API_KEY environment variable"
+                "message": "Gemini API key configured and operational" if key_present else "Missing GEMINI_API_KEY environment variable"
+            }
+        elif pk == 'groq':
+            key_present = bool(getattr(settings, "GROQ_API_KEY", None))
+            return {
+                "provider": "Groq Fast LLM",
+                "status": "Healthy" if key_present else "Warning",
+                "message": "Groq API key configured" if key_present else "Groq API key not set in environment"
+            }
+        elif pk == 'openai':
+            key_present = bool(getattr(settings, "OPENAI_API_KEY", None))
+            return {
+                "provider": "OpenAI",
+                "status": "Healthy" if key_present else "Warning",
+                "message": "OpenAI API key configured" if key_present else "OpenAI API key not set in environment"
+            }
+        elif pk == 'ollama':
+            return {
+                "provider": "Ollama Local",
+                "status": "Healthy",
+                "message": "Local Ollama private instance ready on http://localhost:11434"
+            }
+        elif pk == 'anthropic':
+            key_present = bool(getattr(settings, "ANTHROPIC_API_KEY", None))
+            return {
+                "provider": "Anthropic Claude",
+                "status": "Healthy" if key_present else "Disconnected",
+                "message": "Claude API key configured" if key_present else "Claude API key not set in environment"
+            }
+        elif pk == 'deepseek':
+            key_present = bool(getattr(settings, "DEEPSEEK_API_KEY", None))
+            return {
+                "provider": "DeepSeek",
+                "status": "Healthy" if key_present else "Disconnected",
+                "message": "DeepSeek API key configured" if key_present else "DeepSeek API key not set in environment"
             }
         return {
             "provider": provider_key.title(),
@@ -719,7 +766,7 @@ class MasterService:
 
         items = [e.to_dict() for e in events]
 
-        # Synthesize from real domain objects if events table is sparse
+        # If platform_events table is sparse, integrate real domain records (CrawlSessions, AuditLogs, CreditTransactions)
         if len(items) < page_size:
             recent_crawls = db.query(CrawlSession).order_by(desc(CrawlSession.started_at)).limit(10).all()
             for c in recent_crawls:
@@ -729,17 +776,36 @@ class MasterService:
                     "id": f"crawl-{c.id}",
                     "event_type": "crawl_completed" if c.status == "completed" else "crawl_started",
                     "title": f"Crawl {c.status} for {pname}",
-                    "description": f"Crawled {c.pages_crawled or 0} pages, {c.issues_found or 0} issues.",
+                    "description": f"Audited {c.pages_crawled or 0} pages, identified {c.issues_found or 0} findings.",
                     "severity": "info" if c.status == "completed" else "warning",
                     "created_at": c.completed_at.isoformat() if c.completed_at else (c.started_at.isoformat() if c.started_at else None)
                 })
 
-            items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
-            items = items[:page_size]
+            recent_audits = db.query(AuditLog).order_by(desc(AuditLog.created_at)).limit(10).all()
+            for a in recent_audits:
+                items.append({
+                    "id": f"audit-{a.id}",
+                    "event_type": a.action.lower(),
+                    "title": f"{a.action} by {a.actor_email or a.actor_id}",
+                    "description": f"Target: {a.target_type or 'system'} ({a.target_id or '-'}). Reason: {a.reason or 'N/A'}",
+                    "severity": "critical" if a.status != "SUCCESS" else "info",
+                    "created_at": a.created_at.isoformat() if a.created_at else None
+                })
+
+            # De-duplicate by id
+            seen = set()
+            unique_items = []
+            for it in items:
+                if it["id"] not in seen:
+                    seen.add(it["id"])
+                    unique_items.append(it)
+
+            unique_items.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+            items = unique_items[:page_size]
 
         return {
             "items": items,
-            "total": total,
+            "total": max(total, len(items)),
             "page": page,
             "page_size": page_size
         }

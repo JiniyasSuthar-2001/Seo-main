@@ -1,5 +1,6 @@
 import io
 import csv
+import html
 from datetime import datetime
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
@@ -120,91 +121,95 @@ BACKEND_GUIDELINES = {
 class GuidelineReportService:
     @staticmethod
     def generate_guideline_pdf(guideline_id: str) -> bytes:
+        from app.services.reports.pdf_framework import (
+            PDFColors, NumberedCanvas, EnterprisePDFTheme, PDFComponentBuilder
+        )
         info = BACKEND_GUIDELINES.get(guideline_id, BACKEND_GUIDELINES["keywords"])
         
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            rightMargin=36,
+            leftMargin=36,
+            topMargin=36,
+            bottomMargin=42
+        )
+        theme = EnterprisePDFTheme()
+        builder = PDFComponentBuilder(theme)
         story = []
 
-        styles = getSampleStyleSheet()
-        title_style = ParagraphStyle('GTitle', parent=styles['Heading1'], fontName='Helvetica-Bold', fontSize=20, leading=24, textColor=colors.HexColor('#0f172a'))
-        sub_style = ParagraphStyle('GSub', parent=styles['Normal'], fontName='Helvetica', fontSize=10, leading=13, textColor=colors.HexColor('#64748b'))
-        h2_style = ParagraphStyle('GH2', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=12, leading=15, textColor=colors.HexColor('#1e293b'), spaceBefore=12, spaceAfter=6)
-        body_style = ParagraphStyle('GBody', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=12, textColor=colors.HexColor('#334155'))
-        table_cell = ParagraphStyle('GCell', parent=styles['Normal'], fontName='Helvetica', fontSize=8, leading=10, textColor=colors.HexColor('#1e293b'))
-        table_header = ParagraphStyle('GHead', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=colors.HexColor('#0f172a'))
-
-        story.append(Paragraph("SEO INTELLIGENCE PLATFORM", ParagraphStyle('Pre', parent=body_style, fontName='Helvetica-Bold', fontSize=9, textColor=colors.HexColor('#2563eb'), spaceAfter=2)))
-        story.append(Paragraph(info["title"], title_style))
-        story.append(Paragraph(f"{info['version']} | Target Formats: {', '.join(info['supported_formats'])} | Max Size: {info['max_file_size']}", sub_style))
-        story.append(Spacer(1, 8))
-        story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#2563eb'), spaceAfter=12))
+        builder.build_header_banner(
+            story,
+            report_title=info["title"],
+            domain="Integration Workspace",
+            project_name=f"Dataset Spec ({info['version']})",
+            crawl_timestamp=datetime.utcnow().strftime("%B %d, %Y"),
+            data_sources=f"Formats: {', '.join(info['supported_formats'])} | Max: {info['max_file_size']}"
+        )
 
         # 1. Purpose
-        story.append(Paragraph("1. Purpose & Source Data", h2_style))
-        story.append(Paragraph(f"<b>Purpose:</b> {info['purpose']}", body_style))
+        story.append(Paragraph("1. Purpose & Source Data", theme.section_title))
+        story.append(Paragraph(f"<b>Purpose:</b> {html.escape(info['purpose'])}", theme.body))
         story.append(Spacer(1, 4))
-        story.append(Paragraph(f"<b>Where to get data:</b> {info['where_to_get']}", body_style))
-        story.append(Spacer(1, 10))
+        story.append(Paragraph(f"<b>Where to get data:</b> {html.escape(info['where_to_get'])}", theme.body))
+        story.append(Spacer(1, 12))
 
         # 2. Required & Optional Columns
-        story.append(Paragraph("2. Required & Optional Column Matrix", h2_style))
-        col_rows = [[Paragraph("Column Name", table_header), Paragraph("Required?", table_header), Paragraph("Description", table_header), Paragraph("Example Value", table_header)]]
-        
+        story.append(Paragraph("2. Required & Optional Column Matrix", theme.section_title))
+        col_rows = []
         for c in info["required_columns"]:
             col_rows.append([
-                Paragraph(f"<b>{c['name']}</b>", table_cell),
-                Paragraph("<font color='#ef4444'><b>Required</b></font>", table_cell),
-                Paragraph(c["description"], table_cell),
-                Paragraph(f"<code>{c['example']}</code>", table_cell)
+                Paragraph(f"<b>{c['name']}</b>", theme.table_cell_bold),
+                Paragraph("<font color='#ef4444'><b>Required</b></font>", theme.table_cell),
+                Paragraph(html.escape(c["description"]), theme.table_cell),
+                Paragraph(f"<code>{html.escape(c['example'])}</code>", theme.table_cell)
             ])
         for c in info["optional_columns"]:
             col_rows.append([
-                Paragraph(c["name"], table_cell),
-                Paragraph("<font color='#64748b'>Optional</font>", table_cell),
-                Paragraph(c["description"], table_cell),
-                Paragraph(f"<code>{c['example']}</code>", table_cell)
+                Paragraph(c["name"], theme.table_cell),
+                Paragraph("<font color='#64748b'>Optional</font>", theme.table_cell),
+                Paragraph(html.escape(c["description"]), theme.table_cell),
+                Paragraph(f"<code>{html.escape(c['example'])}</code>", theme.table_cell)
             ])
 
-        t_cols = Table(col_rows, colWidths=[120, 70, 200, 150])
-        t_cols.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f1f5f9')),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
-            ('PADDING', (0, 0), (-1, -1), 4),
-        ]))
+        t_cols = builder.build_styled_table(
+            ["Column Name", "Required?", "Description", "Example Value"],
+            col_rows,
+            col_widths=[120, 70, 200, 150]
+        )
         story.append(t_cols)
-        story.append(Spacer(1, 10))
-
-        # 3. Synthetic Example Rows Table
-        story.append(Paragraph("3. Synthetic Example Data Rows", h2_style))
-        syn_rows = [[Paragraph(f"<b>{h}</b>", table_header) for h in info["synthetic_headers"][:5]]]
-        for r in info["synthetic_rows"]:
-            syn_rows.append([Paragraph(str(cell), table_cell) for cell in r[:5]])
-
-        t_syn = Table(syn_rows, colWidths=[110, 140, 70, 60, 160])
-        t_syn.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f8fafc')),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
-            ('PADDING', (0, 0), (-1, -1), 4),
-        ]))
-        story.append(t_syn)
         story.append(Spacer(1, 12))
 
+        # 3. Synthetic Example Rows Table
+        story.append(Paragraph("3. Synthetic Example Data Rows", theme.section_title))
+        syn_rows = []
+        for r in info["synthetic_rows"]:
+            syn_rows.append([Paragraph(html.escape(str(cell)), theme.table_cell) for cell in r[:5]])
+
+        t_syn = builder.build_styled_table(
+            info["synthetic_headers"][:5],
+            syn_rows,
+            col_widths=[110, 140, 70, 60, 160]
+        )
+        story.append(t_syn)
+        story.append(Spacer(1, 14))
+
         # 4. Data Privacy Warning Box
-        story.append(Paragraph("4. Data Security & Data Privacy Notice", h2_style))
+        story.append(Paragraph("4. Data Security & Data Privacy Notice", theme.section_title))
         warn_data = [
-            [Paragraph("<font color='#ef4444'><b>SECURITY WARNING — DO NOT UPLOAD SECRETS OR CREDENTIALS</b></font>", table_header)],
-            [Paragraph(f"{info['privacy_warning']} Use the platform's secure OAuth 'Connect Account' flow for live integrations instead of putting credentials in CSV files.", body_style)]
+            [Paragraph("<font color='#ef4444'><b>SECURITY NOTICE — DO NOT UPLOAD SECRETS OR SENSITIVE CREDENTIALS</b></font>", theme.table_header)],
+            [Paragraph(f"{info['privacy_warning']} Use the platform's secure OAuth 'Connect Account' flow for live integrations instead of embedding credentials in CSV files.", theme.body)]
         ]
         t_warn = Table(warn_data, colWidths=[540])
         t_warn.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fef2f2')),
-            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#fca5a5')),
+            ('BACKGROUND', (0, 0), (-1, -1), PDFColors.CRITICAL_RED_BG),
+            ('BOX', (0, 0), (-1, -1), 1, PDFColors.CRITICAL_RED),
             ('PADDING', (0, 0), (-1, -1), 8),
         ]))
         story.append(t_warn)
 
-        doc.build(story)
+        doc.build(story, canvasmaker=NumberedCanvas)
         buffer.seek(0)
         return buffer.getvalue()
 

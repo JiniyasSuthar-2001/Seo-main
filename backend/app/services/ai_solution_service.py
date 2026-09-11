@@ -11,6 +11,7 @@ from app.config.utils import get_sanitized_domain, normalize_stored_path, get_pr
 from app.llm.llm_provider import get_llm_provider_for_user
 from app.services.ai_usage_service import AIUsageService
 from app.services.credit_service import CreditService
+from app.services.ai_access_service import AIAccessService
 
 class AISolutionService:
     """
@@ -100,7 +101,8 @@ class AISolutionService:
         crawl_id: Optional[str] = None,
         crawl_dir: Optional[str] = None,
         crawl_date: Optional[str] = None,
-        force_regenerate: bool = False
+        force_regenerate: bool = False,
+        is_interactive: bool = False
     ) -> Dict[str, Any]:
         """
         Retrieves an existing AI solution from storage/memory cache, or generates
@@ -151,9 +153,25 @@ class AISolutionService:
                 cls._MEMORY_CACHE[cache_key] = stored_solutions[cache_key]
                 return stored_solutions[cache_key]
 
-        # 5. Check AI Allowance & Attempt AI Generation via Active LLM Provider
-        can_use_ai = AIUsageService.can_consume_ai_page(user_id=user_id, db=db)
+        # 5. Check AI Allowance & Master Gate via AIAccessService
+        can_use_ai = False
         provider = None
+        if user_id and db:
+            try:
+                auth_res = AIAccessService.check_authorization(
+                    customer_id=user_id,
+                    db=db,
+                    task_type="page_solution",
+                    estimated_credits=1,
+                    is_report=not is_interactive
+                )
+                can_use_ai = auth_res.get("allowed", False)
+            except Exception as auth_err:
+                if is_interactive:
+                    raise
+                print(f"[AI SOLUTION SERVICE] AI Access check prevented generation: {auth_err}", flush=True)
+                can_use_ai = False
+
         if can_use_ai and user_id and db:
             try:
                 provider = get_llm_provider_for_user(user_id=user_id, db=db)
@@ -179,22 +197,34 @@ class AISolutionService:
                     crawl_date=crawl_date
                 )
                 if solution_obj:
-                    # Record real AI page consumption
+                    # Record real AI page consumption & deduct credits atomically
                     p_name = getattr(provider, "provider_name", type(provider).__name__)
                     m_name = getattr(provider, "model", "default")
-                    AIUsageService.record_ai_usage(
-                        user_id=user_id,
+                    AIAccessService.record_successful_ai_consumption(
+                        customer_id=user_id,
+                        project_id=project.id,
+                        crawl_id=crawl_id,
+                        page_url=affected_url,
+                        task_type="page_solution",
+                        units_consumed=1,
+                        model=f"{p_name}:{m_name}",
+                        db=db
+                    )
+            except Exception as ai_err:
+                print(f"[AI SOLUTION SERVICE] LLM execution failed, using deterministic evidence fallback: {ai_err}", flush=True)
+                if user_id and db:
+                    p_name = getattr(provider, "provider_name", type(provider).__name__)
+                    m_name = getattr(provider, "model", "default")
+                    AIAccessService.record_failed_ai_attempt(
+                        customer_id=user_id,
                         project_id=project.id,
                         crawl_id=crawl_id,
                         page_url=affected_url,
                         task_type="page_solution",
                         model=f"{p_name}:{m_name}",
-                        units_consumed=1,
-                        status="success",
+                        error_message=str(ai_err),
                         db=db
                     )
-            except Exception as ai_err:
-                print(f"[AI SOLUTION SERVICE] LLM execution failed, using deterministic evidence fallback: {ai_err}", flush=True)
 
         # 6. Deterministic Evidence-Grounded Fallback (if LLM returned None, errored, or limit reached)
         if not solution_obj:

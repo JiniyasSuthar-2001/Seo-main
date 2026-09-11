@@ -44,7 +44,10 @@ MODEL_PRICING = {
     },
     "claude": {
         "default": {"input": 0.00300, "output": 0.01500},
+        "claude-3-5-sonnet-latest": {"input": 0.00300, "output": 0.01500},
+        "claude-3-7-sonnet-latest": {"input": 0.00300, "output": 0.01500},
         "claude-3-5-sonnet-20241022": {"input": 0.00300, "output": 0.01500},
+        "claude-3-5-haiku-latest": {"input": 0.00080, "output": 0.00400},
         "claude-3-haiku-20240307": {"input": 0.00025, "output": 0.00125},
     },
     "ollama": {

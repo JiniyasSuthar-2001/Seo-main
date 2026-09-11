@@ -1,6 +1,7 @@
 import { apiClient } from '../services/apiClient.js';
 import { authStore } from '../core/authStore.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
+import { ApiKeyModal } from '../components/ApiKeyModal.js';
 
 export class Integrations {
     constructor() {
@@ -391,7 +392,13 @@ export class Integrations {
         const btnConfGads = this.element.querySelector('.btn-configure-google-ads');
         if (btnConfGads) {
             btnConfGads.addEventListener('click', () => {
-                this.renderGoogleAdsModal();
+                const gads = this.data.google_ads || { status: 'NOT_CONNECTED' };
+                ApiKeyModal.open({
+                    provider: 'google_ads',
+                    isConnected: gads.status === 'CONNECTED',
+                    maskedKey: gads.masked_developer_token || '',
+                    onSuccess: () => this.loadIntegrations()
+                });
             });
         }
     }
@@ -431,6 +438,7 @@ export class Integrations {
                         API Key: <code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px;">${this.escapeHtml(serp.masked_key || 'Configured')}</code>
                     </div>
                 ` : ''}
+                <div id="serp-feedback-banner" style="display: none; margin-bottom: 14px; padding: 8px 12px; border-radius: 6px; font-size: 12.5px;"></div>
                 <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--border); padding-top: 14px;">
                     ${isConnected ? `
                         <button class="btn btn-secondary btn-sm btn-test-serp">Test Connection</button>
@@ -444,18 +452,41 @@ export class Integrations {
         `;
 
         const btnConf = container.querySelector('.btn-configure-serp');
-        if (btnConf) btnConf.addEventListener('click', () => this.renderSerpModal());
+        if (btnConf) {
+            btnConf.addEventListener('click', () => {
+                ApiKeyModal.open({
+                    provider: 'serp',
+                    isConnected,
+                    maskedKey: serp.masked_key || '',
+                    existingName: serp.provider_type || 'SerpApi',
+                    onSuccess: () => this.loadIntegrations()
+                });
+            });
+        }
 
         const btnTest = container.querySelector('.btn-test-serp');
+        const feedbackBanner = container.querySelector('#serp-feedback-banner');
         if (btnTest) {
             btnTest.addEventListener('click', async () => {
                 try {
                     btnTest.disabled = true;
                     btnTest.innerText = 'Testing...';
                     const res = await apiClient.post('/api/integrations/serp/test', {});
-                    alert(res.message || 'SERP connection verified successfully!');
+                    if (feedbackBanner) {
+                        feedbackBanner.style.display = 'block';
+                        feedbackBanner.style.background = 'var(--success-bg, rgba(16, 185, 129, 0.1))';
+                        feedbackBanner.style.color = 'var(--success, #10b981)';
+                        feedbackBanner.style.border = '1px solid var(--success-border, rgba(16, 185, 129, 0.25))';
+                        feedbackBanner.innerText = res.message || '✓ SERP connection verified successfully!';
+                    }
                 } catch (e) {
-                    alert('SERP Test Failed: ' + e.message);
+                    if (feedbackBanner) {
+                        feedbackBanner.style.display = 'block';
+                        feedbackBanner.style.background = 'var(--critical-bg, rgba(239, 68, 68, 0.1))';
+                        feedbackBanner.style.color = 'var(--critical, #ef4444)';
+                        feedbackBanner.style.border = '1px solid var(--critical-border, rgba(239, 68, 68, 0.25))';
+                        feedbackBanner.innerText = '⚠️ ' + (e.message || 'SERP connection test failed.');
+                    }
                 } finally {
                     btnTest.disabled = false;
                     btnTest.innerText = 'Test Connection';
@@ -509,6 +540,7 @@ export class Integrations {
                         API Key: <code style="background: var(--bg-subtle); padding: 2px 6px; border-radius: 4px;">${this.escapeHtml(backlink.masked_key || 'Configured')}</code>
                     </div>
                 ` : ''}
+                <div id="backlink-feedback-banner" style="display: none; margin-bottom: 14px; padding: 8px 12px; border-radius: 6px; font-size: 12.5px;"></div>
                 <div style="display: flex; justify-content: flex-end; gap: 10px; border-top: 1px solid var(--border); padding-top: 14px;">
                     ${isConnected ? `
                         <button class="btn btn-secondary btn-sm btn-test-backlink">Test Connection</button>
@@ -522,18 +554,41 @@ export class Integrations {
         `;
 
         const btnConf = container.querySelector('.btn-configure-backlink');
-        if (btnConf) btnConf.addEventListener('click', () => this.renderBacklinkModal());
+        if (btnConf) {
+            btnConf.addEventListener('click', () => {
+                ApiKeyModal.open({
+                    provider: 'backlink',
+                    isConnected,
+                    maskedKey: backlink.masked_key || '',
+                    existingName: backlink.provider_type || 'Ahrefs / Backlink API',
+                    onSuccess: () => this.loadIntegrations()
+                });
+            });
+        }
 
         const btnTest = container.querySelector('.btn-test-backlink');
+        const feedbackBanner = container.querySelector('#backlink-feedback-banner');
         if (btnTest) {
             btnTest.addEventListener('click', async () => {
                 try {
                     btnTest.disabled = true;
                     btnTest.innerText = 'Testing...';
                     const res = await apiClient.post('/api/integrations/backlink/test', {});
-                    alert(res.message || 'Backlink connection verified successfully!');
+                    if (feedbackBanner) {
+                        feedbackBanner.style.display = 'block';
+                        feedbackBanner.style.background = 'var(--success-bg, rgba(16, 185, 129, 0.1))';
+                        feedbackBanner.style.color = 'var(--success, #10b981)';
+                        feedbackBanner.style.border = '1px solid var(--success-border, rgba(16, 185, 129, 0.25))';
+                        feedbackBanner.innerText = res.message || '✓ Backlink connection verified successfully!';
+                    }
                 } catch (e) {
-                    alert('Backlink Test Failed: ' + e.message);
+                    if (feedbackBanner) {
+                        feedbackBanner.style.display = 'block';
+                        feedbackBanner.style.background = 'var(--critical-bg, rgba(239, 68, 68, 0.1))';
+                        feedbackBanner.style.color = 'var(--critical, #ef4444)';
+                        feedbackBanner.style.border = '1px solid var(--critical-border, rgba(239, 68, 68, 0.25))';
+                        feedbackBanner.innerText = '⚠️ ' + (e.message || 'Backlink connection test failed.');
+                    }
                 } finally {
                     btnTest.disabled = false;
                     btnTest.innerText = 'Test Connection';
@@ -547,164 +602,6 @@ export class Integrations {
                 if (confirm('Disconnect Backlink Provider?')) {
                     await apiClient.post('/api/integrations/backlink/disconnect', {});
                     await this.loadIntegrations();
-                }
-            });
-        }
-    }
-
-    // ============================================================
-    // MODALS: GOOGLE ADS, SERP, BACKLINK
-    // ============================================================
-
-    renderGoogleAdsModal() {
-        const modalContainer = this.element.querySelector('#integrations-modal-container');
-        if (!modalContainer) return;
-
-        modalContainer.innerHTML = `
-            <div class="modal-backdrop" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(8, 12, 20, 0.7); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 9999;">
-                <div class="modal-card" style="background: var(--bg-card); width: 100%; max-width: 480px; padding: 28px; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow-lg);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                        <h3 style="font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 0;">Configure Google Ads Developer Token</h3>
-                        <button class="btn-close-modal" style="background: none; border: none; font-size: 20px; color: var(--text-tertiary); cursor: pointer;">&times;</button>
-                    </div>
-                    <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 20px;">
-                        Enter your Google Ads API Developer Token approved by Google. The token is securely encrypted at rest on the backend and never exposed in responses.
-                    </p>
-                    <form id="form-google-ads-token">
-                        <div style="margin-bottom: 20px;">
-                            <label style="display: block; font-size: 11.5px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">Developer Token</label>
-                            <input id="input-gads-token" type="password" placeholder="e.g. abcd1234efgh5678" required style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--bg-subtle); color: var(--text-primary);">
-                        </div>
-                        <div style="display: flex; justify-content: flex-end; gap: 10px;">
-                            <button type="button" class="btn btn-secondary btn-close-modal">Cancel</button>
-                            <button type="submit" class="btn btn-primary">Save Securely</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        `;
-
-        modalContainer.querySelectorAll('.btn-close-modal').forEach(b => {
-            b.addEventListener('click', () => modalContainer.innerHTML = '');
-        });
-
-        const form = modalContainer.querySelector('#form-google-ads-token');
-        if (form) {
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const token = document.getElementById('input-gads-token').value.trim();
-                try {
-                    await apiClient.post('/api/integrations/google_ads/config', { developer_token: token });
-                    modalContainer.innerHTML = '';
-                    await this.loadIntegrations();
-                } catch (err) {
-                    alert('Failed to save Google Ads token: ' + err.message);
-                }
-            });
-        }
-    }
-
-    renderSerpModal() {
-        const modalContainer = this.element.querySelector('#integrations-modal-container');
-        if (!modalContainer) return;
-
-        modalContainer.innerHTML = `
-            <div class="modal-backdrop" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(8, 12, 20, 0.7); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 9999;">
-                <div class="modal-card" style="background: var(--bg-card); width: 100%; max-width: 480px; padding: 28px; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow-lg);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                        <h3 style="font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 0;">Configure SERP Provider API Key</h3>
-                        <button class="btn-close-modal" style="background: none; border: none; font-size: 20px; color: var(--text-tertiary); cursor: pointer;">&times;</button>
-                    </div>
-                    <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 20px;">
-                        Enter your external SERP provider API key (e.g. SerpApi, DataForSEO) for real search engine position checks.
-                    </p>
-                    <form id="form-serp-key">
-                        <div style="margin-bottom: 16px;">
-                            <label style="display: block; font-size: 11.5px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">Provider Name</label>
-                            <input id="input-serp-name" type="text" value="SerpApi" required style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--bg-subtle); color: var(--text-primary);">
-                        </div>
-                        <div style="margin-bottom: 20px;">
-                            <label style="display: block; font-size: 11.5px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">API Key</label>
-                            <input id="input-serp-key" type="password" placeholder="Enter SERP API Key" required style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--bg-subtle); color: var(--text-primary);">
-                        </div>
-                        <div style="display: flex; justify-content: flex-end; gap: 10px;">
-                            <button type="button" class="btn btn-secondary btn-close-modal">Cancel</button>
-                            <button type="submit" class="btn btn-primary">Save Provider</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        `;
-
-        modalContainer.querySelectorAll('.btn-close-modal').forEach(b => {
-            b.addEventListener('click', () => modalContainer.innerHTML = '');
-        });
-
-        const form = modalContainer.querySelector('#form-serp-key');
-        if (form) {
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const providerName = document.getElementById('input-serp-name').value.trim();
-                const apiKey = document.getElementById('input-serp-key').value.trim();
-                try {
-                    await apiClient.post('/api/integrations/serp/config', { provider_name: providerName, api_key: apiKey });
-                    modalContainer.innerHTML = '';
-                    await this.loadIntegrations();
-                } catch (err) {
-                    alert('Failed to save SERP Provider: ' + err.message);
-                }
-            });
-        }
-    }
-
-    renderBacklinkModal() {
-        const modalContainer = this.element.querySelector('#integrations-modal-container');
-        if (!modalContainer) return;
-
-        modalContainer.innerHTML = `
-            <div class="modal-backdrop" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(8, 12, 20, 0.7); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 9999;">
-                <div class="modal-card" style="background: var(--bg-card); width: 100%; max-width: 480px; padding: 28px; border-radius: 12px; border: 1px solid var(--border); box-shadow: var(--shadow-lg);">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                        <h3 style="font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 0;">Configure Backlink Data Provider</h3>
-                        <button class="btn-close-modal" style="background: none; border: none; font-size: 20px; color: var(--text-tertiary); cursor: pointer;">&times;</button>
-                    </div>
-                    <p style="font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 20px;">
-                        Enter your external backlink intelligence API key (e.g. Ahrefs, Moz, OpenLink) for inbound link discovery.
-                    </p>
-                    <form id="form-backlink-key">
-                        <div style="margin-bottom: 16px;">
-                            <label style="display: block; font-size: 11.5px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">Provider Name</label>
-                            <input id="input-backlink-name" type="text" value="Ahrefs / Backlink API" required style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--bg-subtle); color: var(--text-primary);">
-                        </div>
-                        <div style="margin-bottom: 20px;">
-                            <label style="display: block; font-size: 11.5px; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;">API Key</label>
-                            <input id="input-backlink-key" type="password" placeholder="Enter Backlink API Key" required style="width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--bg-subtle); color: var(--text-primary);">
-                        </div>
-                        <div style="display: flex; justify-content: flex-end; gap: 10px;">
-                            <button type="button" class="btn btn-secondary btn-close-modal">Cancel</button>
-                            <button type="submit" class="btn btn-primary">Save Provider</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        `;
-
-        modalContainer.querySelectorAll('.btn-close-modal').forEach(b => {
-            b.addEventListener('click', () => modalContainer.innerHTML = '');
-        });
-
-        const form = modalContainer.querySelector('#form-backlink-key');
-        if (form) {
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const providerName = document.getElementById('input-backlink-name').value.trim();
-                const apiKey = document.getElementById('input-backlink-key').value.trim();
-                try {
-                    await apiClient.post('/api/integrations/backlink/config', { provider_name: providerName, api_key: apiKey });
-                    modalContainer.innerHTML = '';
-                    await this.loadIntegrations();
-                } catch (err) {
-                    alert('Failed to save Backlink Provider: ' + err.message);
                 }
             });
         }
@@ -735,7 +632,7 @@ export class Integrations {
                 this.preferredProvider = p;
                 await this.loadIntegrations();
             } catch (err) {
-                alert("Failed to switch AI engine: " + err.message);
+                console.error("Failed to switch AI engine:", err);
             }
         };
     }
@@ -773,16 +670,22 @@ export class Integrations {
                 <div class="card" style="padding: 20px; background: var(--bg-card); border-radius: 12px; border-left: 4px solid ${isConnected ? '#10b981' : 'var(--border)'}; margin-bottom: 12px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
                         <div>
-                            <div style="font-weight: 700; font-size: 15px; color: var(--text-primary);">${this.escapeHtml(ai.name)}</div>
-                            <div style="font-size: 12.5px; color: var(--text-secondary);">${this.escapeHtml(ai.model_info || '')}</div>
-                            ${isConnected ? `<div style="font-size: 11.5px; color: var(--text-tertiary); margin-top: 4px;">Key: ${this.escapeHtml(ai.masked_key || 'Configured')}</div>` : ''}
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <div style="font-weight: 700; font-size: 15px; color: var(--text-primary);">${this.escapeHtml(ai.name)}</div>
+                                <span class="badge ${isConnected ? 'badge-success' : 'badge-secondary'}" style="font-size: 11px;">
+                                    ${isConnected ? 'Connected' : 'Not Connected'}
+                                </span>
+                            </div>
+                            <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 2px;">${this.escapeHtml(ai.model_info || '')}</div>
+                            ${isConnected ? `<div style="font-size: 11.5px; color: var(--text-tertiary); margin-top: 4px;">Key: <code style="background: var(--bg-subtle); padding: 1px 5px; border-radius: 4px;">${this.escapeHtml(ai.masked_key || 'Configured')}</code></div>` : ''}
                         </div>
-                        <div style="display: flex; gap: 8px;">
+                        <div style="display: flex; gap: 8px; align-items: center;">
                             ${isConnected ? `
-                                <button class="btn btn-secondary btn-sm" onclick="window.testAiKey('${ai.provider}')">Test</button>
+                                <button class="btn btn-secondary btn-sm" id="btn-test-ai-${ai.provider}" onclick="window.testAiKey('${ai.provider}')">Test Connection</button>
+                                <button class="btn btn-secondary btn-sm" onclick="window.configureAiKey('${ai.provider}', true, '${this.escapeHtml(ai.masked_key || '')}')">Update Key</button>
                                 <button class="btn btn-secondary btn-sm" style="color: var(--critical);" onclick="window.disconnectAiKey('${ai.provider}')">Disconnect</button>
                             ` : `
-                                <button class="btn btn-secondary btn-sm" onclick="window.configureAiKey('${ai.provider}', '${this.escapeHtml(ai.name)}')">Configure Key</button>
+                                <button class="btn btn-primary btn-sm" onclick="window.configureAiKey('${ai.provider}', false, '')">Connect ${this.escapeHtml(ai.name)}</button>
                             `}
                         </div>
                     </div>
@@ -793,36 +696,58 @@ export class Integrations {
         container.innerHTML = `
             <div style="margin-bottom: 12px;">
                 <h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">Bring Your Own AI Keys (Optional)</h3>
-                <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 12px 0;">Connecting personal API keys is completely optional.</p>
+                <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 12px 0;">Connecting personal API keys is completely optional. Platform default is available automatically.</p>
+                <div id="ai-test-global-feedback" style="display: none; margin-bottom: 14px; padding: 10px 14px; border-radius: 8px; font-size: 13px;"></div>
                 ${cardsHtml}
             </div>
         `;
 
-        window.configureAiKey = (provider, name) => {
-            const key = prompt(`Enter your API key for ${name}:`);
-            if (key && key.trim()) {
-                apiClient.post(`/api/integrations/${provider}/key`, { api_key: key.trim() })
-                    .then(() => this.loadIntegrations())
-                    .catch(err => alert('Failed to save API key: ' + err.message));
-            }
+        window.configureAiKey = (provider, isConnected = false, maskedKey = '') => {
+            ApiKeyModal.open({
+                provider: provider,
+                isConnected: isConnected,
+                maskedKey: maskedKey,
+                onSuccess: () => this.loadIntegrations()
+            });
         };
 
         window.testAiKey = async (provider) => {
+            const btn = document.getElementById(`btn-test-ai-${provider}`);
+            const banner = document.getElementById('ai-test-global-feedback');
+            const originalText = btn ? btn.innerText : 'Test Connection';
+
             try {
                 const res = await apiClient.post(`/api/integrations/${provider}/test`, {});
-                alert(`Test successful for ${provider}!`);
+                if (banner) {
+                    banner.style.display = 'block';
+                    banner.style.background = 'var(--success-bg, rgba(16, 185, 129, 0.1))';
+                    banner.style.color = 'var(--success, #10b981)';
+                    banner.style.border = '1px solid var(--success-border, rgba(16, 185, 129, 0.25))';
+                    banner.innerHTML = `✓ <strong>${provider.toUpperCase()} Test Successful:</strong> ${res.result?.message || 'Connection verified successfully.'}`;
+                }
             } catch (err) {
-                alert(`Test failed: ` + err.message);
+                if (banner) {
+                    banner.style.display = 'block';
+                    banner.style.background = 'var(--critical-bg, rgba(239, 68, 68, 0.1))';
+                    banner.style.color = 'var(--critical, #ef4444)';
+                    banner.style.border = '1px solid var(--critical-border, rgba(239, 68, 68, 0.25))';
+                    banner.innerHTML = `⚠️ <strong>${provider.toUpperCase()} Test Failed:</strong> ${err.message || 'Unable to connect.'}`;
+                }
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = originalText;
+                }
             }
         };
 
         window.disconnectAiKey = async (provider) => {
-            if (confirm(`Disconnect ${provider} API key?`)) {
+            if (confirm(`Disconnect ${provider.toUpperCase()} API key?`)) {
                 try {
                     await apiClient.post(`/api/integrations/${provider}/disconnect`, {});
                     await this.loadIntegrations();
                 } catch (err) {
-                    alert('Failed to disconnect: ' + err.message);
+                    console.error('Failed to disconnect:', err);
                 }
             }
         };

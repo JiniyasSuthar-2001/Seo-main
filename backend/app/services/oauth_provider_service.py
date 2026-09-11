@@ -277,6 +277,8 @@ def validate_api_key_provider(provider: str, api_key: str) -> dict:
             raise ValueError(f"Claude AI validation failed: HTTP {e.code}")
         except Exception as e:
             raise ValueError(f"Claude AI connection error: {e}")
+
+    elif p == "groq":
         req = urllib.request.Request(
             "https://api.groq.com/openai/v1/models",
             headers={"Authorization": f"Bearer {clean_key}", "User-Agent": "SEO-Intelligence-Platform/1.0"}

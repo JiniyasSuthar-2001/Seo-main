@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 # Default Provider Model Configurations
 DEFAULT_GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 DEFAULT_OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-DEFAULT_ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+DEFAULT_ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
 DEFAULT_GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "models/gemini-flash-latest")
 
 
@@ -176,11 +176,94 @@ class OpenAIProviderAdapter(LLMProvider):
 
 
 class AnthropicProviderAdapter(LLMProvider):
-    def __init__(self, api_key: str, model: str = DEFAULT_ANTHROPIC_MODEL):
+    def __init__(self, api_key: str, model: Optional[str] = None):
         if not api_key or not api_key.strip():
             raise AIProviderException("Anthropic API Key is required.", status_code=401, code="INVALID_CREDENTIALS")
         self.api_key = api_key.strip()
-        self.model = model
+        custom_model = (model or os.environ.get("ANTHROPIC_MODEL") or "").strip()
+        self.model = custom_model if custom_model else DEFAULT_ANTHROPIC_MODEL
+
+    def _get_model_candidates(self) -> List[str]:
+        candidates = []
+        if self.model and self.model.strip():
+            candidates.append(self.model.strip())
+        defaults = [
+            "claude-3-5-sonnet-latest",
+            "claude-3-7-sonnet-latest",
+            "claude-3-5-haiku-latest",
+            "claude-3-haiku-20240307",
+            "claude-3-5-sonnet-20240620"
+        ]
+        for d in defaults:
+            if d not in candidates:
+                candidates.append(d)
+        return candidates
+
+    def _classify_error(self, e: Exception, target_model: str) -> AIProviderException:
+        if isinstance(e, urllib.error.HTTPError):
+            err_body = ""
+            try:
+                err_body = e.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            logger.error(f"Anthropic API HTTP {e.code} error for model '{target_model}'")
+            
+            if e.code == 401:
+                return AIProviderException(
+                    "API key authentication failed. Check that your Anthropic API key is valid and active.",
+                    status_code=401,
+                    code="AUTH_FAILED"
+                )
+            elif e.code == 403:
+                return AIProviderException(
+                    "The API key does not have permission to use this resource.",
+                    status_code=403,
+                    code="PERMISSION_DENIED"
+                )
+            elif e.code == 429:
+                return AIProviderException(
+                    "The Anthropic rate limit has been reached. Please try again shortly.",
+                    status_code=429,
+                    code="RATE_LIMITED"
+                )
+            elif e.code in (400, 404):
+                err_lower = err_body.lower()
+                if "model" in err_lower or "not_found" in err_lower or "invalid_request" in err_lower:
+                    return AIProviderException(
+                        "The configured Anthropic model is unavailable. Please check the model configuration.",
+                        status_code=404,
+                        code="MODEL_NOT_FOUND"
+                    )
+                return AIProviderException(
+                    f"Anthropic request validation failed: {err_body[:100]}",
+                    status_code=400,
+                    code="INVALID_REQUEST"
+                )
+            elif e.code in (500, 502, 503, 504):
+                return AIProviderException(
+                    "We couldn't reach Anthropic. Please try again.",
+                    status_code=502,
+                    code="PROVIDER_UNAVAILABLE"
+                )
+            return AIProviderException(
+                f"Anthropic API error (HTTP {e.code}).",
+                status_code=502,
+                code="PROVIDER_ERROR"
+            )
+        elif isinstance(e, (urllib.error.URLError, TimeoutError, ConnectionError, OSError)):
+            logger.error(f"Anthropic network connection failed for model '{target_model}'")
+            return AIProviderException(
+                "We couldn't reach Anthropic. Please try again.",
+                status_code=502,
+                code="CONNECTION_FAILED"
+            )
+        else:
+            logger.error(f"Anthropic unexpected error for model '{target_model}': {type(e).__name__}")
+            return AIProviderException(
+                "Anthropic connection verification failed. Please try again.",
+                status_code=502,
+                code="UNKNOWN_PROVIDER_ERROR"
+            )
 
     def analyze(
         self, 
@@ -189,47 +272,52 @@ class AnthropicProviderAdapter(LLMProvider):
         context_data: Dict[str, Any], 
         timeout: float = 30.0
     ) -> Dict[str, Any]:
-        endpoint = "https://api.anthropic.com/v1/messages"
-        payload = {
-            "model": self.model,
-            "max_tokens": 4096,
-            "system": system_instructions,
-            "messages": [
-                {"role": "user", "content": f"{user_prompt}\n\nEVIDENCE CONTEXT:\n{json.dumps(context_data, indent=2)}"}
-            ]
-        }
+        candidates = self._get_model_candidates()
+        last_exception = None
 
-        req = urllib.request.Request(
-            endpoint,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01"
-            },
-            method="POST"
-        )
+        for target_model in candidates:
+            endpoint = "https://api.anthropic.com/v1/messages"
+            payload = {
+                "model": target_model,
+                "max_tokens": 4096,
+                "system": system_instructions,
+                "messages": [
+                    {"role": "user", "content": f"{user_prompt}\n\nEVIDENCE CONTEXT:\n{json.dumps(context_data, indent=2)}"}
+                ]
+            }
 
-        start_time = time.time()
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                resp_data = json.loads(resp.read().decode("utf-8"))
-                duration = time.time() - start_time
-                logger.info(f"Anthropic API request completed successfully in {duration:.2f}s using model '{self.model}'.")
-                
-                content_text = resp_data["content"][0]["text"]
-                return json.loads(content_text.strip())
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8", errors="replace")
-            logger.error(f"Anthropic API HTTP {e.code} error: {err_body[:200]}")
-            if e.code == 401:
-                raise AIProviderException("Invalid Anthropic API Key provided.", status_code=401, code="AUTH_FAILED")
-            elif e.code == 429:
-                raise AIProviderException("Anthropic API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
-            raise AIProviderException(f"Anthropic API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
-        except Exception as e:
-            logger.error(f"Anthropic request failed: {e}")
-            raise AIProviderException(f"Anthropic connection error: {e}", status_code=502, code="CONNECTION_FAILED")
+            req = urllib.request.Request(
+                endpoint,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "x-api-key": self.api_key,
+                    "anthropic-version": "2023-06-01",
+                    "User-Agent": "SEO-Intelligence-Platform/1.0"
+                },
+                method="POST"
+            )
+
+            start_time = time.time()
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    duration = time.time() - start_time
+                    logger.info(f"Anthropic API request completed successfully in {duration:.2f}s using model '{target_model}'.")
+                    self.model = target_model
+                    
+                    content_text = resp_data["content"][0]["text"]
+                    return json.loads(content_text.strip())
+            except Exception as e:
+                classified = self._classify_error(e, target_model)
+                if classified.code == "MODEL_NOT_FOUND":
+                    last_exception = classified
+                    continue
+                raise classified
+
+        if last_exception:
+            raise last_exception
+        raise AIProviderException("No compatible Anthropic model available.", status_code=404, code="NO_MODEL_AVAILABLE")
 
     def chat(
         self, 
@@ -238,73 +326,89 @@ class AnthropicProviderAdapter(LLMProvider):
         context_data: Dict[str, Any], 
         timeout: float = 30.0
     ) -> str:
-        endpoint = "https://api.anthropic.com/v1/messages"
-        payload = {
-            "model": self.model,
-            "max_tokens": 2048,
-            "system": system_instructions,
-            "messages": [
-                {"role": "user", "content": f"EVIDENCE CONTEXT:\n{json.dumps(context_data, indent=2)}\n\nUSER QUESTION: {query}"}
-            ]
-        }
+        candidates = self._get_model_candidates()
+        last_exception = None
 
-        req = urllib.request.Request(
-            endpoint,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01"
-            },
-            method="POST"
-        )
+        for target_model in candidates:
+            endpoint = "https://api.anthropic.com/v1/messages"
+            payload = {
+                "model": target_model,
+                "max_tokens": 2048,
+                "system": system_instructions,
+                "messages": [
+                    {"role": "user", "content": f"EVIDENCE CONTEXT:\n{json.dumps(context_data, indent=2)}\n\nUSER QUESTION: {query}"}
+                ]
+            }
 
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                resp_data = json.loads(resp.read().decode("utf-8"))
-                return resp_data["content"][0]["text"]
-        except urllib.error.HTTPError as e:
-            if e.code == 401:
-                raise AIProviderException("Invalid Anthropic API Key.", status_code=401, code="AUTH_FAILED")
-            elif e.code == 429:
-                raise AIProviderException("Anthropic API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
-            raise AIProviderException(f"Anthropic API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
-        except Exception as e:
-            raise AIProviderException(f"Anthropic connection error: {e}", status_code=502, code="CONNECTION_FAILED")
+            req = urllib.request.Request(
+                endpoint,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "x-api-key": self.api_key,
+                    "anthropic-version": "2023-06-01",
+                    "User-Agent": "SEO-Intelligence-Platform/1.0"
+                },
+                method="POST"
+            )
+
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    resp_data = json.loads(resp.read().decode("utf-8"))
+                    self.model = target_model
+                    return resp_data["content"][0]["text"]
+            except Exception as e:
+                classified = self._classify_error(e, target_model)
+                if classified.code == "MODEL_NOT_FOUND":
+                    last_exception = classified
+                    continue
+                raise classified
+
+        if last_exception:
+            raise last_exception
+        raise AIProviderException("No compatible Anthropic model available.", status_code=404, code="NO_MODEL_AVAILABLE")
 
     def test_connection(self, timeout: float = 15.0) -> Dict[str, Any]:
-        endpoint = "https://api.anthropic.com/v1/messages"
-        payload = {
-            "model": self.model,
-            "max_tokens": 10,
-            "messages": [{"role": "user", "content": "Ping"}]
-        }
-        req = urllib.request.Request(
-            endpoint,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01"
-            },
-            method="POST"
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return {
-                    "status": "connected",
-                    "provider": "anthropic",
-                    "model": self.model,
-                    "message": "Anthropic Claude connection successful."
-                }
-        except urllib.error.HTTPError as e:
-            if e.code == 401:
-                raise AIProviderException("Anthropic API key is invalid or unauthorized.", status_code=401, code="AUTH_FAILED")
-            elif e.code == 429:
-                raise AIProviderException("Anthropic API rate limit exceeded.", status_code=429, code="RATE_LIMITED")
-            raise AIProviderException(f"Anthropic API error (HTTP {e.code}).", status_code=502, code="PROVIDER_ERROR")
-        except Exception as e:
-            raise AIProviderException(f"Anthropic connection error: {str(e)[:120]}", status_code=502, code="CONNECTION_FAILED")
+        candidates = self._get_model_candidates()
+        last_exception = None
+
+        for target_model in candidates:
+            endpoint = "https://api.anthropic.com/v1/messages"
+            payload = {
+                "model": target_model,
+                "max_tokens": 10,
+                "messages": [{"role": "user", "content": "Ping"}]
+            }
+            req = urllib.request.Request(
+                endpoint,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "x-api-key": self.api_key,
+                    "anthropic-version": "2023-06-01",
+                    "User-Agent": "SEO-Intelligence-Platform/1.0"
+                },
+                method="POST"
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    self.model = target_model
+                    return {
+                        "status": "connected",
+                        "provider": "anthropic",
+                        "model": target_model,
+                        "message": f"Anthropic Claude connection successful ({target_model})."
+                    }
+            except Exception as e:
+                classified = self._classify_error(e, target_model)
+                if classified.code == "MODEL_NOT_FOUND":
+                    last_exception = classified
+                    continue
+                raise classified
+
+        if last_exception:
+            raise last_exception
+        raise AIProviderException("No compatible Anthropic model available.", status_code=404, code="NO_MODEL_AVAILABLE")
 
 
 class GroqProviderAdapter(LLMProvider):

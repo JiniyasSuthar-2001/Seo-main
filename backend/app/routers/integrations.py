@@ -201,7 +201,7 @@ def get_user_integrations(
     customer_ai_providers = [
         {"provider": "openai", "name": "OpenAI / ChatGPT", "model_info": "GPT-4o & Mini models"},
         {"provider": "gemini", "name": "Google Gemini", "model_info": "Gemini Flash & Pro models"},
-        {"provider": "claude", "name": "Anthropic Claude", "model_info": "Claude 3.5 Sonnet"}
+        {"provider": "claude", "name": "Anthropic Claude", "model_info": "Claude 3.5 Sonnet & Haiku"}
     ]
 
     customer_ai = []
@@ -803,16 +803,13 @@ def submit_customer_api_key(
             provider_adapter = AnthropicProviderAdapter(api_key=api_key)
 
         if provider_adapter:
-            test_res = provider_adapter.test_connection()
-            print(f"[CUSTOMER AI KEY] Verified {p_clean} key for user '{user_id}': {test_res}", flush=True)
+            provider_adapter.test_connection()
     except AIProviderException as ai_err:
-        print(f"[CUSTOMER AI KEY ERROR] Verification failed for {p_clean}: {ai_err.message}", flush=True)
         raise HTTPException(
             status_code=400,
             detail=f"Unable to verify {p_clean.title()} API Key: {ai_err.message}"
         )
     except Exception as err:
-        print(f"[CUSTOMER AI KEY ERROR] Unexpected verification error: {err}", flush=True)
         raise HTTPException(
             status_code=400,
             detail=f"Unable to verify {p_clean.title()} API Key. Please check the key and try again."

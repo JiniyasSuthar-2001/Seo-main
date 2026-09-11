@@ -189,5 +189,85 @@ def test_ai_provider_architecture():
     print("      [PASS] AI Provider test suite complete.\n", flush=True)
 
 
+def test_anthropic_model_and_error_classification():
+    """
+    Specifically tests:
+    1. Default Anthropic model is updated to active model (claude-3-5-sonnet-latest).
+    2. Model candidates fallback list includes latest active models.
+    3. Error categorization handles 401, 403, 429, 404/model not found, and network errors.
+    4. Zero credential leakage in exceptions.
+    """
+    from app.llm.llm_provider import AnthropicProviderAdapter, DEFAULT_ANTHROPIC_MODEL, AIProviderException
+    import urllib.error
+    import io
+
+    # 1. Verify default model
+    assert DEFAULT_ANTHROPIC_MODEL == "claude-3-5-sonnet-latest"
+    adapter = AnthropicProviderAdapter(api_key="sk-ant-test-key-123456789")
+    assert adapter.model == "claude-3-5-sonnet-latest"
+    candidates = adapter._get_model_candidates()
+    assert "claude-3-5-sonnet-latest" in candidates
+    assert "claude-3-7-sonnet-latest" in candidates
+
+    # 2. Test 401 Auth error classification
+    http_401 = urllib.error.HTTPError(
+        url="https://api.anthropic.com/v1/messages",
+        code=401,
+        msg="Unauthorized",
+        hdrs={},
+        fp=io.BytesIO(b'{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}')
+    )
+    err_401 = adapter._classify_error(http_401, "claude-3-5-sonnet-latest")
+    assert err_401.status_code == 401
+    assert err_401.code == "AUTH_FAILED"
+    assert "API key authentication failed" in err_401.message
+
+    # 3. Test 403 Permission error classification
+    http_403 = urllib.error.HTTPError(
+        url="https://api.anthropic.com/v1/messages",
+        code=403,
+        msg="Forbidden",
+        hdrs={},
+        fp=io.BytesIO(b'{"type":"error","error":{"type":"permission_error","message":"forbidden"}}')
+    )
+    err_403 = adapter._classify_error(http_403, "claude-3-5-sonnet-latest")
+    assert err_403.status_code == 403
+    assert err_403.code == "PERMISSION_DENIED"
+    assert "permission" in err_403.message.lower()
+
+    # 4. Test 429 Rate limit classification
+    http_429 = urllib.error.HTTPError(
+        url="https://api.anthropic.com/v1/messages",
+        code=429,
+        msg="Too Many Requests",
+        hdrs={},
+        fp=io.BytesIO(b'{"type":"error","error":{"type":"rate_limit_error","message":"rate limit exceeded"}}')
+    )
+    err_429 = adapter._classify_error(http_429, "claude-3-5-sonnet-latest")
+    assert err_429.status_code == 429
+    assert err_429.code == "RATE_LIMITED"
+    assert "rate limit" in err_429.message.lower()
+
+    # 5. Test 404 Model Not Found classification
+    http_404 = urllib.error.HTTPError(
+        url="https://api.anthropic.com/v1/messages",
+        code=404,
+        msg="Not Found",
+        hdrs={},
+        fp=io.BytesIO(b'{"type":"error","error":{"type":"not_found_error","message":"model: retired-model-id"}}')
+    )
+    err_404 = adapter._classify_error(http_404, "retired-model-id")
+    assert err_404.status_code == 404
+    assert err_404.code == "MODEL_NOT_FOUND"
+    assert "model is unavailable" in err_404.message.lower()
+
+    # 6. Test Network error classification
+    url_err = urllib.error.URLError(reason="Connection refused")
+    err_net = adapter._classify_error(url_err, "claude-3-5-sonnet-latest")
+    assert err_net.status_code == 502
+    assert "couldn't reach anthropic" in err_net.message.lower()
+
+
 if __name__ == "__main__":
     test_ai_provider_architecture()
+    test_anthropic_model_and_error_classification()

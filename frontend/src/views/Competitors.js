@@ -120,10 +120,12 @@ export class Competitors {
             this.activeTab = 'suggested';
             this.suggestedPage = 1;
         } catch (err) {
-            alert('Competitor discovery notice: ' + err.message);
+            console.error('[Competitors Discovery Error]', err);
+            this.error = null;
+            alert('Competitor discovery notice: ' + (err.message || 'Discovery request failed.'));
         } finally {
             this.discovering = false;
-            this.loadData();
+            this.renderState();
         }
     }
 
@@ -243,13 +245,13 @@ export class Competitors {
                     <p style="color: var(--text-secondary); margin: 0; font-size: 13.5px;">Identify and monitor websites competing for the same search keywords and customers.</p>
                 </div>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <button class="btn btn-secondary btn-sm" id="btn-learn-discovery" style="display: flex; align-items: center; gap: 6px;">
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-learn-discovery" style="display: flex; align-items: center; gap: 6px;">
                         <span>💡</span> How It Works
                     </button>
-                    <button class="btn btn-secondary btn-sm" id="btn-auto-discover" ${this.discovering ? 'disabled' : ''}>
+                    <button type="button" class="btn btn-secondary btn-sm" id="btn-auto-discover" ${this.discovering ? 'disabled' : ''}>
                         ${this.discovering ? 'Finding Competitors...' : '⚡ Find Competitors'}
                     </button>
-                    <button class="btn btn-primary btn-sm" id="btn-add-manual">
+                    <button type="button" class="btn btn-primary btn-sm" id="btn-add-manual">
                         + Add Competitor
                     </button>
                 </div>
@@ -376,7 +378,7 @@ export class Competitors {
                             Auto-discovering competitors requires a connected search-result provider or an imported SERP dataset.
                         </p>
                         <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
-                            <button class="btn btn-primary btn-sm" id="btn-add-manual-empty" onclick="document.getElementById('btn-add-manual').click()">+ Add Competitor Manually</button>
+                            <button type="button" class="btn btn-primary btn-sm" id="btn-add-manual-empty" onclick="document.getElementById('btn-add-manual').click()">+ Add Competitor Manually</button>
                             <a href="/integrations" data-link class="btn btn-secondary btn-sm">Connect Integration</a>
                             <a href="/import" data-link class="btn btn-secondary btn-sm">Import Data</a>
                         </div>
@@ -390,7 +392,7 @@ export class Competitors {
                     <p style="color: var(--text-secondary); max-width: 480px; margin: 0 auto 20px;">
                         All auto-discovered competitors have been approved or ignored. Click <strong>Find Competitors</strong> to scan SERPs for new market candidates.
                     </p>
-                    <button class="btn btn-primary" id="btn-scan-serps">Find Competitors</button>
+                    <button type="button" class="btn btn-primary" id="btn-scan-serps">Find Competitors</button>
                 </div>
             `;
         }
@@ -816,8 +818,14 @@ export class Competitors {
             this.renderState();
         });
 
-        this.container.querySelector('#btn-auto-discover')?.addEventListener('click', () => this.runAutoDiscovery());
-        this.container.querySelector('#btn-scan-serps')?.addEventListener('click', () => this.runAutoDiscovery());
+        this.container.querySelector('#btn-auto-discover')?.addEventListener('click', (e) => {
+            if (e) e.preventDefault();
+            this.runAutoDiscovery();
+        });
+        this.container.querySelector('#btn-scan-serps')?.addEventListener('click', (e) => {
+            if (e) e.preventDefault();
+            this.runAutoDiscovery();
+        });
 
         this.container.querySelector('#btn-add-manual')?.addEventListener('click', () => {
             this.editingCompetitor = null;

@@ -10,7 +10,20 @@ export class AIAnchorModal {
             document.body.appendChild(modal);
         }
 
+        if (modal._abortController) {
+            modal._abortController.abort();
+        }
+        modal._abortController = new AbortController();
+
         modal.style.cssText = 'position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.75); display: flex; align-items: center; justify-content: center; z-index: 10000; backdrop-filter: blur(4px);';
+
+        const closeModal = () => {
+            if (modal._abortController) {
+                modal._abortController.abort();
+                modal._abortController = null;
+            }
+            if (document.body.contains(modal)) document.body.removeChild(modal);
+        };
 
         // Render Loading State
         modal.innerHTML = `
@@ -39,9 +52,19 @@ export class AIAnchorModal {
             </style>
         `;
 
-        document.getElementById('btn-close-anchor-modal')?.addEventListener('click', () => {
-            if (document.body.contains(modal)) document.body.removeChild(modal);
-        });
+        document.getElementById('btn-close-anchor-modal')?.addEventListener('click', closeModal);
+
+        const onKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+                document.removeEventListener('keydown', onKeyDown);
+            }
+        };
+        document.addEventListener('keydown', onKeyDown);
+
+        modal.onclick = (e) => {
+            if (e.target === modal) closeModal();
+        };
 
         // Fetch AI suggestions
         await projectStore.ensureInitialized();
@@ -52,10 +75,11 @@ export class AIAnchorModal {
                 source_url: sourceUrl,
                 target_url: targetUrl,
                 refresh: false
-            });
+            }, { signal: modal._abortController.signal });
 
             AIAnchorModal.renderContent(modal, projectId, sourceUrl, targetUrl, res);
         } catch (err) {
+            if (err.name === 'AbortError' || err.message === 'canceled') return;
             AIAnchorModal.renderError(modal, err.message || "Failed to generate AI anchor suggestions.");
         }
     }
@@ -170,6 +194,10 @@ export class AIAnchorModal {
         `;
 
         const closeModal = () => {
+            if (modal._abortController) {
+                modal._abortController.abort();
+                modal._abortController = null;
+            }
             if (document.body.contains(modal)) document.body.removeChild(modal);
         };
 
@@ -188,15 +216,19 @@ export class AIAnchorModal {
         });
 
         document.getElementById('btn-refresh-anchors')?.addEventListener('click', async () => {
+            if (modal._abortController) modal._abortController.abort();
+            modal._abortController = new AbortController();
+
             modal.innerHTML = `<div style="color: var(--text-primary); text-align: center; padding: 40px;">Regenerating suggestions...</div>`;
             try {
                 const res = await apiClient.post(`/api/projects/${projectId}/internal-links/anchor-suggestions`, {
                     source_url: sourceUrl,
                     target_url: targetUrl,
                     refresh: true
-                });
+                }, { signal: modal._abortController.signal });
                 AIAnchorModal.renderContent(modal, projectId, sourceUrl, targetUrl, res);
             } catch (err) {
+                if (err.name === 'AbortError' || err.message === 'canceled') return;
                 AIAnchorModal.renderError(modal, err.message);
             }
         });
@@ -212,9 +244,14 @@ export class AIAnchorModal {
                 </div>
             </div>
         `;
-        document.getElementById('btn-close-err-modal')?.addEventListener('click', () => {
+        const closeModal = () => {
+            if (modal._abortController) {
+                modal._abortController.abort();
+                modal._abortController = null;
+            }
             if (document.body.contains(modal)) document.body.removeChild(modal);
-        });
+        };
+        document.getElementById('btn-close-err-modal')?.addEventListener('click', closeModal);
     }
 
     static escapeHtml(str) {

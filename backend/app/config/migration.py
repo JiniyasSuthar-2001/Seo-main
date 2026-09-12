@@ -231,6 +231,7 @@ def _migrate_single_file(db_file: str):
             "disabled_at": "DATETIME",
             "disabled_by": "TEXT",
             "session_revoked_at": "DATETIME",
+            "preferred_ai_provider": "TEXT",
             "created_at": "DATETIME",
             "updated_at": "DATETIME"
         },

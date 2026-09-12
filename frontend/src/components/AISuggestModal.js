@@ -68,6 +68,9 @@ export class AISuggestModal {
         this.result = null;
         this.showProviders = false;
         this._overlay = null;
+        this._abortController = new AbortController();
+        this._isClosed = false;
+        this._keyHandler = null;
     }
 
     _mount() {
@@ -115,6 +118,12 @@ export class AISuggestModal {
         overlay.addEventListener('click', (e) => {
             if (e.target === overlay) this._close();
         });
+
+        // Close on Escape key
+        this._keyHandler = (e) => {
+            if (e.key === 'Escape') this._close();
+        };
+        document.addEventListener('keydown', this._keyHandler);
 
         this._renderLoading();
     }
@@ -411,6 +420,10 @@ export class AISuggestModal {
     }
 
     async _fetchSuggestion() {
+        if (this._isClosed) return;
+        if (!this._abortController || this._abortController.signal.aborted) {
+            this._abortController = new AbortController();
+        }
         try {
             const data = await apiClient.post('/api/ai/crawl-suggest', {
                 project_id: this.projectId,
@@ -418,16 +431,29 @@ export class AISuggestModal {
                 task_type: this.taskType,
                 current_value: this.currentValue || undefined,
                 issue: this.issue || undefined,
-            });
+            }, { signal: this._abortController.signal });
+            if (this._isClosed || (this._abortController && this._abortController.signal.aborted)) return;
             this.result = data;
             this._renderSuccess(data);
         } catch (err) {
+            if (this._isClosed || err?.name === 'AbortError' || err?.message === 'canceled' || (this._abortController && this._abortController.signal.aborted)) {
+                return;
+            }
             const msg = err?.detail || err?.message || 'Suggestion generation failed.';
             this._renderError(msg);
         }
     }
 
     _close() {
+        this._isClosed = true;
+        if (this._abortController) {
+            try { this._abortController.abort(); } catch (e) {}
+            this._abortController = null;
+        }
+        if (this._keyHandler) {
+            document.removeEventListener('keydown', this._keyHandler);
+            this._keyHandler = null;
+        }
         if (this._overlay) {
             this._overlay.style.opacity = '0';
             this._overlay.style.transition = 'opacity 0.15s';

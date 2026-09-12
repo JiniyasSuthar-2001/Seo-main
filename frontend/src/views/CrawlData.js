@@ -3,6 +3,8 @@ import { crawlDataService } from '../services/crawlDataService.js';
 import { renderFeatureErrorState } from '../components/ErrorState.js';
 import { GrowthDetailModal } from '../components/GrowthDetailModal.js';
 import { AISuggestModal } from '../components/AISuggestModal.js';
+import { ImageDetailsModal } from '../components/ImageDetailsModal.js';
+import { PageEvidenceDetailModal } from '../components/PageEvidenceDetailModal.js';
 
 export class CrawlData {
     constructor() {
@@ -340,98 +342,48 @@ export class CrawlData {
                 e.stopPropagation();
                 const idx = parseInt(btn.getAttribute('data-row-index'), 10);
                 const rowData = items[idx];
+                const projectId = projectStore.getSelectedProjectId();
                 if (rowData) {
-                    if (this.activeTab === 'internal-links' || this.activeTab === 'external-links' || this.activeTab === 'broken-links') {
+                    if (this.activeTab === 'images') {
+                        const pageUrl = rowData.url || rowData.page_url || '';
+                        const images = rowData.image_inventory || [];
+                        ImageDetailsModal.show({ pageUrl, images, projectId, pageRow: rowData });
+                    } else if (this.activeTab === 'internal-links' || this.activeTab === 'external-links' || this.activeTab === 'broken-links') {
                         GrowthDetailModal.showGroupedLinkDetail(rowData, this.activeTab);
                     } else if (this.activeTab === 'redirects') {
                         GrowthDetailModal.showRedirectDetail(rowData);
                     } else {
-                        GrowthDetailModal.showLinkDetail(rowData);
+                        PageEvidenceDetailModal.show({ tabId: this.activeTab, rowData, projectId });
                     }
                 }
             });
         });
 
-        // Bind AI Suggest button clicks
-        vp.querySelectorAll('.btn-ai-suggest').forEach(btn => {
+        // Bind clickable Image Details buttons (Total Images and Missing Alt count cells)
+        vp.querySelectorAll('.btn-open-image-details').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const taskType = btn.getAttribute('data-task-type');
-                const pageUrl = btn.getAttribute('data-page-url');
-                const currentValue = btn.getAttribute('data-current-value') || '';
-                const issue = btn.getAttribute('data-issue') || '';
+                const idx = parseInt(btn.getAttribute('data-row-index'), 10);
+                const rowData = items[idx];
                 const projectId = projectStore.getSelectedProjectId();
-                if (!projectId) {
-                    alert('Please select a project first.');
-                    return;
+                if (rowData) {
+                    const pageUrl = rowData.url || rowData.page_url || '';
+                    const images = rowData.image_inventory || [];
+                    ImageDetailsModal.show({ pageUrl, images, projectId, pageRow: rowData });
                 }
-                if (!pageUrl) {
-                    alert('No page URL found for this row.');
-                    return;
-                }
-                AISuggestModal.show({ projectId, pageUrl, taskType, currentValue, issue });
             });
         });
     }
 
-    renderAISuggestButton(taskType, pageUrl, currentValue, issue, label) {
-        const esc = (s) => String(s || '').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-        return `<button class="btn-ai-suggest" data-task-type="${esc(taskType)}" data-page-url="${esc(pageUrl)}" data-current-value="${esc(currentValue || '')}" data-issue="${esc(issue || '')}" title="Get AI suggestion" style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; font-size:10px; font-weight:700; background:linear-gradient(135deg,rgba(139,92,246,0.15),rgba(59,130,246,0.15)); color:#a78bfa; border:1px solid rgba(139,92,246,0.3); border-radius:6px; cursor:pointer; transition:all 0.15s; white-space:nowrap;" onmouseover="this.style.background='linear-gradient(135deg,rgba(139,92,246,0.3),rgba(59,130,246,0.3))'" onmouseout="this.style.background='linear-gradient(135deg,rgba(139,92,246,0.15),rgba(59,130,246,0.15))'">
-            ✨ ${label || 'AI Suggest'}
-        </button>`;
-    }
-
     renderCellValue(key, val, row = {}, rowIdx = 0) {
-        const pageUrl = row['url'] || row['page_url'] || '';
-
-        // ── AI buttons for Meta Description tab
-        if (this.activeTab === 'meta-descriptions' && key === 'meta_description') {
-            const missing = (row['missing'] === 'Yes') || !val || val === '—';
-            const duplicate = row['duplicate'] === 'Yes';
-            const displayVal = (val === null || val === undefined || val === '') 
-                ? `<span style="color:var(--text-tertiary); font-style:italic;">—</span>` 
-                : `<span style="color:var(--text-secondary);">${this.escapeHtml(String(val))}</span>`;
-            if (missing || duplicate) {
-                const issue = missing ? 'Missing' : 'Duplicate';
-                return `<div style="display:flex; flex-direction:column; gap:4px;">${displayVal}${this.renderAISuggestButton('meta_description', pageUrl, val, issue)}</div>`;
-            }
-            return displayVal;
-        }
-
-        // ── AI buttons for Titles tab
-        if (this.activeTab === 'titles' && key === 'title') {
-            const missing = (row['missing'] === 'Yes') || !val || val === '—';
-            const duplicate = row['duplicate'] === 'Yes';
-            const displayVal = (val === null || val === undefined || val === '') 
-                ? `<span style="color:var(--text-tertiary); font-style:italic;">—</span>` 
-                : `<span style="color:var(--text-secondary);">${this.escapeHtml(String(val))}</span>`;
-            if (missing || duplicate) {
-                const issue = missing ? 'Missing' : 'Duplicate';
-                return `<div style="display:flex; flex-direction:column; gap:4px;">${displayVal}${this.renderAISuggestButton('meta_title', pageUrl, val, issue)}</div>`;
-            }
-            return displayVal;
-        }
-
-        // ── AI button for Images tab (per page row)
-        if (this.activeTab === 'images' && key === 'images_missing_alt') {
+        // ── Clickable Total Images and Missing Alt cells for Images tab
+        if (this.activeTab === 'images' && (key === 'images_count' || key === 'images_missing_alt')) {
             const count = parseInt(val, 10) || 0;
-            const baseCell = `<span style="font-weight:700; color:${count > 0 ? '#ef4444' : '#10b981'}">${count}</span>`;
-            if (count > 0) {
-                return `<div style="display:flex; align-items:center; gap:6px;">${baseCell}${this.renderAISuggestButton('image_alt', pageUrl, '', 'Missing alt text')}</div>`;
-            }
-            // Even if all have alt text, offer AI evaluation
-            return `<div style="display:flex; align-items:center; gap:6px;">${baseCell}${this.renderAISuggestButton('image_alt', pageUrl, '', 'Evaluate alt text')}</div>`;
-        }
-
-        // ── AI button for Hreflang tab
-        // Hreflang dataset uses source_url (not url), language, target_url columns.
-        // Show AI analysis button on the 'language' column for every row.
-        if (this.activeTab === 'hreflang' && key === 'language') {
-            const displayVal = (val === null || val === undefined || val === '')
-                ? `<span style="color:var(--text-tertiary); font-style:italic;">—</span>`
-                : `<span style="font-family:monospace; font-size:11px;">${this.escapeHtml(String(val))}</span>`;
-            const hreflangPageUrl = row['source_url'] || row['url'] || '';
-            return `<div style="display:flex; align-items:center; gap:6px;">${displayVal}${this.renderAISuggestButton('hreflang', hreflangPageUrl, val, 'Hreflang analysis')}</div>`;
+            const isMissingKey = key === 'images_missing_alt';
+            const color = isMissingKey ? (count > 0 ? '#ef4444' : '#10b981') : '#3b82f6';
+            return `<button type="button" class="btn-open-image-details" data-row-index="${rowIdx}" title="Click to view full image details and evidence modal" style="background: transparent; border: none; color: ${color}; font-weight: 700; cursor: pointer; text-decoration: underline; font-size: 12px; padding: 0;">
+                ${count}
+            </button>`;
         }
 
         if (key === 'inspect' || key === 'action') {
@@ -659,6 +611,12 @@ export class CrawlData {
                 }
             });
         }
+    }
+
+    unmounted() {
+        ImageDetailsModal.close();
+        PageEvidenceDetailModal.close();
+        AISuggestModal.close();
     }
 
     escapeHtml(str) {

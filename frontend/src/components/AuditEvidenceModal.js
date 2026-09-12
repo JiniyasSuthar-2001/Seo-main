@@ -38,6 +38,18 @@ export class AuditEvidenceModal {
             activeUrl: selectedUrl
         };
 
+        let abortController = null;
+
+        const closeModal = () => {
+            if (abortController) {
+                abortController.abort();
+                abortController = null;
+            }
+            if (document.body.contains(modalRoot)) {
+                modalRoot.remove();
+            }
+        };
+
         const modalRoot = document.createElement('div');
         modalRoot.id = 'audit-evidence-modal-root';
         modalRoot.style.cssText = `
@@ -45,6 +57,18 @@ export class AuditEvidenceModal {
             backdrop-filter: blur(6px); display: flex; align-items: center;
             justify-content: center; z-index: 9999; padding: 20px;
         `;
+
+        modalRoot.onclick = (e) => {
+            if (e.target === modalRoot) closeModal();
+        };
+
+        const onKeyDown = (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+                document.removeEventListener('keydown', onKeyDown);
+            }
+        };
+        document.addEventListener('keydown', onKeyDown);
 
         const renderModalContent = () => {
             let filteredUrls = urls.filter(url => {
@@ -482,10 +506,9 @@ export class AuditEvidenceModal {
                 });
             });
 
-            // Done Button
-            modalRoot.querySelector('#btn-done-modal')?.addEventListener('click', () => {
-                modalRoot.remove();
-            });
+            // Close / Done Buttons
+            modalRoot.querySelector('#btn-close-evidence-modal')?.addEventListener('click', closeModal);
+            modalRoot.querySelector('#btn-done-modal')?.addEventListener('click', closeModal);
         };
 
         const executeSolveWithAi = async (forceRegenerate = false) => {
@@ -493,6 +516,11 @@ export class AuditEvidenceModal {
             aiSolutionState.loading = true;
             aiSolutionState.error = null;
             renderModalContent();
+
+            if (abortController) {
+                abortController.abort();
+            }
+            abortController = new AbortController();
 
             try {
                 const payload = {
@@ -507,22 +535,25 @@ export class AuditEvidenceModal {
                     force_regenerate: forceRegenerate
                 };
 
-                const res = await apiClient.post(`/api/projects/${targetProjectId}/ai/solve`, payload);
+                const res = await apiClient.post(`/api/projects/${targetProjectId}/ai/solve`, payload, { signal: abortController.signal });
 
                 if (res && res.solution) {
                     aiSolutionState.solution = res.solution;
-                    aiSolutionState.loading = false;
                 } else {
                     aiSolutionState.error = 'Unable to generate solution from crawl evidence.';
-                    aiSolutionState.loading = false;
                 }
             } catch (err) {
+                if (err.name === 'AbortError' || err.message === 'canceled') {
+                    return;
+                }
                 console.error("[AI SOLUTION GENERATION ERROR]", err);
                 aiSolutionState.error = err.message || 'AI service execution encountered an error.';
+            } finally {
                 aiSolutionState.loading = false;
+                if (document.body.contains(modalRoot)) {
+                    renderModalContent();
+                }
             }
-
-            renderModalContent();
         };
 
         renderModalContent();

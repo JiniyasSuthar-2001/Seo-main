@@ -424,11 +424,11 @@ class CrawlDatasetService:
         pages = artifacts.get("pages", [])
         ts = artifacts.get("timestamp", "N/A")
         rows = []
-
         for p in pages:
             url = p.get("url", "")
-            total_img = p.get("images_count", 0)
-            missing_alt = p.get("images_missing_alt", 0)
+            inventory = p.get("image_inventory", [])
+            total_img = p.get("images_count", 0) or len(inventory) or len(p.get("images", []))
+            missing_alt = p.get("images_missing_alt", 0) or sum(1 for img in inventory if img.get("alt_missing"))
             pct = round((missing_alt / total_img * 100), 1) if total_img > 0 else 0.0
             code = p.get("status_code", 0)
 
@@ -438,6 +438,9 @@ class CrawlDatasetService:
                 "images_missing_alt": missing_alt,
                 "missing_alt_percentage": f"{pct}%",
                 "status_code": code if code > 0 else "Not Available",
+                "inspect": "Inspect",
+                "action": "Inspect",
+                "image_inventory": inventory,
                 "crawl_timestamp": ts
             })
 
@@ -1200,7 +1203,8 @@ class CrawlDatasetService:
                 {"key": "images_count", "label": "Total Images"},
                 {"key": "images_missing_alt", "label": "Missing Alt"},
                 {"key": "missing_alt_percentage", "label": "Missing Alt %"},
-                {"key": "status_code", "label": "Status Code"}
+                {"key": "status_code", "label": "Status Code"},
+                {"key": "inspect", "label": "Inspect"}
             ]
         },
         "canonicals": {

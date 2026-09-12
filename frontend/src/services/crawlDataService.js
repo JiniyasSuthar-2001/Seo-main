@@ -72,7 +72,7 @@ export const crawlDataService = {
         window.URL.revokeObjectURL(downloadUrl);
     },
 
-    async getAISuggestion({ projectId, pageUrl, taskType, currentValue = null, issue = null, provider = null, model = null }) {
+    async getAISuggestion({ projectId, pageUrl, taskType, currentValue = null, issue = null, provider = null, model = null }, options = {}) {
         const id = resolveProjectId(projectId);
         if (!id) throw new Error('No active project ID found.');
 
@@ -86,6 +86,6 @@ export const crawlDataService = {
             model: model
         };
 
-        return await apiClient.post('/api/ai/crawl-suggest', payload);
+        return await apiClient.post('/api/ai/crawl-suggest', payload, options);
     }
 };

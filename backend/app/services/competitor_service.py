@@ -68,10 +68,16 @@ import os
 from app.config.settings import settings
 from app.config.utils import get_sanitized_domain, get_project_storage_dir
 from app.providers.datasources import DataSourceManager
+from app.models.external_connection import ExternalConnection
 
-def check_serp_provider_status(project: Project) -> Dict[str, Any]:
+def check_serp_provider_status(project: Project, db: Session = None) -> Dict[str, Any]:
     """
     Determines whether a real SERP/search-data provider or imported SERP dataset exists.
+    Checks (in priority order):
+      1. Imported SERP/competitor/rankings files on disk.
+      2. ExternalConnection database record for provider='serp_provider' (set via Integrations).
+      3. SERP_API_KEY environment variable.
+      4. DataSourceManager file-based config (legacy fallback).
     Production rule: Groq/LLM alone is an AI analysis engine, NOT a SERP data provider.
     """
     if not project or not project.domain:
@@ -82,12 +88,12 @@ def check_serp_provider_status(project: Project) -> Dict[str, Any]:
         }
 
     proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, project.domain, project.id)
-    
-    # 1. Check if an imported SERP / competitor dataset exists
+
+    # 1. Check if an imported SERP / competitor dataset exists on disk
     comp_file = os.path.join(proj_dir, "competitors.json")
     serp_file = os.path.join(proj_dir, "serp_results.json")
     rankings_file = os.path.join(proj_dir, "rankings.json")
-    
+
     if os.path.exists(comp_file) or os.path.exists(serp_file) or os.path.exists(rankings_file):
         return {
             "has_serp_provider": True,
@@ -96,7 +102,37 @@ def check_serp_provider_status(project: Project) -> Dict[str, Any]:
             "message": "Imported SERP data available."
         }
 
-    # 2. Check DataSourceManager for configured SERP provider
+    # 2. Check ExternalConnection database table for a connected SERP provider
+    #    This is the primary source of truth set via Settings -> Integrations.
+    if db is not None:
+        try:
+            serp_conn = db.query(ExternalConnection).filter(
+                ExternalConnection.provider.in_(["serp_provider", "serp"])
+            ).first()
+            if serp_conn:
+                serp_key = serp_conn.get_api_key()
+                if serp_key and serp_key.strip():
+                    provider_name = serp_conn.provider_account_name or "SERP Provider"
+                    return {
+                        "has_serp_provider": True,
+                        "provider_name": provider_name,
+                        "source_type": "API Key",
+                        "message": f"{provider_name} connected and active."
+                    }
+        except Exception as e:
+            print(f"[SERP STATUS] DB check error: {e}", flush=True)
+
+    # 3. Check SERP_API_KEY environment variable as fallback
+    env_serp_key = os.environ.get("SERP_API_KEY", "").strip()
+    if env_serp_key:
+        return {
+            "has_serp_provider": True,
+            "provider_name": "SERP Provider (Env)",
+            "source_type": "Environment Variable",
+            "message": "SERP provider configured via environment variable."
+        }
+
+    # 4. Check DataSourceManager file-based config (legacy fallback)
     ds_mgr = DataSourceManager()
     datasources = ds_mgr.get_project_datasources(project.id, project.domain)
     rank_tracker = datasources.get("rank_tracker", {})
@@ -122,7 +158,7 @@ def discover_competitors_for_project(project: Project, db: Session) -> Dict[str,
     Production rule: Checks for real SERP data / imported datasets before discovering candidates.
     Never fabricates competitors or SERP rankings out of thin air.
     """
-    serp_status = check_serp_provider_status(project)
+    serp_status = check_serp_provider_status(project, db)
 
     existing_competitors = db.query(Competitor).filter(
         Competitor.project_id == project.id

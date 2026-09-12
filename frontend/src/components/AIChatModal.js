@@ -12,6 +12,7 @@ export class AIChatModal {
     this.container = null;
     this.messages = [];
     this.isSubmitting = false;
+    this.abortController = null;
   }
 
   open() {
@@ -24,6 +25,10 @@ export class AIChatModal {
   }
 
   close() {
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
     if (this.container) {
       this.container.style.display = 'none';
     }
@@ -117,6 +122,12 @@ export class AIChatModal {
       return;
     }
 
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+    this.abortController = new AbortController();
+    const signal = this.abortController.signal;
+
     // Append user message
     const userBubble = document.createElement('div');
     userBubble.style.cssText = 'align-self: flex-end; background: var(--primary); color: #fff; padding: 9px 13px; border-radius: 10px 10px 0 10px; max-width: 82%; font-size: 12.5px;';
@@ -139,7 +150,7 @@ export class AIChatModal {
       const res = await apiClient.post(`/api/projects/${projectId}/ai/chat`, { 
         query,
         current_page: window.location.pathname
-      });
+      }, { signal });
       const answerText = res.answer || res.message || "No answer generated.";
       const provider = res.provider || 'AI Engine';
       const evidence = res.context_used || { domain: projectStore.getSelectedProject()?.domain, pages_analyzed: 1 };
@@ -158,6 +169,12 @@ export class AIChatModal {
         ${renderViewEvidenceButton(evidenceList, `chat-ev-${Math.random().toString(36).substring(2, 7)}`)}
       `;
     } catch (err) {
+      if (err.name === 'AbortError' || err.message === 'canceled') {
+        if (aiBubble && aiBubble.parentNode) {
+          aiBubble.parentNode.removeChild(aiBubble);
+        }
+        return;
+      }
       aiBubble.innerHTML = `
         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
           ${renderAIBadge('analysis')}
@@ -169,6 +186,7 @@ export class AIChatModal {
       this.isSubmitting = false;
       btn.disabled = false;
       btn.innerText = 'Ask AI';
+      this.abortController = null;
       msgContainer.scrollTop = msgContainer.scrollHeight;
     }
   }

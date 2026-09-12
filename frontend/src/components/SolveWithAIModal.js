@@ -223,13 +223,28 @@ export class SolveWithAIModal {
             }
         };
 
+        let abortController = new AbortController();
+        let isClosed = false;
+
+        const closeModal = () => {
+            isClosed = true;
+            if (abortController) {
+                try { abortController.abort(); } catch (e) {}
+            }
+            if (document.body.contains(modalRoot)) {
+                modalRoot.remove();
+            }
+            document.removeEventListener('keydown', handleKey);
+        };
+
         const fetchSolution = async () => {
+            if (isClosed) return;
             try {
                 if (!targetProjectId) {
                     isLoading = false;
                     isError = true;
                     errorMessage = 'Please select an active project to generate AI solutions.';
-                    renderModal();
+                    if (!isClosed) renderModal();
                     return;
                 }
 
@@ -244,7 +259,8 @@ export class SolveWithAIModal {
                     evidence_text: evidenceText
                 };
 
-                const res = await apiClient.post(`/api/projects/${targetProjectId}/ai/solve`, payload);
+                const res = await apiClient.post(`/api/projects/${targetProjectId}/ai/solve`, payload, { signal: abortController.signal });
+                if (isClosed || abortController.signal.aborted) return;
 
                 if (res?.solution) {
                     solution = res.solution;
@@ -255,13 +271,16 @@ export class SolveWithAIModal {
                     isError = true;
                     errorMessage = res?.message || 'Could not generate solution.';
                 }
-                renderModal();
+                if (!isClosed) renderModal();
             } catch (err) {
+                if (isClosed || err?.name === 'AbortError' || err?.message === 'canceled' || abortController.signal.aborted) {
+                    return;
+                }
                 console.warn('[SOLVE WITH AI FETCH ERROR]', err);
                 isLoading = false;
                 isError = true;
                 errorMessage = err?.message || 'AI service temporarily unavailable. The detected problem and existing recommendation are still available.';
-                renderModal();
+                if (!isClosed) renderModal();
             }
         };
 
@@ -274,14 +293,15 @@ export class SolveWithAIModal {
 
         // Close on backdrop click or Escape
         const handleBackdrop = (e) => {
-            if (e.target === modalRoot) modalRoot.remove();
+            if (e.target === modalRoot) closeModal();
         };
         const handleKey = (e) => {
-            if (e.key === 'Escape') {
-                modalRoot.remove();
-                document.removeEventListener('keydown', handleKey);
-            }
+            if (e.key === 'Escape') closeModal();
         };
+
+        modalRoot.querySelector('#btn-close-solve-modal')?.addEventListener('click', closeModal);
+        modalRoot.querySelector('#btn-close-error')?.addEventListener('click', closeModal);
+        modalRoot.querySelector('#btn-done-solution')?.addEventListener('click', closeModal);
         modalRoot.addEventListener('click', handleBackdrop);
         document.addEventListener('keydown', handleKey);
     }

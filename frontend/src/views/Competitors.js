@@ -1,8 +1,113 @@
 import { apiClient } from '../services/apiClient.js';
 import { projectStore } from '../core/projectStore.js';
 import { Pagination } from '../components/Pagination.js';
+import { uiStateStore } from '../core/uiStateStore.js';
 
 export class Competitors {
+    // ── Country data: popular first, then alphabetical ──────────────────────────
+    static COUNTRIES = [
+        {n:'India',c:'IN'},{n:'United States',c:'US'},{n:'United Kingdom',c:'GB'},
+        {n:'Canada',c:'CA'},{n:'Australia',c:'AU'},{n:'United Arab Emirates',c:'AE'},
+        {n:'Singapore',c:'SG'},{n:'New Zealand',c:'NZ'},{n:'Germany',c:'DE'},
+        {n:'France',c:'FR'},{n:'Netherlands',c:'NL'},{n:'South Africa',c:'ZA'},
+        {n:'Pakistan',c:'PK'},{n:'Bangladesh',c:'BD'},
+        // --- rest alphabetical ---
+        {n:'Afghanistan',c:'AF'},{n:'Albania',c:'AL'},{n:'Algeria',c:'DZ'},
+        {n:'Argentina',c:'AR'},{n:'Armenia',c:'AM'},{n:'Austria',c:'AT'},
+        {n:'Azerbaijan',c:'AZ'},{n:'Bahrain',c:'BH'},{n:'Belgium',c:'BE'},
+        {n:'Bolivia',c:'BO'},{n:'Bosnia and Herzegovina',c:'BA'},{n:'Brazil',c:'BR'},
+        {n:'Bulgaria',c:'BG'},{n:'Cambodia',c:'KH'},{n:'Chile',c:'CL'},
+        {n:'China',c:'CN'},{n:'Colombia',c:'CO'},{n:'Croatia',c:'HR'},
+        {n:'Czech Republic',c:'CZ'},{n:'Denmark',c:'DK'},{n:'Ecuador',c:'EC'},
+        {n:'Egypt',c:'EG'},{n:'Ethiopia',c:'ET'},{n:'Finland',c:'FI'},
+        {n:'Ghana',c:'GH'},{n:'Greece',c:'GR'},{n:'Guatemala',c:'GT'},
+        {n:'Hong Kong',c:'HK'},{n:'Hungary',c:'HU'},{n:'Indonesia',c:'ID'},
+        {n:'Iran',c:'IR'},{n:'Iraq',c:'IQ'},{n:'Ireland',c:'IE'},
+        {n:'Israel',c:'IL'},{n:'Italy',c:'IT'},{n:'Jamaica',c:'JM'},
+        {n:'Japan',c:'JP'},{n:'Jordan',c:'JO'},{n:'Kazakhstan',c:'KZ'},
+        {n:'Kenya',c:'KE'},{n:'Kuwait',c:'KW'},{n:'Lebanon',c:'LB'},
+        {n:'Libya',c:'LY'},{n:'Malaysia',c:'MY'},{n:'Mexico',c:'MX'},
+        {n:'Morocco',c:'MA'},{n:'Mozambique',c:'MZ'},{n:'Myanmar',c:'MM'},
+        {n:'Nepal',c:'NP'},{n:'Nigeria',c:'NG'},{n:'Norway',c:'NO'},
+        {n:'Oman',c:'OM'},{n:'Panama',c:'PA'},{n:'Paraguay',c:'PY'},
+        {n:'Peru',c:'PE'},{n:'Philippines',c:'PH'},{n:'Poland',c:'PL'},
+        {n:'Portugal',c:'PT'},{n:'Qatar',c:'QA'},{n:'Romania',c:'RO'},
+        {n:'Russia',c:'RU'},{n:'Saudi Arabia',c:'SA'},{n:'Serbia',c:'RS'},
+        {n:'Slovakia',c:'SK'},{n:'Slovenia',c:'SI'},{n:'South Korea',c:'KR'},
+        {n:'Spain',c:'ES'},{n:'Sri Lanka',c:'LK'},{n:'Sweden',c:'SE'},
+        {n:'Switzerland',c:'CH'},{n:'Taiwan',c:'TW'},{n:'Tanzania',c:'TZ'},
+        {n:'Thailand',c:'TH'},{n:'Tunisia',c:'TN'},{n:'Turkey',c:'TR'},
+        {n:'Uganda',c:'UG'},{n:'Ukraine',c:'UA'},{n:'Uruguay',c:'UY'},
+        {n:'Venezuela',c:'VE'},{n:'Vietnam',c:'VN'},{n:'Zambia',c:'ZM'},
+        {n:'Zimbabwe',c:'ZW'}
+    ];
+
+    // ── State/Region data keyed by country code ──────────────────────────────────
+    static STATES = {
+        IN: ['Andaman and Nicobar Islands','Andhra Pradesh','Arunachal Pradesh','Assam',
+             'Bihar','Chandigarh','Chhattisgarh','Dadra and Nagar Haveli and Daman and Diu',
+             'Delhi','Goa','Gujarat','Haryana','Himachal Pradesh','Jammu and Kashmir',
+             'Jharkhand','Karnataka','Kerala','Ladakh','Lakshadweep','Madhya Pradesh',
+             'Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Puducherry',
+             'Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana','Tripura',
+             'Uttar Pradesh','Uttarakhand','West Bengal'],
+        US: ['Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut',
+             'Delaware','Florida','Georgia','Hawaii','Idaho','Illinois','Indiana','Iowa',
+             'Kansas','Kentucky','Louisiana','Maine','Maryland','Massachusetts','Michigan',
+             'Minnesota','Mississippi','Missouri','Montana','Nebraska','Nevada',
+             'New Hampshire','New Jersey','New Mexico','New York','North Carolina',
+             'North Dakota','Ohio','Oklahoma','Oregon','Pennsylvania','Rhode Island',
+             'South Carolina','South Dakota','Tennessee','Texas','Utah','Vermont',
+             'Virginia','Washington','West Virginia','Wisconsin','Wyoming'],
+        GB: ['England','Scotland','Wales','Northern Ireland'],
+        CA: ['Alberta','British Columbia','Manitoba','New Brunswick',
+             'Newfoundland and Labrador','Northwest Territories','Nova Scotia','Nunavut',
+             'Ontario','Prince Edward Island','Quebec','Saskatchewan','Yukon'],
+        AU: ['Australian Capital Territory','New South Wales','Northern Territory',
+             'Queensland','South Australia','Tasmania','Victoria','Western Australia'],
+        DE: ['Baden-Wurttemberg','Bavaria','Berlin','Brandenburg','Bremen','Hamburg',
+             'Hesse','Lower Saxony','Mecklenburg-Vorpommern','North Rhine-Westphalia',
+             'Rhineland-Palatinate','Saarland','Saxony','Saxony-Anhalt',
+             'Schleswig-Holstein','Thuringia'],
+        AE: ['Abu Dhabi','Ajman','Dubai','Fujairah','Ras Al Khaimah','Sharjah','Umm Al Quwain'],
+        FR: ['Auvergne-Rhone-Alpes','Bourgogne-Franche-Comte','Bretagne','Centre-Val de Loire',
+             'Corse','Grand Est','Hauts-de-France','Ile-de-France','Normandie',
+             'Nouvelle-Aquitaine','Occitanie','Pays de la Loire','Provence-Alpes-Cote d\'Azur'],
+        NZ: ['Auckland','Bay of Plenty','Canterbury','Gisborne','Hawke\'s Bay',
+             'Manawatu-Whanganui','Marlborough','Nelson','Northland','Otago','Southland',
+             'Taranaki','Tasman','Waikato','Wellington','West Coast'],
+        ZA: ['Eastern Cape','Free State','Gauteng','KwaZulu-Natal','Limpopo',
+             'Mpumalanga','North West','Northern Cape','Western Cape'],
+        PK: ['Azad Kashmir','Balochistan','Gilgit-Baltistan','Islamabad Capital Territory',
+             'Khyber Pakhtunkhwa','Punjab','Sindh'],
+        BD: ['Barisal','Chittagong','Dhaka','Khulna','Mymensingh','Rajshahi','Rangpur','Sylhet'],
+        BR: ['Acre','Alagoas','Amapa','Amazonas','Bahia','Ceara','Distrito Federal',
+             'Espirito Santo','Goias','Maranhao','Mato Grosso','Mato Grosso do Sul',
+             'Minas Gerais','Para','Paraiba','Parana','Pernambuco','Piaui',
+             'Rio de Janeiro','Rio Grande do Norte','Rio Grande do Sul','Rondonia',
+             'Roraima','Santa Catarina','Sao Paulo','Sergipe','Tocantins'],
+        MX: ['Aguascalientes','Baja California','Baja California Sur','Campeche','Chiapas',
+             'Chihuahua','Coahuila','Colima','Durango','Guanajuato','Guerrero','Hidalgo',
+             'Jalisco','Mexico City','Mexico State','Michoacan','Morelos','Nayarit',
+             'Nuevo Leon','Oaxaca','Puebla','Queretaro','Quintana Roo','San Luis Potosi',
+             'Sinaloa','Sonora','Tabasco','Tamaulipas','Tlaxcala','Veracruz','Yucatan','Zacatecas'],
+        MY: ['Johor','Kedah','Kelantan','Kuala Lumpur','Labuan','Melaka','Negeri Sembilan',
+             'Pahang','Perak','Perlis','Putrajaya','Sabah','Sarawak','Selangor','Terengganu'],
+        PH: ['Bicol','Cagayan Valley','Calabarzon','Caraga','Central Luzon','Central Visayas',
+             'Cordillera Administrative Region','Davao','Eastern Visayas','Ilocos',
+             'Metro Manila','Mimaropa','Northern Mindanao','Soccsksargen',
+             'Western Visayas','Zamboanga Peninsula'],
+        ID: ['Aceh','Bali','Bangka Belitung','Banten','Bengkulu','Central Java','Central Kalimantan',
+             'Central Sulawesi','East Java','East Kalimantan','East Nusa Tenggara','Gorontalo',
+             'Jakarta','Jambi','Lampung','Maluku','North Kalimantan','North Maluku',
+             'North Sulawesi','North Sumatra','Papua','Riau','Riau Islands','South Kalimantan',
+             'South Sulawesi','South Sumatra','Southeast Sulawesi','Special Region of Yogyakarta',
+             'West Java','West Kalimantan','West Nusa Tenggara','West Papua','West Sulawesi',
+             'West Sumatra'],
+        SG: [],  // City-state, no states
+        HK: [],  // SAR, no states
+    };
+
     constructor() {
         this.activeTab = 'suggested'; // 'suggested', 'confirmed', 'ignored', 'gap'
         this.suggestedCompetitors = [];
@@ -12,10 +117,13 @@ export class Competitors {
         this.hasSerpProvider = false;
         this.serpProviderMessage = '';
         this.loading = false;
+        this.hasLoadedOnce = false; // BUG 2: Stale-while-revalidate flag
         this.discovering = false;
         this.error = null;
         this.showModal = false;
         this.showLearnModal = false;
+        this.showLocationModal = false;
+        this.locationModalDiscovering = false;
         this.editingCompetitor = null;
         this.unsubscribeStore = null;
 
@@ -56,9 +164,21 @@ export class Competitors {
             return;
         }
 
-        this.loading = true;
-        this.error = null;
-        this.renderState();
+        const savedState = uiStateStore.get(currentProject.id, 'Competitors');
+        if (savedState) {
+            if (savedState.activeTab) this.activeTab = savedState.activeTab;
+            if (savedState.suggestedPage) this.suggestedPage = savedState.suggestedPage;
+            if (savedState.confirmedPage) this.confirmedPage = savedState.confirmedPage;
+            if (savedState.ignoredPage) this.ignoredPage = savedState.ignoredPage;
+            if (savedState.gapPage) this.gapPage = savedState.gapPage;
+        }
+
+        // BUG 2: Only show full-page loading skeleton on initial load
+        if (!this.hasLoadedOnce) {
+            this.loading = true;
+            this.error = null;
+            this.renderState();
+        }
 
         try {
             const projectId = currentProject.id;
@@ -89,6 +209,7 @@ export class Competitors {
             if (this.confirmedCompetitors.length > 0 && this.activeTab === 'suggested' && this.suggestedCompetitors.length === 0) {
                 this.activeTab = 'confirmed';
             }
+            this.hasLoadedOnce = true;
         } catch (err) {
             console.error('[Competitors View Error]', err);
             this.error = err.message || 'Failed to load competitor data from backend.';
@@ -98,7 +219,7 @@ export class Competitors {
         }
     }
 
-    async runAutoDiscovery() {
+    async runAutoDiscovery(location = null) {
         const currentProject = projectStore.getCurrentProject();
         if (!currentProject) return;
 
@@ -106,7 +227,10 @@ export class Competitors {
         this.renderState();
 
         try {
-            const res = await apiClient.post(`/api/projects/${currentProject.id}/competitors/discover`);
+            const res = await apiClient.post(
+                `/api/projects/${currentProject.id}/competitors/discover`,
+                location || {}
+            );
             if (res) {
                 this.hasSerpProvider = !!res.has_serp_provider;
                 this.serpProviderMessage = res.message || '';
@@ -115,6 +239,9 @@ export class Competitors {
                 }
                 if (res.confirmed_competitors) {
                     this.confirmedCompetitors = res.confirmed_competitors;
+                }
+                if (res.message) {
+                    alert('Competitor discovery: ' + res.message);
                 }
             }
             this.activeTab = 'suggested';
@@ -125,9 +252,186 @@ export class Competitors {
             alert('Competitor discovery notice: ' + (err.message || 'Discovery request failed.'));
         } finally {
             this.discovering = false;
+            this.showLocationModal = false;
+            this.locationModalDiscovering = false;
             this.renderState();
         }
     }
+
+    openLocationModal() {
+        if (this.discovering) return; // prevent double-launch
+        this.showLocationModal = true;
+        this.locationModalDiscovering = false;
+        this.renderState();
+        // Populate state dropdown after render
+        requestAnimationFrame(() => this._bindLocationModalEvents());
+    }
+
+    closeLocationModal() {
+        // BUG 1: Closing modal must always be allowed
+        this.showLocationModal = false;
+        this.locationModalDiscovering = false;
+        this.renderState();
+    }
+
+    _getStatesForCode(code) {
+        return Competitors.STATES[code] || [];
+    }
+
+    _buildStateOptions(countryCode) {
+        const states = this._getStatesForCode(countryCode);
+        if (!states || states.length === 0) {
+            return `<option value="" disabled selected>Not applicable for this country</option>`;
+        }
+        return `<option value="" selected>-- Select State / Region --</option>` +
+            states.map(s => `<option value="${this.escapeHtml(s)}">${this.escapeHtml(s)}</option>`).join('');
+    }
+
+    _bindLocationModalEvents() {
+        const modal = this.container && this.container.querySelector('#location-discovery-modal');
+        if (!modal) return;
+
+        const countrySelect = modal.querySelector('#loc-country');
+        const stateSelect = modal.querySelector('#loc-state');
+        const cityInput = modal.querySelector('#loc-city');
+        const submitBtn = modal.querySelector('#btn-location-submit');
+        const cancelBtn = modal.querySelector('#btn-location-cancel');
+        const closeBtn = modal.querySelector('#btn-location-close');
+
+        // Populate state dropdown when country changes
+        if (countrySelect && stateSelect) {
+            countrySelect.addEventListener('change', () => {
+                const code = countrySelect.value;
+                stateSelect.innerHTML = this._buildStateOptions(code);
+                const states = this._getStatesForCode(code);
+                stateSelect.disabled = !states || states.length === 0;
+            });
+        }
+
+        // Close handlers
+        if (cancelBtn) cancelBtn.addEventListener('click', () => this.closeLocationModal());
+        if (closeBtn) closeBtn.addEventListener('click', () => this.closeLocationModal());
+
+        // Backdrop click closes modal only if not scanning
+        const backdrop = modal.querySelector('.loc-modal-backdrop');
+        if (backdrop) {
+            backdrop.addEventListener('click', (e) => {
+                if (e.target === backdrop) this.closeLocationModal();
+            });
+        }
+
+        // Submit: validate -> send
+        if (submitBtn) {
+            submitBtn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                if (this.locationModalDiscovering) return;
+
+                const countryCode = countrySelect ? countrySelect.value.trim() : '';
+                const countryName = countrySelect
+                    ? (countrySelect.options[countrySelect.selectedIndex] || {}).text || ''
+                    : '';
+                const state = stateSelect ? stateSelect.value.trim() : '';
+                const city = cityInput ? cityInput.value.trim() : '';
+
+                if (!countryCode) {
+                    alert('Please select a country before starting discovery.');
+                    return;
+                }
+
+                // Transition to loading state inside the modal
+                this.locationModalDiscovering = true;
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Finding Competitors...';
+                if (cancelBtn) cancelBtn.disabled = true;
+                if (closeBtn) closeBtn.disabled = true;
+
+                const locationPayload = {
+                    country: countryName,
+                    country_code: countryCode,
+                    state: state || null,
+                    city: city || null,
+                };
+
+                // BUG 1: Close modal immediately, unblocking the UI completely
+                this.showLocationModal = false;
+                this.locationModalDiscovering = false;
+                this.renderState();
+
+                // Fire-and-forget detached async discovery task
+                this.runAutoDiscovery(locationPayload);
+            });
+        }
+    }
+
+    renderLocationModal() {
+        const serpStatus = this.hasSerpProvider
+            ? '<span style="color:#10b981;">&#10003; SerpApi (Connected)</span>'
+            : '<span style="color:#f59e0b;">&#9888; SerpApi not connected</span>';
+
+        const countryOptions = Competitors.COUNTRIES
+            .map(ct => `<option value="${ct.c}">${this.escapeHtml(ct.n)}</option>`)
+            .join('');
+
+        return `
+            <div id="location-discovery-modal">
+                <div class="loc-modal-backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:1100;padding:20px;">
+                    <div style="background:var(--bg-card,#1e293b);border:1px solid var(--border-color,#334155);border-radius:14px;width:100%;max-width:480px;padding:28px;box-shadow:0 24px 40px -8px rgba(0,0,0,0.6);">
+
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                            <div>
+                                <h2 style="font-size:17px;font-weight:700;margin:0 0 2px;">Find Competitors</h2>
+                                <p style="font-size:12.5px;color:var(--text-secondary);margin:0;">Select a search market to discover local competitors</p>
+                            </div>
+                            <button id="btn-location-close" style="background:none;border:none;color:var(--text-secondary);font-size:20px;cursor:pointer;line-height:1;padding:4px 8px;">&times;</button>
+                        </div>
+
+                        <div style="margin-bottom:16px;">
+                            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px;">Country *</label>
+                            <select id="loc-country" style="width:100%;padding:10px 12px;background:rgba(0,0,0,0.3);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);font-size:13.5px;appearance:auto;">
+                                <option value="">-- Select Country --</option>
+                                ${countryOptions}
+                            </select>
+                        </div>
+
+                        <div style="margin-bottom:16px;">
+                            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px;">State / Region <span style="color:var(--text-secondary);font-weight:400;">(optional)</span></label>
+                            <select id="loc-state" disabled style="width:100%;padding:10px 12px;background:rgba(0,0,0,0.3);border:1px solid var(--border-color);border-radius:8px;color:var(--text-secondary);font-size:13.5px;appearance:auto;">
+                                <option value="">Select country first</option>
+                            </select>
+                        </div>
+
+                        <div style="margin-bottom:20px;">
+                            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:6px;">City <span style="color:var(--text-secondary);font-weight:400;">(optional)</span></label>
+                            <input id="loc-city" type="text" placeholder="e.g. Ahmedabad" style="width:100%;padding:10px 12px;background:rgba(0,0,0,0.3);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);font-size:13.5px;box-sizing:border-box;">
+                        </div>
+
+                        <div style="padding:10px 14px;background:rgba(0,0,0,0.25);border-radius:8px;margin-bottom:20px;font-size:12px;">
+                            <div style="font-weight:600;color:var(--text-secondary);margin-bottom:6px;letter-spacing:0.05em;text-transform:uppercase;font-size:11px;">Discovery Sources &amp; Credit Usage</div>
+                            <div style="display:flex;flex-direction:column;gap:4px;">
+                                <div>${serpStatus}</div>
+                                <div style="color:var(--text-secondary);">&#9675; Google Business Profile &mdash; Not connected</div>
+                                <div style="color:var(--text-secondary);">&#9675; Google Ads &mdash; Not connected</div>
+                                <div style="color:var(--text-secondary);margin-top:6px;font-size:11.5px;border-top:1px dashed var(--border-color);padding-top:6px;">
+                                    &#9432; <strong>Estimated SERP usage:</strong> ~10&ndash;20 API credits (based on tracked keywords). Cooldown protection: 12 hours.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="loc-modal-info"></div>
+
+                        <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:4px;">
+                            <button id="btn-location-cancel" class="btn btn-secondary">Cancel</button>
+                            <button id="btn-location-submit" class="btn btn-primary" ${!this.hasSerpProvider ? 'disabled title="Connect a SERP provider in Settings first"' : ''}>
+                                Find Competitors
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
 
     async approveCompetitor(competitorId) {
         const currentProject = projectStore.getCurrentProject();
@@ -276,6 +580,13 @@ export class Competitors {
                 </button>
             </div>
 
+            ${this.discovering ? `
+            <div style="margin-bottom: 20px; padding: 12px 16px; background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; font-size: 13.5px; color: #60a5fa; display: flex; align-items: center; justify-content: space-between;">
+                <span>⏳ <strong>SERP Competitor Discovery is running in the background...</strong> You can continue navigating and using the platform.</span>
+                <span style="font-size: 12px; opacity: 0.8;">Scanning live search results...</span>
+            </div>
+            ` : ''}
+
             <div style="margin-bottom: 20px; padding: 12px 16px; background: ${this.hasSerpProvider ? 'rgba(16, 185, 129, 0.08)' : 'rgba(245, 158, 11, 0.08)'}; border: 1px solid ${this.hasSerpProvider ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)'}; border-radius: 8px; font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
                 <span>ℹ️ ${this.escapeHtml(serpMsg)}</span>
                 <a href="/integrations" data-link style="color: var(--accent-primary, #3b82f6); text-decoration: none; font-weight: 600;">Manage Integrations &rarr;</a>
@@ -289,6 +600,7 @@ export class Competitors {
             <!-- MODALS -->
             ${this.showModal ? this.renderModal() : ''}
             ${this.showLearnModal ? this.renderLearnModal() : ''}
+            ${this.showLocationModal ? this.renderLocationModal() : ''}
         `;
 
         // Append Pagination Controls if slot exists
@@ -798,6 +1110,10 @@ export class Competitors {
                 const targetTab = e.currentTarget.getAttribute('data-tab');
                 if (targetTab && targetTab !== this.activeTab) {
                     this.activeTab = targetTab;
+                    const currentProject = projectStore.getCurrentProject();
+                    if (currentProject) {
+                        uiStateStore.save(currentProject.id, 'Competitors', { activeTab: this.activeTab });
+                    }
                     this.renderState();
                 }
             });
@@ -820,12 +1136,17 @@ export class Competitors {
 
         this.container.querySelector('#btn-auto-discover')?.addEventListener('click', (e) => {
             if (e) e.preventDefault();
-            this.runAutoDiscovery();
+            this.openLocationModal();
         });
         this.container.querySelector('#btn-scan-serps')?.addEventListener('click', (e) => {
             if (e) e.preventDefault();
-            this.runAutoDiscovery();
+            this.openLocationModal();
         });
+
+        // Re-bind location modal events if it's open after a renderState
+        if (this.showLocationModal) {
+            requestAnimationFrame(() => this._bindLocationModalEvents());
+        }
 
         this.container.querySelector('#btn-add-manual')?.addEventListener('click', () => {
             this.editingCompetitor = null;

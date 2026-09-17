@@ -93,6 +93,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initialize Router
   const router = new Router(viewContainer);
+  window.appRouter = router;
+  window.router = router;
   
   router.addRoute('/login', Login);
   router.addRoute('/discovery', Discovery);

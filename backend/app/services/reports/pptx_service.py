@@ -130,7 +130,7 @@ class PPTXExportService:
             hist_obj = master_report.get("historical_comparison", {})
             road_list = master_report.get("next_improvements", [])
             limits_list = master_report.get("data_limitations", [])
-            health_score = master_report.get("health", {}).get("health_score", 100)
+            health_score = master_report.get("health", {}).get("health_score")
         else:
             domain = project_url or "Website"
             timestamp = metadata.get("timestamp", "N/A") if metadata else "N/A"
@@ -148,7 +148,7 @@ class PPTXExportService:
             hist_obj = {}
             road_list = []
             limits_list = []
-            health_score = ai_insights.get("health_score", 100)
+            health_score = ai_insights.get("health_score") if ai_insights else None
 
         prs = Presentation()
         prs.slide_width = Inches(10)
@@ -163,7 +163,8 @@ class PPTXExportService:
         tf2 = tx2.text_frame
         tf2.word_wrap = True
         p2_1 = tf2.paragraphs[0]
-        p2_1.text = f"Overall Website Health Score: {health_score} / 100"
+        hs_display = f"{health_score} / 100" if health_score is not None else "Not Yet Scored"
+        p2_1.text = f"Overall Website Health Score: {hs_display}"
         p2_1.font.size = Pt(24)
         p2_1.font.bold = True
         p2_1.font.color.rgb = cls.BLUE

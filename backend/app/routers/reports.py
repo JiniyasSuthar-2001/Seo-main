@@ -89,8 +89,9 @@ def get_shared_project_report_data(project: Project, db: Session, user_id: str) 
     return {
         "master_report": master,
         "metadata": {
+            "project_id": project.id,
             "website": master.get("project", {}).get("domain"),
-            "health_score": master.get("health", {}).get("health_score", 100),
+            "health_score": master.get("health", {}).get("health_score"),
             "timestamp": master.get("crawl", {}).get("timestamp", "N/A"),
             "status": master.get("crawl", {}).get("status", "completed"),
             "pages_crawled": master.get("crawl", {}).get("pages_crawled", 0),

@@ -4,6 +4,7 @@ import { resolveProjectId } from '../utils/projectResolver.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
 import { renderTooltip } from '../components/Tooltip.js';
 import { Pagination } from '../components/Pagination.js';
+import { uiStateStore } from '../core/uiStateStore.js';
 
 export class Keywords {
     constructor() {
@@ -15,9 +16,25 @@ export class Keywords {
         this.overviewPage = 1;
         this.researchPage = 1;
         this.pageSize = 20; // MANDATORY PLATFORM STANDARD: 20 rows per page
+        this.hasLoadedOnce = false;
     }
 
     render() {
+        const projectId = projectStore.getSelectedProjectId();
+        const savedState = uiStateStore.get(projectId, 'Keywords');
+        if (savedState) {
+            if (savedState.activeTab) this.activeTab = savedState.activeTab;
+            if (savedState.overviewPage) this.overviewPage = savedState.overviewPage;
+            if (savedState.researchPage) this.researchPage = savedState.researchPage;
+        }
+
+        const isOverview = this.activeTab === 'overview';
+        const isResearch = this.activeTab === 'research';
+        const isGroups = this.activeTab === 'groups';
+        const isOpportunities = this.activeTab === 'opportunities';
+        const isRanking = this.activeTab === 'ranking';
+        const isGap = this.activeTab === 'gap';
+
         this.element.innerHTML = `
             <div class="header" style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
                 <div>
@@ -31,14 +48,14 @@ export class Keywords {
                 </div>
             </div>
 
-            <!-- SUB-TABS -->
+            <!-- SUB-TABS (Derived activeTab - BUG 1 & BUG 4) -->
             <div style="display: flex; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 24px; flex-wrap: wrap;" id="kw-tabs-nav">
-                <button class="kw-tab active" data-tab="overview">Overview</button>
-                <button class="kw-tab" data-tab="research">Search Suggestions</button>
-                <button class="kw-tab" data-tab="groups">Keyword Topics</button>
-                <button class="kw-tab" data-tab="opportunities">Opportunities</button>
-                <button class="kw-tab" data-tab="ranking">Target Keywords</button>
-                <button class="kw-tab" data-tab="gap">Competitor Gap</button>
+                <button class="kw-tab ${isOverview ? 'active' : ''}" data-tab="overview">Overview</button>
+                <button class="kw-tab ${isResearch ? 'active' : ''}" data-tab="research">Search Suggestions</button>
+                <button class="kw-tab ${isGroups ? 'active' : ''}" data-tab="groups">Keyword Topics</button>
+                <button class="kw-tab ${isOpportunities ? 'active' : ''}" data-tab="opportunities">Opportunities</button>
+                <button class="kw-tab ${isRanking ? 'active' : ''}" data-tab="ranking">Target Keywords</button>
+                <button class="kw-tab ${isGap ? 'active' : ''}" data-tab="gap">Competitor Gap</button>
             </div>
 
             <div id="kw-tab-content">
@@ -79,10 +96,16 @@ export class Keywords {
             tabs.forEach(tab => {
                 tab.addEventListener('click', (e) => {
                     tabs.forEach(t => t.classList.remove('active'));
-                    e.target.classList.add('active');
-                    this.activeTab = e.target.dataset.tab;
+                    e.currentTarget.classList.add('active');
+                    this.activeTab = e.currentTarget.dataset.tab;
                     this.overviewPage = 1;
                     this.researchPage = 1;
+                    const projectId = projectStore.getSelectedProjectId();
+                    uiStateStore.save(projectId, 'Keywords', {
+                        activeTab: this.activeTab,
+                        overviewPage: this.overviewPage,
+                        researchPage: this.researchPage
+                    });
                     this.mounted();
                 });
             });

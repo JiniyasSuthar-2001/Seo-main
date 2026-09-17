@@ -103,7 +103,7 @@ def free_port_if_in_use(port):
 
     return is_free
 
-def wait_for_server(url, name, port=None, process=None, timeout=25):
+def wait_for_server(url, name, port=None, process=None, timeout=45):
     print(f"[{name}] Waiting for server to respond at {url}...", flush=True)
     start_time = time.time()
     while time.time() - start_time < timeout:

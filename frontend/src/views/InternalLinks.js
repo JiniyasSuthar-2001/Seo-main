@@ -8,6 +8,7 @@ import { GrowthDetailModal } from '../components/GrowthDetailModal.js';
 import { PageRelationshipModal } from '../components/PageRelationshipModal.js';
 import { renderTooltip } from '../components/Tooltip.js';
 import { Pagination } from '../components/Pagination.js';
+import { uiStateStore } from '../core/uiStateStore.js';
 
 export class InternalLinks {
     constructor() {
@@ -36,9 +37,22 @@ export class InternalLinks {
         this.oppsSearch = '';
 
         this.pageSize = 20; // MANDATORY PLATFORM STANDARD: 20 rows per page
+        this.hasLoadedOnce = false;
     }
 
     render() {
+        const projectId = projectStore.getSelectedProjectId();
+        const savedState = uiStateStore.get(projectId, 'InternalLinks');
+        if (savedState) {
+            if (savedState.activeTab) this.activeTab = savedState.activeTab;
+            if (savedState.graphPage) this.graphPage = savedState.graphPage;
+            if (savedState.graphSearch !== undefined) this.graphSearch = savedState.graphSearch;
+            if (savedState.brokenPage) this.brokenPage = savedState.brokenPage;
+            if (savedState.orphansPage) this.orphansPage = savedState.orphansPage;
+            if (savedState.anchorsPage) this.anchorsPage = savedState.anchorsPage;
+            if (savedState.opportunitiesPage) this.opportunitiesPage = savedState.opportunitiesPage;
+        }
+
         this.element.innerHTML = `
             <div style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
                 <div>
@@ -74,11 +88,17 @@ export class InternalLinks {
         const actionsContainer = document.getElementById('links-actions');
         if (!container) return;
 
-        document.getElementById('tab-graph-btn')?.addEventListener('click', () => { this.activeTab = 'graph'; this.graphPage = 1; this.mounted(); });
-        document.getElementById('tab-broken-btn')?.addEventListener('click', () => { this.activeTab = 'broken'; this.brokenPage = 1; this.mounted(); });
-        document.getElementById('tab-orphans-btn')?.addEventListener('click', () => { this.activeTab = 'orphans'; this.orphansPage = 1; this.mounted(); });
-        document.getElementById('tab-anchors-btn')?.addEventListener('click', () => { this.activeTab = 'anchors'; this.anchorsPage = 1; this.mounted(); });
-        document.getElementById('tab-opps-btn')?.addEventListener('click', () => { this.activeTab = 'opportunities'; this.opportunitiesPage = 1; this.mounted(); });
+        const saveTab = (tab) => {
+            this.activeTab = tab;
+            const projectId = projectStore.getSelectedProjectId();
+            uiStateStore.save(projectId, 'InternalLinks', { activeTab: this.activeTab });
+        };
+
+        document.getElementById('tab-graph-btn')?.addEventListener('click', () => { saveTab('graph'); this.graphPage = 1; this.mounted(); });
+        document.getElementById('tab-broken-btn')?.addEventListener('click', () => { saveTab('broken'); this.brokenPage = 1; this.mounted(); });
+        document.getElementById('tab-orphans-btn')?.addEventListener('click', () => { saveTab('orphans'); this.orphansPage = 1; this.mounted(); });
+        document.getElementById('tab-anchors-btn')?.addEventListener('click', () => { saveTab('anchors'); this.anchorsPage = 1; this.mounted(); });
+        document.getElementById('tab-opps-btn')?.addEventListener('click', () => { saveTab('opportunities'); this.opportunitiesPage = 1; this.mounted(); });
 
         try {
             await projectStore.ensureInitialized();

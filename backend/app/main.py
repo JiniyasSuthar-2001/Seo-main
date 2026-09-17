@@ -1,3 +1,21 @@
+import io
+import sys
+
+# ── Windows stdout/stderr UTF-8 defence ────────────────────────────────────────
+# On Windows the default console encoding is cp1252.  Any non-ASCII character
+# inside a print() or logging call will raise UnicodeEncodeError and—if it
+# occurs inside a try/except Exception block—silently discard business-logic
+# results.  Reconfigure stdout/stderr to UTF-8 with replacement so that
+# diagnostic logging can NEVER crash application logic.
+# errors='replace' substitutes unmappable characters with '?' rather than raising.
+# The hasattr guard prevents breakage in pipes, test runners, and subprocesses
+# where sys.stdout may not have an underlying buffer.
+if hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+if hasattr(sys.stderr, "buffer"):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+# ───────────────────────────────────────────────────────────────────────────────
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config.settings import settings, validate_startup_config

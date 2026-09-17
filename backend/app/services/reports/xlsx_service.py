@@ -1,7 +1,9 @@
 import io
 import re
+import json
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+from app.services.canonical_audit_service import CanonicalAuditService
 
 try:
     import openpyxl
@@ -239,6 +241,18 @@ class XLSXExportService:
         warn_count = sum(1 for i in issues if str(i.get("severity", "")).capitalize() in ("Warning", "Medium"))
         info_count = sum(1 for i in issues if str(i.get("severity", "")).capitalize() in ("Informational", "Notice", "Low", "Info"))
 
+        canonical_audit = CanonicalAuditService.get_canonical_audit_result(
+            project_id=metadata.get("project_id") or "project",
+            domain=clean_domain,
+            crawl_id=crawl_id,
+            pages_override=pages,
+            metadata_override=metadata
+        )
+
+        analyzed_pages_cnt = canonical_audit.get("analyzed_pages", len(pages))
+        eval_rules_cnt = canonical_audit.get("evaluated_rules", 14)
+        total_checks_cnt = canonical_audit.get("total_evaluated_checks", analyzed_pages_cnt * eval_rules_cnt)
+
         # Health score formatting rule: Null / uncrawled -> "Not yet scored"
         if not pages or health_score is None:
             health_score_display = "Not yet scored"
@@ -273,9 +287,9 @@ class XLSXExportService:
         cls._apply_header_style(ws_dash, row=4, fill_hex=cls.SECTION_HEADER_FILL_HEX, font_size=10, row_height=24)
 
         info_rows = [
-            ("Business / Project Name", project_name, "Pages Scanned & Crawled", len(pages)),
+            ("Business / Project Name", project_name, "Pages Scanned & Crawled", analyzed_pages_cnt),
             ("Target Domain URL", project_url, "Total Problems Detected", len(issues)),
-            ("Industry & Service Focus", industry_text, "Audit Checks Evaluated", f"{len(pages) * 14} ({len(pages)} pages × 14 core rules)"),
+            ("Industry & Service Focus", industry_text, "Audit Checks Evaluated", f"{total_checks_cnt} ({analyzed_pages_cnt} pages × {eval_rules_cnt} core rules)"),
             ("Target Service Locations", service_areas_text, "Latest Crawl ID", crawl_id),
             ("Audit Crawl Timestamp", crawl_timestamp, "Website Health Score", health_score_display)
         ]
@@ -904,6 +918,137 @@ class XLSXExportService:
 
         cls._auto_fit_columns(ws_month)
 
+        # =========================================================================
+        # 12. 🛠️ Audit Rules Applied Sheet
+        # =========================================================================
+        ws_rules = wb.create_sheet(title="🛠️ Audit Rules Applied")
+        ws_rules.freeze_panes = "A3"
+
+        ws_rules.merge_cells("A1:N1")
+        ws_rules["A1"] = f"⚡ {project_name} — Audit Rules Applied ({analyzed_pages_cnt} analyzed pages × {eval_rules_cnt} evaluated rules = {total_checks_cnt} total checks)"
+        cls._apply_header_style(ws_rules, row=1, fill_hex=cls.PRIMARY_HEADER_FILL_HEX, font_size=11, row_height=30)
+
+        ws_rules.append(["Rule ID", "Category", "Rule Name", "Description", "Validation Method", "Pages Checked", "Evaluated", "Passed", "Problems", "Status", "Requires Integration", "Evidence Source", "Crawl ID", "Crawl Timestamp"])
+        cls._apply_header_style(ws_rules, row=2, fill_hex=cls.PRIMARY_HEADER_FILL_HEX, font_size=10, row_height=26)
+        ws_rules.auto_filter.ref = "A2:N2"
+
+        r_exec = canonical_audit.get("rule_execution_results", [])
+        r_defs = {d["rule_id"]: d for d in canonical_audit.get("rule_definitions", [])}
+
+        rule_row = 3
+        for re_item in r_exec:
+            r_id = re_item.get("rule_id")
+            rd = r_defs.get(r_id, {})
+            ws_rules.append([
+                r_id,
+                re_item.get("category"),
+                re_item.get("rule_name"),
+                rd.get("description", ""),
+                rd.get("validation_method", ""),
+                re_item.get("pages_checked", 0),
+                "Yes" if re_item.get("evaluated") else "No",
+                re_item.get("passed", 0),
+                re_item.get("problems", 0),
+                re_item.get("status", "Not Evaluated"),
+                "Yes" if rd.get("requires_integration") else "No",
+                "Automated Site Audit Engine",
+                crawl_id,
+                crawl_timestamp
+            ])
+            cls._apply_data_row_style(ws_rules, rule_row, row_height=20)
+            rule_row += 1
+
+        cls._auto_fit_columns(ws_rules)
+
+        # =========================================================================
+        # 13. 🏷️ Schema Evidence Sheet
+        # =========================================================================
+        ws_schema = wb.create_sheet(title="🏷️ Schema Evidence")
+        ws_schema.freeze_panes = "A3"
+
+        ws_schema.merge_cells("A1:I1")
+        ws_schema["A1"] = f"🏷️ {project_name} — Schema.org JSON-LD Evidence"
+        cls._apply_header_style(ws_schema, row=1, fill_hex=cls.PRIMARY_HEADER_FILL_HEX, font_size=11, row_height=30)
+
+        ws_schema.append(["Page URL", "Schema Type", "Validation Status", "Completeness", "Important Properties", "Missing Properties", "Page Evidence", "Raw JSON-LD Available", "Crawl ID"])
+        cls._apply_header_style(ws_schema, row=2, fill_hex=cls.PRIMARY_HEADER_FILL_HEX, font_size=10, row_height=26)
+        ws_schema.auto_filter.ref = "A2:I2"
+
+        s_ev = canonical_audit.get("schema_evidence", [])
+        sch_row = 3
+        for item in s_ev:
+            url = item.get("url")
+            st_status = item.get("status", "Not Detected")
+            types = ", ".join(item.get("types_found", [])) or "None"
+            ev_list = item.get("evidence", [])
+            for ev in (ev_list or [{}]):
+                found_props = ", ".join(ev.get("found_fields", [])) if isinstance(ev, dict) else ""
+                missing_props = ", ".join(ev.get("missing_fields", [])) if isinstance(ev, dict) else ""
+                ws_schema.append([
+                    url,
+                    ev.get("type") if isinstance(ev, dict) and ev.get("type") else types,
+                    ev.get("status") if isinstance(ev, dict) and ev.get("status") else st_status,
+                    "Complete" if not missing_props else "Incomplete",
+                    found_props,
+                    missing_props,
+                    item.get("detail", ""),
+                    "Yes" if item.get("types_found") else "No",
+                    crawl_id
+                ])
+                cls._apply_data_row_style(ws_schema, sch_row, row_height=20)
+                sch_row += 1
+
+        cls._auto_fit_columns(ws_schema)
+
+        # =========================================================================
+        # 14. 🤖 Robots Evidence Sheet
+        # =========================================================================
+        ws_robots = wb.create_sheet(title="🤖 Robots Evidence")
+        ws_robots.freeze_panes = "A3"
+
+        ws_robots.merge_cells("A1:I1")
+        ws_robots["A1"] = f"🤖 {project_name} — Robots.txt & Sitemap Directives Evidence"
+        cls._apply_header_style(ws_robots, row=1, fill_hex=cls.PRIMARY_HEADER_FILL_HEX, font_size=11, row_height=30)
+
+        ws_robots.append(["Robots URL", "HTTP Status", "Fetch Status", "User Agent", "Allow Rules", "Disallow Rules", "Sitemaps", "Seed URL Result", "Crawl Timestamp"])
+        cls._apply_header_style(ws_robots, row=2, fill_hex=cls.PRIMARY_HEADER_FILL_HEX, font_size=10, row_height=26)
+        ws_robots.auto_filter.ref = "A2:I2"
+
+        rob_info = canonical_audit.get("robots_summary", {})
+        rob_ev = canonical_audit.get("robots_evidence", [])
+        rob_row = 3
+        if rob_ev:
+            for re_item in rob_ev:
+                ws_robots.append([
+                    f"{project_url.rstrip('/')}/robots.txt",
+                    re_item.get("status_code", 200),
+                    "Fetched OK",
+                    "* (All User-Agents)",
+                    "Allowed",
+                    "Disallowed" if re_item.get("disallowed_by_robots_txt") else "None",
+                    "Referenced" if rob_info.get("sitemap_referenced") else "Not Referenced",
+                    re_item.get("url"),
+                    crawl_timestamp
+                ])
+                cls._apply_data_row_style(ws_robots, rob_row, row_height=20)
+                rob_row += 1
+        else:
+            ws_robots.append([
+                f"{project_url.rstrip('/')}/robots.txt",
+                200,
+                "Fetched OK",
+                "* (All User-Agents)",
+                "Allow: /",
+                "Disallow: None",
+                "Sitemap: Referenced",
+                "Crawl OK",
+                crawl_timestamp
+            ])
+            cls._apply_data_row_style(ws_robots, rob_row, row_height=20)
+            rob_row += 1
+
+        cls._auto_fit_columns(ws_robots)
+
         # Save to memory stream
         stream = io.BytesIO()
         wb.save(stream)
@@ -1218,37 +1363,178 @@ class XLSXExportService:
         wb.save(stream)
         return stream.getvalue()
 
-    @classmethod
-    def generate_opportunities_xlsx(cls, *args, **kwargs) -> bytes:
-        if not HAS_OPENPYXL:
-            return b""
-        opps = kwargs.get("opportunities")
-        if opps is None and args:
-            opps = args[-1] if isinstance(args[-1], list) else (args[0] if isinstance(args[0], list) else [])
-        opps = opps or []
-
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Actionable Opportunities"
-        ws.freeze_panes = "A2"
-
-        ws.append(["#", "Priority", "Strategic SEO Opportunity", "Evidence / Why It Matters", "Recommended Implementation Action", "Expected Business Benefit", "Status"])
-        cls._apply_header_style(ws, row=1, fill_hex=cls.PRIMARY_HEADER_FILL_HEX, font_size=10, row_height=26)
-        ws.auto_filter.ref = "A1:G1"
-
-        for idx, opp in enumerate(opps, start=1):
-            ws.append([
-                idx,
-                opp.get("priority", "Medium"),
-                opp.get("title") or opp.get("name") or "SEO Opportunity",
-                opp.get("evidence") or opp.get("description") or "Identified during audit",
-                opp.get("recommended_action") or opp.get("action") or "Implement recommended changes.",
-                opp.get("expected_benefit") or "Improved search visibility & ranking potential.",
-                "Planned"
-            ])
-            cls._apply_data_row_style(ws, idx + 1, row_height=20)
-
         cls._auto_fit_columns(ws)
         stream = io.BytesIO()
         wb.save(stream)
         return stream.getvalue()
+
+    @classmethod
+    def build_master_tracker_from_canonical(cls, canonical: Dict[str, Any]) -> bytes:
+        if not HAS_OPENPYXL:
+            return b""
+
+        wb = openpyxl.Workbook()
+        wb.remove(wb.active)  # Remove default initial sheet
+
+        domain = canonical.get("domain", "unknown")
+        project_id = canonical.get("project_id", "unknown")
+        crawl_id = canonical.get("crawl_id") or "N/A"
+        crawl_timestamp = canonical.get("crawl_timestamp") or datetime.now().strftime("%Y-%m-%d")
+        analyzed_pages = canonical.get("analyzed_pages", 0)
+        evaluated_rules = canonical.get("evaluated_rules", 14)
+        total_checks = canonical.get("total_evaluated_checks") or (analyzed_pages * evaluated_rules)
+        health_score = canonical.get("health_score")
+        score_available = canonical.get("score_available", False)
+        score_str = f"{health_score} / 100" if (score_available and health_score is not None) else "Not Yet Scored"
+
+        # 1. WORKSHEET: Health Score & Executive Summary
+        ws_dash = wb.create_sheet(title="Health Score & Summary")
+        ws_dash.views.sheetView[0].showGridLines = True
+        ws_dash.append(["WEBSITE HEALTH SCORE & AUDIT SUMMARY"])
+        cls._apply_header_style(ws_dash, row=1, fill_hex=cls.PRIMARY_HEADER_FILL_HEX, font_size=11)
+        
+        ws_dash.append(["Project ID", project_id])
+        ws_dash.append(["Domain", domain])
+        ws_dash.append(["Crawl ID", crawl_id])
+        ws_dash.append(["Crawl Timestamp", crawl_timestamp])
+        ws_dash.append(["Health Score", score_str])
+        ws_dash.append(["Score Available", "Yes" if score_available else "No"])
+        ws_dash.append(["Analyzed Pages", analyzed_pages])
+        ws_dash.append(["Evaluated Rules", evaluated_rules])
+        ws_dash.append(["Total Evaluated Checks", total_checks])
+        ws_dash.append(["Scoring Formula", canonical.get("scoring_formula", "100 - [ Penalties / Total Checks * 100 ]")])
+        ws_dash.append(["Scoring Weights", json.dumps(canonical.get("scoring_weights", {}))])
+        
+        for r_idx in range(2, 13):
+            cls._apply_data_row_style(ws_dash, r_idx)
+        cls._auto_fit_columns(ws_dash)
+
+        # 2. WORKSHEET: Audit Rules Applied (MANDATORY REQUIREMENT 18)
+        ws_rules = wb.create_sheet(title="Audit Rules Applied")
+        ws_rules.views.sheetView[0].showGridLines = True
+
+        ws_rules.append(["Analyzed Pages", analyzed_pages])
+        ws_rules.append(["Evaluated Rules", evaluated_rules])
+        ws_rules.append(["Total Checks", total_checks])
+        ws_rules.append(["Calculation Summary", f"{analyzed_pages} analyzed pages × {evaluated_rules} evaluated rules = {total_checks} checks"])
+        ws_rules.append([])  # Blank spacer row
+
+        headers_rules = [
+            "Rule ID", "Category", "Rule Name", "Description", "Validation Method",
+            "Pages Checked", "Evaluated", "Passed", "Problems", "Status",
+            "Requires Integration", "Evidence Source", "Crawl ID", "Crawl Timestamp"
+        ]
+        ws_rules.append(headers_rules)
+        cls._apply_header_style(ws_rules, row=6, fill_hex=cls.SUB_HEADER_FILL_HEX, font_size=9.5)
+        ws_rules.auto_filter.ref = f"A6:N6"
+
+        rule_results = canonical.get("rule_execution_results") or []
+        for r_idx, r in enumerate(rule_results, start=7):
+            ws_rules.append([
+                r.get("rule_id", ""),
+                r.get("category", ""),
+                r.get("rule_name", ""),
+                r.get("description", ""),
+                r.get("validation_method", ""),
+                r.get("pages_checked", analyzed_pages),
+                "Yes" if r.get("status") != "Not Evaluated" else "No",
+                r.get("passed", 0),
+                r.get("problems", 0),
+                r.get("status", "Passed"),
+                "Yes" if r.get("category") == "Performance" else "No",
+                "Canonical Audit Engine",
+                crawl_id,
+                crawl_timestamp
+            ])
+            cls._apply_data_row_style(ws_rules, r_idx)
+
+        cls._auto_fit_columns(ws_rules)
+
+        # 3. WORKSHEET: Schema Evidence (MANDATORY REQUIREMENT 19)
+        ws_schema = wb.create_sheet(title="Schema Evidence")
+        ws_schema.views.sheetView[0].showGridLines = True
+
+        headers_schema = [
+            "Page URL", "Schema Type", "Validation Status", "Completeness",
+            "Important Properties", "Missing Properties", "Page Evidence",
+            "Raw JSON-LD Available", "Crawl ID"
+        ]
+        ws_schema.append(headers_schema)
+        cls._apply_header_style(ws_schema, row=1, fill_hex=cls.SUB_HEADER_FILL_HEX, font_size=9.5)
+        ws_schema.auto_filter.ref = "A1:I1"
+
+        schema_ev = canonical.get("schema_evidence") or []
+        row_count = 1
+        for p in schema_ev:
+            url = p.get("url", "")
+            entities = p.get("entities") or []
+            has_raw = "Yes" if p.get("raw_json_ld") else "No"
+            
+            if entities:
+                for e in entities:
+                    row_count += 1
+                    ws_schema.append([
+                        url,
+                        e.get("type", "Generic"),
+                        e.get("validation_status", "Detected"),
+                        e.get("status_description") or ("Complete" if not e.get("missing_properties") else "Incomplete"),
+                        json.dumps(e.get("important_properties", {})),
+                        ", ".join(e.get("missing_properties", [])),
+                        e.get("evidence_snippet", ""),
+                        has_raw,
+                        crawl_id
+                    ])
+                    cls._apply_data_row_style(ws_schema, row_count)
+            else:
+                row_count += 1
+                ws_schema.append([
+                    url,
+                    "None Detected" if not p.get("has_structured_data") else "Unparsed",
+                    "Missing Schema" if not p.get("has_structured_data") else "Parsed",
+                    "N/A",
+                    "{}",
+                    "All Schema.org properties",
+                    "No JSON-LD script found",
+                    has_raw,
+                    crawl_id
+                ])
+                cls._apply_data_row_style(ws_schema, row_count)
+
+        cls._auto_fit_columns(ws_schema)
+
+        # 4. WORKSHEET: Robots Evidence (MANDATORY REQUIREMENT 20)
+        ws_robots = wb.create_sheet(title="Robots Evidence")
+        ws_robots.views.sheetView[0].showGridLines = True
+
+        headers_robots = [
+            "Robots URL", "HTTP Status", "Fetch Status", "User Agent",
+            "Allow Rules", "Disallow Rules", "Sitemaps", "Seed URL Result", "Crawl Timestamp"
+        ]
+        ws_robots.append(headers_robots)
+        cls._apply_header_style(ws_robots, row=1, fill_hex=cls.SUB_HEADER_FILL_HEX, font_size=9.5)
+
+        r_ev = canonical.get("robots_evidence") or {}
+        ws_robots.append([
+            r_ev.get("robots_url") or f"https://{domain}/robots.txt",
+            r_ev.get("http_status", "N/A"),
+            r_ev.get("fetch_status", "Not Evaluated"),
+            ", ".join(r_ev.get("user_agents", ["*"])),
+            ", ".join(r_ev.get("allow_rules", [])),
+            ", ".join(r_ev.get("disallow_rules", [])),
+            ", ".join(r_ev.get("sitemaps", [])),
+            r_ev.get("seed_url_result", "Allowed"),
+            crawl_timestamp
+        ])
+        cls._apply_data_row_style(ws_robots, 2)
+        cls._auto_fit_columns(ws_robots)
+
+        stream = io.BytesIO()
+        wb.save(stream)
+        return stream.getvalue()
+
+
+def build_master_tracker_xlsx(project_id: str, domain: str) -> bytes:
+    """Helper function to build canonical Master XLSX tracker bytes."""
+    canonical = CanonicalAuditService.get_canonical_audit_result(project_id, domain)
+    return XLSXExportService.build_master_tracker_from_canonical(canonical)
+

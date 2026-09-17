@@ -96,9 +96,12 @@ export class Projects {
 
         window.openProjectWorkspace = (id) => {
             projectStore.setSelectedProjectId(id);
-            if (window.history && window.history.pushState) {
+            if (window.appRouter && typeof window.appRouter.navigate === 'function') {
+                window.appRouter.navigate('/technical');
+            } else if (window.history && window.history.pushState) {
                 window.history.pushState({}, '', '/technical');
                 window.dispatchEvent(new CustomEvent('routechange', { detail: { path: '/technical' } }));
+                window.dispatchEvent(new CustomEvent('project:selected', { detail: { projectId: id } }));
             } else {
                 window.location.href = '/technical';
             }

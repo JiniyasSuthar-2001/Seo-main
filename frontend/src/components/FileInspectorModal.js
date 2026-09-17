@@ -3,8 +3,30 @@
  * Performs client-side file inspection, sensitive data/credential scanning,
  * column header validation, row diagnostics, and pre-import preview.
  */
+import { getUploadGuidance, SHARED_UPLOAD_CONFIG } from '../config/uploadGuidance.js';
 
 export class FileInspectorModal {
+    constructor(options = {}) {
+        this.file = options.file;
+        this.dataType = options.dataType || options.selectedDataType || 'keywords';
+        this.onConfirm = options.onConfirm || options.onConfirmImport;
+        this.onCancel = options.onCancel;
+        this.guidance = options.guidance || getUploadGuidance(this.dataType);
+    }
+
+    open() {
+        if (this.file) {
+            FileInspectorModal.inspectFile(
+                this.file,
+                this.guidance,
+                (confirmedFile) => {
+                    if (this.onConfirm) this.onConfirm(confirmedFile || this.file);
+                },
+                this.onCancel
+            );
+        }
+    }
+
     static scanForSensitiveData(textContent, headers) {
         const sensitivePatterns = [
             /-----BEGIN (RSA |EC |PGP |OPENSSH )?PRIVATE KEY-----/i,
@@ -43,22 +65,98 @@ export class FileInspectorModal {
             const line = lines[i].trim();
             if (!line) continue;
             
-            // Handle quotes simple splitting
             const cells = line.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
             rows.push(cells);
         }
         return rows;
     }
 
-    static inspectFile(file, guidance, onConfirmImport, onCancel) {
-        const reader = new FileReader();
+    static parseJSON(text) {
+        try {
+            const data = JSON.parse(text);
+            let items = [];
+            if (Array.isArray(data)) {
+                items = data;
+            } else if (data && typeof data === 'object') {
+                for (const key of ['records', 'data', 'items', 'rows', 'keywords', 'rankings', 'backlinks', 'competitors']) {
+                    if (Array.isArray(data[key])) {
+                        items = data[key];
+                        break;
+                    }
+                }
+                if (items.length === 0) items = [data];
+            }
 
-        reader.onload = (e) => {
-            const textContent = e.target.result || '';
-            const rawRows = FileInspectorModal.parseCSV(textContent);
+            if (!items || items.length === 0) return [];
 
-            if (rawRows.length === 0) {
-                FileInspectorModal.renderErrorModal("Empty File Error", "The selected file contains no readable data rows.", onCancel);
+            if (Array.isArray(items[0])) {
+                return items.map(r => Array.isArray(r) ? r.map(c => String(c ?? '').trim()) : [String(r ?? '').trim()]);
+            }
+
+            const headers = Array.from(new Set(items.flatMap(obj => (typeof obj === 'object' && obj) ? Object.keys(obj) : [])));
+            if (headers.length === 0) return [];
+
+            const rows = [headers];
+            for (const item of items) {
+                if (typeof item === 'object' && item) {
+                    rows.push(headers.map(h => item[h] !== undefined && item[h] !== null ? String(item[h]).trim() : ''));
+                }
+            }
+            return rows;
+        } catch (e) {
+            throw new Error(`Invalid JSON structure: ${e.message}`);
+        }
+    }
+
+    static async ensureXLSXLoaded() {
+        if (window.XLSX) return window.XLSX;
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+            script.onload = () => {
+                if (window.XLSX) resolve(window.XLSX);
+                else reject(new Error('XLSX global object not available after load.'));
+            };
+            script.onerror = () => reject(new Error('Failed to load SheetJS XLSX parser library.'));
+            document.head.appendChild(script);
+        });
+    }
+
+    static async parseExcel(file) {
+        const XLSX = await FileInspectorModal.ensureXLSXLoaded();
+        const arrayBuffer = await file.arrayBuffer();
+        const data = new Uint8Array(arrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        if (!firstSheetName) return [];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+        return rows.map(r => Array.isArray(r) ? r.map(c => c !== undefined && c !== null ? String(c).trim() : '') : []);
+    }
+
+    static async inspectFile(file, guidance, onConfirmImport, onCancel) {
+        try {
+            const filename = file.name || '';
+            const lowerName = filename.toLowerCase();
+
+            let rawRows = [];
+            let textContentForScan = '';
+
+            if (lowerName.endsWith('.json')) {
+                const text = await file.text();
+                textContentForScan = text;
+                rawRows = FileInspectorModal.parseJSON(text);
+            } else if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
+                rawRows = await FileInspectorModal.parseExcel(file);
+                textContentForScan = rawRows.map(r => r.join(' ')).join('\n');
+            } else if (lowerName.endsWith('.csv') || true) {
+                const text = await file.text();
+                textContentForScan = text;
+                rawRows = FileInspectorModal.parseCSV(text);
+            }
+
+            if (!rawRows || rawRows.length === 0) {
+                FileInspectorModal.renderErrorModal("Empty File Error", SHARED_UPLOAD_CONFIG.error_messages.empty_file, onCancel);
                 return;
             }
 
@@ -66,7 +164,7 @@ export class FileInspectorModal {
             const dataRows = rawRows.slice(1);
 
             // 1. Sensitive Data Scanner
-            const scanResult = FileInspectorModal.scanForSensitiveData(textContent, headers);
+            const scanResult = FileInspectorModal.scanForSensitiveData(textContentForScan, headers);
             if (scanResult.detected) {
                 FileInspectorModal.renderSensitiveDataAlertModal(onCancel);
                 return;
@@ -76,21 +174,22 @@ export class FileInspectorModal {
             const lowerHeaders = headers.map(h => String(h).toLowerCase().trim());
             const missingRequired = [];
 
-            guidance.required_columns.forEach(req => {
-                const reqName = req.name.toLowerCase().trim();
-                const match = lowerHeaders.some(h => h.includes(reqName) || reqName.includes(h));
-                if (!match) {
-                    missingRequired.push(req.name);
-                }
-            });
+            if (guidance && guidance.required_columns) {
+                guidance.required_columns.forEach(req => {
+                    const reqName = req.name.toLowerCase().trim();
+                    const match = lowerHeaders.some(h => h.includes(reqName) || reqName.includes(h));
+                    if (!match) {
+                        missingRequired.push(req.name);
+                    }
+                });
+            }
 
             // 3. Row-level Diagnostics
             const rowDiagnostics = [];
             dataRows.forEach((row, idx) => {
                 const rowNum = idx + 2;
-                if (row.length === 0 || (row.length === 1 && !row[0])) return;
+                if (!row || row.length === 0 || (row.length === 1 && !row[0])) return;
 
-                // Check numeric position if applicable
                 const posColIdx = headers.findIndex(h => String(h).toLowerCase().includes('position'));
                 if (posColIdx !== -1 && row[posColIdx]) {
                     const posVal = Number(row[posColIdx]);
@@ -109,12 +208,14 @@ export class FileInspectorModal {
                 dataRows,
                 missingRequired,
                 rowDiagnostics,
-                onConfirmImport,
+                onConfirmImport: () => onConfirmImport(file),
                 onCancel
             });
-        };
 
-        reader.readAsText(file);
+        } catch (err) {
+            console.error('[FILE INSPECTOR] Inspection error:', err);
+            FileInspectorModal.renderErrorModal("File Inspection Error", err.message || "Failed to inspect file.", onCancel);
+        }
     }
 
     static renderSensitiveDataAlertModal(onCancel) {
@@ -151,7 +252,9 @@ export class FileInspectorModal {
         `;
 
         document.getElementById('btn-close-sec-alert')?.addEventListener('click', () => {
-            document.body.removeChild(modal);
+            if (document.body.contains(modal)) {
+                document.body.removeChild(modal);
+            }
             if (onCancel) onCancel();
         });
     }
@@ -177,7 +280,9 @@ export class FileInspectorModal {
         `;
 
         document.getElementById('btn-close-err-modal')?.addEventListener('click', () => {
-            document.body.removeChild(modal);
+            if (document.body.contains(modal)) {
+                document.body.removeChild(modal);
+            }
             if (onCancel) onCancel();
         });
     }
@@ -219,7 +324,7 @@ export class FileInspectorModal {
                         <span style="font-size: 16px;">✓</span>
                         <div>
                             <strong>File Headers Verified Cleanly</strong><br/>
-                            Required columns present: ${guidance.required_columns.map(c => `✓ ${c.name}`).join(' ')}
+                            Required columns present: ${(guidance && guidance.required_columns) ? guidance.required_columns.map(c => `✓ ${c.name}`).join(' ') : 'Clean'}
                         </div>
                     </div>
                 `}

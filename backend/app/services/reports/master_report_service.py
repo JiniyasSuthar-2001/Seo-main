@@ -117,7 +117,7 @@ class MasterReportBuilder:
 
         # 2. Existing Deterministic Health Calculation
         audit_eval = evaluate_site_audit_rules(pages)
-        health_score = audit_eval.get("health_score", 100)
+        health_score = audit_eval.get("health_score")
         evaluated_issues = audit_eval.get("issues", raw_issues)
 
         # 3. Enrich issues with AI solutions.
@@ -603,8 +603,8 @@ class MasterReportBuilder:
         prev_pages = _safe_read_json(prev_pages_path, [])
         prev_meta = _safe_read_json(prev_meta_path, {})
 
-        prev_score = evaluate_site_audit_rules(prev_pages).get("health_score", 100) if prev_pages else 100
-        score_delta = current_score - prev_score
+        prev_score = evaluate_site_audit_rules(prev_pages).get("health_score") if prev_pages else None
+        score_delta = (current_score - prev_score) if (current_score is not None and prev_score is not None) else None
 
         current_issue_keys = {f"{i.get('issue')}__{i.get('url')}" for i in current_issues}
         prev_issue_keys = {f"{i.get('issue')}__{i.get('url')}" for i in prev_issues}

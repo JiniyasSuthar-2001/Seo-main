@@ -7,6 +7,7 @@ import { API_BASE_URL } from '../config/api.js';
 import { crawlConfigModal } from '../components/CrawlConfigModal.js';
 import { renderAIBadge, renderSourceBadge, renderViewEvidenceButton } from '../components/AIBadge.js';
 import { renderTooltip } from '../components/Tooltip.js';
+import { uiStateStore } from '../core/uiStateStore.js';
 
 window.startCrawlFromOverview = (explicitProjectId, explicitUrl) => {
     let targetId = explicitProjectId || projectStore.getSelectedProjectId();
@@ -53,9 +54,20 @@ export class Dashboard {
         this.statusFilter = 'all';
         this.sortOption = 'health_desc';
         this.trendTimeframe = '30D';
+        this.healthTrend = [];
+        this.hasLoadedOnce = false;
     }
 
     render() {
+        const projectId = projectStore.getSelectedProjectId();
+        const savedState = uiStateStore.get(projectId, 'Dashboard');
+        if (savedState) {
+            if (savedState.trendTimeframe) this.trendTimeframe = savedState.trendTimeframe;
+            if (savedState.searchQuery) this.searchQuery = savedState.searchQuery;
+            if (savedState.statusFilter) this.statusFilter = savedState.statusFilter;
+            if (savedState.sortOption) this.sortOption = savedState.sortOption;
+        }
+
         this.element.innerHTML = `
             <div class="card" style="padding: 40px; text-align: center;">
                 <div class="skeleton" style="height: 28px; width: 280px; margin: 0 auto 16px;"></div>
@@ -74,7 +86,8 @@ export class Dashboard {
             this.allProjects = overviewData.projects || [];
             const recentCrawls = overviewData.recent_crawls || [];
             const accountIssues = overviewData.account_issues_summary || [];
-            const healthTrend = overviewData.health_trend || [];
+            this.healthTrend = overviewData.health_trend || [];
+            const healthTrend = this.healthTrend;
 
             if (!this.allProjects || this.allProjects.length === 0) {
                 this.element.innerHTML = `
@@ -250,22 +263,7 @@ export class Dashboard {
                         </div>
                     </div>
 
-                    ${healthTrend.length < 2 ? `
-                        <div style="padding: 32px 20px; text-align: center; background: var(--bg-subtle); border-radius: 10px; color: var(--text-secondary); font-size: 13.5px; border: 1px dashed var(--border);">
-                            <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-primary);">Building scan history</div>
-                            <div>Run additional website scans over time to see health progress trends.</div>
-                        </div>
-                    ` : `
-                        <div style="display: flex; gap: 14px; overflow-x: auto; padding-bottom: 8px;">
-                            ${healthTrend.map(t => `
-                                <div style="padding: 14px 18px; background: var(--bg-subtle); border-radius: 10px; min-width: 160px; text-align: center; border: 1px solid var(--border);">
-                                    <div style="font-size: 11px; color: var(--text-tertiary); text-transform: uppercase;">${t.timestamp ? t.timestamp.split('T')[0] : 'Saved Scan'}</div>
-                                    <div style="font-size: 14px; font-weight: 700; color: var(--text-primary); margin: 6px 0;">${t.domain || 'Domain'}</div>
-                                    <div style="font-size: 12px; color: var(--primary); font-weight: 600;">${t.pages_crawled} pages • ${t.issues} problems</div>
-                                </div>
-                            `).join('')}
-                        </div>
-                    `}
+                    <div id="health-trend-content"></div>
                 </div>
 
                 <!-- TOP PROBLEMS REQUIRING ATTENTION -->
@@ -492,6 +490,8 @@ export class Dashboard {
         if (sortOption) {
             sortOption.addEventListener('change', (e) => {
                 this.sortOption = e.target.value;
+                const projectId = projectStore.getSelectedProjectId();
+                uiStateStore.save(projectId, 'Dashboard', { sortOption: this.sortOption });
                 this.renderPortfolioTable();
             });
         }
@@ -507,8 +507,53 @@ export class Dashboard {
                 pills.forEach(p => p.classList.remove('active'));
                 e.currentTarget.classList.add('active');
                 this.trendTimeframe = e.currentTarget.getAttribute('data-tf');
+                const projectId = projectStore.getSelectedProjectId();
+                uiStateStore.save(projectId, 'Dashboard', { trendTimeframe: this.trendTimeframe });
+                this.renderTrendContent();
             });
         });
+        this.renderTrendContent();
+    }
+
+    renderTrendContent() {
+        const container = this.element.querySelector('#health-trend-content');
+        if (!container) return;
+
+        const rawTrend = this.healthTrend || [];
+        let daysCutoff = 30;
+        if (this.trendTimeframe === '7D') daysCutoff = 7;
+        else if (this.trendTimeframe === '90D') daysCutoff = 90;
+
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - daysCutoff);
+
+        const filteredTrend = rawTrend.filter(t => {
+            if (!t.timestamp) return true;
+            const d = new Date(t.timestamp);
+            return isNaN(d.getTime()) || d >= cutoffDate;
+        });
+
+        if (filteredTrend.length < 1) {
+            container.innerHTML = `
+                <div style="padding: 32px 20px; text-align: center; background: var(--bg-subtle); border-radius: 10px; color: var(--text-secondary); font-size: 13.5px; border: 1px dashed var(--border);">
+                    <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-primary);">Building scan history (${this.trendTimeframe})</div>
+                    <div>No scans recorded within the last ${daysCutoff} days. Run additional website scans over time to see health progress trends.</div>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = `
+            <div style="display: flex; gap: 14px; overflow-x: auto; padding-bottom: 8px;">
+                ${filteredTrend.map(t => `
+                    <div style="padding: 14px 18px; background: var(--bg-subtle); border-radius: 10px; min-width: 160px; text-align: center; border: 1px solid var(--border);">
+                        <div style="font-size: 11px; color: var(--text-tertiary); text-transform: uppercase;">${t.timestamp ? t.timestamp.split('T')[0] : 'Saved Scan'}</div>
+                        <div style="font-size: 14px; font-weight: 700; color: var(--text-primary); margin: 6px 0;">${this.escapeHtml(t.domain || 'Domain')}</div>
+                        <div style="font-size: 12px; color: var(--primary); font-weight: 600;">${t.pages_crawled} pages • ${t.issues} problems</div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
     }
 
     renderPortfolioTable() {

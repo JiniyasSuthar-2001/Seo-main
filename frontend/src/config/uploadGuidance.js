@@ -3,14 +3,36 @@
  * Synthetic Example Data, Data Privacy Warnings, and Help documentation.
  */
 
+export const SHARED_UPLOAD_CONFIG = {
+    supported_formats: ['CSV', 'XLSX', 'XLS', 'JSON'],
+    supported_extensions: ['.csv', '.xlsx', '.xls', '.json'],
+    max_file_size_mb: 10,
+    max_file_size_label: '10 MB',
+    accepted_mime_types: '.csv,.xlsx,.xls,.json,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/json',
+    validation_rules: [
+        'File size must not exceed 10 MB limit.',
+        'File format must be valid .csv, .xlsx, .xls, or .json.',
+        'File must contain required columns for the dataset type.',
+        'Do not upload sensitive data, passwords, or API keys.'
+    ],
+    error_messages: {
+        file_too_large: 'File size exceeds maximum allowed limit of 10 MB.',
+        unsupported_format: 'Unsupported file format. Please upload a .csv, .xlsx, .xls, or .json file.',
+        empty_file: 'The selected file contains no readable data rows.',
+        sensitive_data: 'Potential sensitive information or credentials detected in file.'
+    }
+};
+
+export const EMPTY_IMPORT_HISTORY_MESSAGE = "No previous file imports recorded for this website project.";
+
 export const UPLOAD_GUIDELINES = {
     keywords: {
         id: 'keywords',
         title: 'Keyword Dataset Upload Guide',
         purpose: 'Import target keyword lists, search term frequencies, CPC, and difficulty metrics into your project workspace.',
         where_to_get: 'Export keyword lists from your rank-tracking software, keyword planner, or SEO analytics tool.',
-        supported_formats: ['CSV', 'XLSX'],
-        max_file_size: '25 MB',
+        supported_formats: SHARED_UPLOAD_CONFIG.supported_formats,
+        max_file_size: SHARED_UPLOAD_CONFIG.max_file_size_label,
         version: 'Version 1.2 — August 2026',
         required_columns: [
             { name: 'Keyword', description: 'Target search phrase', example: 'solar panels australia' }
@@ -42,8 +64,8 @@ export const UPLOAD_GUIDELINES = {
         title: 'Search Ranking Dataset Upload Guide',
         purpose: 'Import genuine historical search engine ranking positions exported from a rank tracking provider or Google Search Console.',
         where_to_get: 'Export position history from your rank tracking platform, Search Console performance export, or SERP provider.',
-        supported_formats: ['CSV', 'XLSX'],
-        max_file_size: '25 MB',
+        supported_formats: SHARED_UPLOAD_CONFIG.supported_formats,
+        max_file_size: SHARED_UPLOAD_CONFIG.max_file_size_label,
         version: 'Version 1.2 — August 2026',
         required_columns: [
             { name: 'Keyword', description: 'Ranked search phrase', example: 'electrician near me' },
@@ -75,8 +97,8 @@ export const UPLOAD_GUIDELINES = {
         title: 'Inbound Backlink Dataset Upload Guide',
         purpose: 'Import external inbound backlinks linking from external websites TO your target domain.',
         where_to_get: 'Export backlink reports from your SEO analytics tool or Google Search Console links report.',
-        supported_formats: ['CSV', 'XLSX'],
-        max_file_size: '25 MB',
+        supported_formats: SHARED_UPLOAD_CONFIG.supported_formats,
+        max_file_size: SHARED_UPLOAD_CONFIG.max_file_size_label,
         version: 'Version 1.2 — August 2026',
         required_columns: [
             { name: 'Source URL', description: 'External website URL containing the link', example: 'https://industry-news.com/top-electricians' },
@@ -107,8 +129,8 @@ export const UPLOAD_GUIDELINES = {
         title: 'Competitor Dataset Upload Guide',
         purpose: 'Import verified competitor domain lists and keyword overlap records for market intelligence.',
         where_to_get: 'Export competitor domain tracking datasets or SERP analysis files.',
-        supported_formats: ['CSV', 'XLSX'],
-        max_file_size: '25 MB',
+        supported_formats: SHARED_UPLOAD_CONFIG.supported_formats,
+        max_file_size: SHARED_UPLOAD_CONFIG.max_file_size_label,
         version: 'Version 1.2 — August 2026',
         required_columns: [
             { name: 'Competitor Domain', description: 'Competitor root domain name', example: 'competitor-electric.com' }
@@ -135,8 +157,8 @@ export const UPLOAD_GUIDELINES = {
         title: 'Google Search Console Export Upload Guide',
         purpose: 'Import performance metrics exported from Google Search Console.',
         where_to_get: 'Export Performance tables directly from Google Search Console (Queries, Pages, Countries, Devices).',
-        supported_formats: ['CSV', 'XLSX', 'ZIP'],
-        max_file_size: '25 MB',
+        supported_formats: SHARED_UPLOAD_CONFIG.supported_formats,
+        max_file_size: SHARED_UPLOAD_CONFIG.max_file_size_label,
         version: 'Version 1.2 — August 2026',
         required_columns: [
             { name: 'Top queries / Query / Page', description: 'Search term or page URL', example: 'solar installation cost' },

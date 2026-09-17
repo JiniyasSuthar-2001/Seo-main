@@ -186,10 +186,14 @@ export class Technical {
             const totalAuditedPages = auditData.total_audited_pages || 0;
             const htmlPagesCount = auditData.successful_html_pages_count || totalAuditedPages;
             const blockedPagesCount = auditData.blocked_pages_count || 0;
-            const totalChecks = auditData.total_evaluated_checks || summary.total_checks || (htmlPagesCount * 14);
-            const checksExplanation = auditData.checks_explanation || `${htmlPagesCount} analyzed pages × ${auditData.evaluated_rules_count || 14} evaluated rules`;
+            const evaluatedRulesCount = auditData.evaluated_rules || auditData.evaluated_rules_count || 14;
+            const totalChecks = auditData.total_evaluated_checks || summary.total_checks || (htmlPagesCount * evaluatedRulesCount);
+            const checksExplanation = auditData.checks_explanation || `${htmlPagesCount} analyzed pages × ${evaluatedRulesCount} evaluated rules`;
             const crawlTimestamp = auditData.crawl_timestamp ? new Date(auditData.crawl_timestamp).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recent Scan';
-            const sdSummary = auditData.structured_data_summary || (auditData.category_breakdown && auditData.category_breakdown["Structured Data"] ? auditData.category_breakdown["Structured Data"].structured_data_summary : null);
+            const sdSummary = auditData.schema_summary || auditData.structured_data_summary || (auditData.category_breakdown && auditData.category_breakdown["Structured Data"] ? auditData.category_breakdown["Structured Data"].structured_data_summary : null) || {};
+            const sdEvidence = auditData.schema_evidence || auditData.structured_data_evidence || [];
+            const schemaTypesMap = sdSummary.schema_types_found || {};
+            const schemaTypeEntries = Object.entries(schemaTypesMap);
 
             // Category Translations for Beginner Usability
             const catTranslations = {
@@ -458,6 +462,64 @@ export class Technical {
                     </div>
                 </div>
 
+                <!-- DEDICATED SCHEMA / STRUCTURED DATA BOX -->
+                <div class="card btn-open-sd-modal" style="padding: 20px; margin-bottom: 24px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border); cursor: pointer; transition: all 0.2s ease;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; flex-wrap: wrap; gap: 12px;">
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <h3 style="font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 0;">Structured Data / Schema</h3>
+                                <span class="badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 11px; font-weight: 700;">
+                                    ${sdSummary.total_pages_with_schema > 0 ? '✓ Detected & Evidence-Based' : 'No Schema Detected'}
+                                </span>
+                            </div>
+                            <p style="font-size: 12.5px; color: var(--text-secondary); margin: 4px 0 0 0;">
+                                Evidence-based Schema.org JSON-LD detection captured directly from scanned website pages.
+                            </p>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" style="font-size: 12px; font-weight: 600; color: var(--primary);">
+                            Inspect Schema Evidence ↗
+                        </button>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; background: var(--bg-subtle); padding: 14px; border-radius: 8px; border: 1px solid var(--border);">
+                        <div>
+                            <div style="font-size: 10.5px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase;">Pages Scanned</div>
+                            <div style="font-size: 18px; font-weight: 800; color: var(--text-primary); margin-top: 2px;">${htmlPagesCount || totalAuditedPages}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 10.5px; font-weight: 700; color: var(--success); text-transform: uppercase;">With Schema</div>
+                            <div style="font-size: 18px; font-weight: 800; color: var(--success); margin-top: 2px;">${sdSummary.total_pages_with_schema || 0}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 10.5px; font-weight: 700; color: ${sdSummary.total_pages_missing_schema > 0 ? 'var(--warning)' : 'var(--text-tertiary)'}; text-transform: uppercase;">Without Schema</div>
+                            <div style="font-size: 18px; font-weight: 800; color: ${sdSummary.total_pages_missing_schema > 0 ? 'var(--warning)' : 'var(--text-primary)'}; margin-top: 2px;">${sdSummary.total_pages_missing_schema || 0}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 10.5px; font-weight: 700; color: var(--primary); text-transform: uppercase;">Schema Instances</div>
+                            <div style="font-size: 18px; font-weight: 800; color: var(--primary); margin-top: 2px;">${sdSummary.total_schemas_detected || 0}</div>
+                        </div>
+                        <div>
+                            <div style="font-size: 10.5px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">Schema Types</div>
+                            <div style="font-size: 18px; font-weight: 800; color: var(--text-primary); margin-top: 2px;">${schemaTypeEntries.length}</div>
+                        </div>
+                    </div>
+
+                    ${schemaTypeEntries.length > 0 ? `
+                        <div>
+                            <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">Detected Types:</div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                                ${schemaTypeEntries.map(([t, count]) => `
+                                    <span style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); color: #2563eb; padding: 4px 10px; border-radius: 14px; font-size: 11.5px; font-weight: 600;">
+                                        🏷️ <strong>${this.escapeHtml(t)}</strong> — ${count} page${count === 1 ? '' : 's'}
+                                    </span>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : `
+                        <div style="font-size: 12px; color: var(--text-tertiary); font-style: italic;">No Schema.org structured data detected on scanned pages.</div>
+                    `}
+                </div>
+
                 <!-- WHAT WE CHECKED: CATEGORY CARDS GRID -->
                 <div style="margin-bottom: 24px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
@@ -527,11 +589,13 @@ export class Technical {
                     totalAuditedPages,
                     htmlPagesCount,
                     blockedPagesCount,
-                    evaluatedRulesCount: auditData.evaluated_rules_count || 14,
+                    evaluatedRulesCount,
                     totalChecks,
                     categoryTable,
                     crawlTimestamp,
-                    domain: selectedProj.domain
+                    domain: selectedProj.domain,
+                    scoringFormula: auditData.scoring_formula,
+                    scoringWeights: auditData.scoring_weights
                 });
             });
 
@@ -543,11 +607,14 @@ export class Technical {
                 ChecksPerformedDetailModal.open({
                     totalAuditedPages,
                     htmlPagesCount,
-                    evaluatedRulesCount: auditData.evaluated_rules_count || 14,
+                    evaluatedRulesCount,
                     totalChecks,
                     checksExplanation,
                     categoryTable,
+                    ruleDefinitions: auditData.rule_definitions,
+                    ruleExecutionResults: auditData.rule_execution_results,
                     domain: selectedProj.domain,
+                    crawlTimestamp,
                     onSelectCategory: async (cat) => {
                         this.selectedCategoryFilter = cat;
                         this.issuesPage = 1;
@@ -638,6 +705,7 @@ export class Technical {
                     e.stopPropagation();
                     StructuredDataDetailModal.open({
                         structuredDataSummary: sdSummary,
+                        schemaEvidence: sdEvidence,
                         domain: selectedProj ? selectedProj.domain : 'Target Site',
                         crawlTimestamp: crawlTimestamp
                     });

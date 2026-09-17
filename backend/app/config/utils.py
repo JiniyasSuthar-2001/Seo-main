@@ -103,9 +103,24 @@ def get_project_storage_dir(base_dir: str, domain_or_url: Any = None, project_id
         if os.path.exists(pid_dir):
             return pid_dir
 
-        # Check backward compatibility legacy domain directory
+        # Legacy domain directory check: ONLY use if it explicitly belongs to this project_id
+        # or if no other project shares this domain.
         legacy_dir = os.path.join(base_dir, safe_dom)
         if os.path.exists(legacy_dir):
+            latest_meta_path = os.path.join(legacy_dir, "latest.json")
+            if os.path.exists(latest_meta_path):
+                try:
+                    with open(latest_meta_path, "r", encoding="utf-8") as f:
+                        meta = json.load(f)
+                        stored_pid = meta.get("project_id")
+                        if stored_pid and str(stored_pid).strip() == str(safe_pid).strip():
+                            return legacy_dir
+                        elif stored_pid and str(stored_pid).strip() != str(safe_pid).strip():
+                            # Belongs to a DIFFERENT project — DO NOT fall back!
+                            return primary_dir
+                except Exception:
+                    pass
+            # If no stored project_id in legacy folder, check DB for multiple projects with same domain
             is_shared = False
             if db is not None:
                 try:
@@ -116,7 +131,7 @@ def get_project_storage_dir(base_dir: str, domain_or_url: Any = None, project_id
                         res_count = res_count()
                     if isinstance(res_count, (int, float)) and res_count > 1:
                         is_shared = True
-                except Exception as e:
+                except Exception:
                     pass
             if not is_shared:
                 return legacy_dir

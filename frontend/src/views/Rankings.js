@@ -5,6 +5,7 @@ import { renderBackendOfflineState, renderFeatureErrorState } from '../component
 import { GrowthDetailModal } from '../components/GrowthDetailModal.js';
 import { renderTooltip } from '../components/Tooltip.js';
 import { Pagination } from '../components/Pagination.js';
+import { uiStateStore } from '../core/uiStateStore.js';
 
 export class Rankings {
     constructor() {
@@ -23,9 +24,26 @@ export class Rankings {
         this.winnersSearch = '';
 
         this.pageSize = 20; // MANDATORY PLATFORM STANDARD: 20 rows per page
+        this.hasLoadedOnce = false;
     }
 
     render() {
+        const projectId = resolveProjectId();
+        const savedState = uiStateStore.get(projectId, 'Rankings');
+        if (savedState) {
+            if (savedState.activeTab) this.activeTab = savedState.activeTab;
+            if (savedState.rankingsPage) this.rankingsPage = savedState.rankingsPage;
+            if (savedState.rankingsSearch !== undefined) this.rankingsSearch = savedState.rankingsSearch;
+            if (savedState.rankingsPosFilter) this.rankingsPosFilter = savedState.rankingsPosFilter;
+            if (savedState.winnersTab) this.winnersTab = savedState.winnersTab;
+            if (savedState.winnersPage) this.winnersPage = savedState.winnersPage;
+            if (savedState.winnersSearch !== undefined) this.winnersSearch = savedState.winnersSearch;
+        }
+
+        const isTracking = this.activeTab === 'tracking';
+        const isWinners = this.activeTab === 'winners';
+        const isConfig = this.activeTab === 'config';
+
         this.element.innerHTML = `
             <div class="header" style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
                 <div>
@@ -35,11 +53,11 @@ export class Rankings {
                 <button class="btn btn-primary btn-sm" onclick="window.startCrawl ? window.startCrawl() : window.location.href='/'">Scan My Website</button>
             </div>
 
-            <!-- POSITION TRACKING SUB-TABS -->
+            <!-- POSITION TRACKING SUB-TABS (Derived activeTab - BUG 4) -->
             <div style="display: flex; gap: 6px; border-bottom: 1px solid var(--border); margin-bottom: 24px; flex-wrap: wrap;" id="rank-tabs-nav">
-                <button class="rank-tab ${this.activeTab === 'tracking' ? 'active' : ''}" data-tab="tracking">Search Rankings</button>
-                <button class="rank-tab ${this.activeTab === 'winners' ? 'active' : ''}" data-tab="winners">Ranking Changes</button>
-                <button class="rank-tab ${this.activeTab === 'config' ? 'active' : ''}" data-tab="config">Settings</button>
+                <button class="rank-tab ${isTracking ? 'active' : ''}" data-tab="tracking">Search Rankings</button>
+                <button class="rank-tab ${isWinners ? 'active' : ''}" data-tab="winners">Ranking Changes</button>
+                <button class="rank-tab ${isConfig ? 'active' : ''}" data-tab="config">Settings</button>
             </div>
 
             <div id="rankings-tab-content">
@@ -80,10 +98,16 @@ export class Rankings {
             tabs.forEach(tab => {
                 tab.addEventListener('click', (e) => {
                     tabs.forEach(t => t.classList.remove('active'));
-                    e.target.classList.add('active');
-                    this.activeTab = e.target.dataset.tab;
+                    e.currentTarget.classList.add('active');
+                    this.activeTab = e.currentTarget.dataset.tab;
                     this.rankingsPage = 1;
                     this.winnersPage = 1;
+                    const projectId = resolveProjectId();
+                    uiStateStore.save(projectId, 'Rankings', {
+                        activeTab: this.activeTab,
+                        rankingsPage: this.rankingsPage,
+                        winnersPage: this.winnersPage
+                    });
                     this.mounted();
                 });
             });

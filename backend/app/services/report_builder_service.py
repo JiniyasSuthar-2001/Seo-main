@@ -61,7 +61,9 @@ def generate_custom_pdf_report(
         output += f"{title_text}\n"
         output += f"Target Website: {domain} | Project: {project_name}\n"
         output += f"Generated Date: {datetime.utcnow().strftime('%B %d, %Y')}\n\n"
-        output += f"Website Health Score: {audit_summary.get('health_score', 100)} / 100\n"
+        hs_val = audit_summary.get("health_score")
+        hs_display = f"{hs_val} / 100" if hs_val is not None else "Not Yet Scored"
+        output += f"Website Health Score: {hs_display}\n"
         output += f"Total Pages Scanned: {audit_summary.get('total_audited_pages', len(pages_list))}\n"
         output += f"Problems Found: {len(issues_list)}\n"
         return output.encode("utf-8")
@@ -79,9 +81,7 @@ def generate_custom_pdf_report(
     builder = PDFComponentBuilder(theme)
     story = []
 
-    health = audit_summary.get("health_score", 100)
-    if health is None:
-        health = 100
+    health = audit_summary.get("health_score")
 
     # 1. Executive Header Banner
     builder.build_header_banner(
@@ -91,7 +91,7 @@ def generate_custom_pdf_report(
         project_name=project_name,
         crawl_timestamp=datetime.utcnow().strftime("%B %d, %Y"),
         data_sources="Custom Executive Audit Engine",
-        health_score=health
+        health_score=health if health is not None else "N/A"
     )
 
     sec_lower = [str(s).lower() for s in sections] if sections else ["all"]

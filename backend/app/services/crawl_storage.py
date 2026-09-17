@@ -50,6 +50,7 @@ class CrawlStorage:
 
         metadata = {
             "crawl_id": session_id,
+            "project_id": project_id,
             "website": domain,
             "timestamp": timestamp,
             "status": results.get("status", "completed"),
@@ -152,6 +153,7 @@ class CrawlStorage:
         # 4. Update latest pointer
         latest_pointer = {
             "crawl_id": session_id,
+            "project_id": project_id,
             "timestamp": timestamp,
             "path": crawl_dir
         }

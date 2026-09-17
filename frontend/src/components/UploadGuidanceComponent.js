@@ -1,4 +1,4 @@
-import { getUploadGuidance } from '../config/uploadGuidance.js';
+import { getUploadGuidance, SHARED_UPLOAD_CONFIG } from '../config/uploadGuidance.js';
 import { getApiBaseUrl } from '../config/api.js';
 
 export class UploadGuidanceComponent {
@@ -41,7 +41,7 @@ export class UploadGuidanceComponent {
 
                 <!-- DRAG & DROP UPLOAD ZONE -->
                 <div id="drop-zone-${g.id}" style="border: 2px dashed var(--primary, #3b82f6); border-radius: 10px; padding: 32px 20px; text-align: center; background: rgba(59, 130, 246, 0.04); cursor: pointer; transition: all 0.2s ease; margin-bottom: 20px;">
-                    <input type="file" id="input-file-${g.id}" accept="${g.supported_formats.map(f => '.' + f.toLowerCase()).join(',')}" style="display: none;" />
+                    <input type="file" id="input-file-${g.id}" accept="${SHARED_UPLOAD_CONFIG.accepted_mime_types}" style="display: none;" />
                     <div style="font-size: 32px; margin-bottom: 8px;">📁</div>
                     <div style="font-size: 15px; font-weight: 600; color: var(--text-primary);">Drag & Drop your ${g.id.toUpperCase()} file here, or click to browse</div>
                     <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 6px;">

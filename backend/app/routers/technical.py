@@ -13,6 +13,7 @@ from app.models.audit_issue import AuditIssue
 from app.models.crawl_session import CrawlSession
 from app.config.utils import get_sanitized_domain, normalize_stored_path, get_project_storage_dir
 from app.services.audit_rules import evaluate_site_audit_rules
+from app.services.canonical_audit_service import CanonicalAuditService
 from app.config.auth import get_current_user_id
 from app.config.permissions import get_user_membership
 
@@ -41,32 +42,16 @@ def get_technical_audit(
         }
 
     domain = project.domain
-    proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, project.id)
-    latest_path = os.path.join(proj_dir, "latest.json")
+    audit_data = CanonicalAuditService.get_canonical_audit_result(
+        project_id=project.id,
+        domain=domain
+    )
 
-    pages = []
-    if os.path.exists(latest_path):
-        try:
-            with open(latest_path, "r") as f:
-                latest = json.load(f)
-            crawl_dir = normalize_stored_path(latest.get("path"))
-            pages_file = os.path.join(crawl_dir, "pages.json")
-            if os.path.exists(pages_file):
-                with open(pages_file, "r") as pf:
-                    pages = json.load(pf)
-        except Exception as e:
-            print(f"[TECHNICAL API] Error loading pages: {e}", flush=True)
-
-    # 2. Evaluate 15-category site audit rules
-    audit_data = evaluate_site_audit_rules(pages)
-
-    # Filter issues by category & severity
-    filtered_issues = audit_data["issues"]
+    filtered_issues = audit_data.get("issues", [])
     if category and isinstance(category, str) and category.lower() != "all":
         filtered_issues = [i for i in filtered_issues if i.get("category", "").lower() == category.lower()]
     if severity and isinstance(severity, str) and severity.lower() != "all":
         filtered_issues = [i for i in filtered_issues if i.get("severity", "").lower() == severity.lower()]
-
 
     try:
         lim = int(limit)
@@ -80,23 +65,29 @@ def get_technical_audit(
     return {
         "project_id": project.id,
         "domain": domain,
+        "crawl_id": audit_data.get("crawl_id"),
+        "crawl_timestamp": audit_data.get("crawl_timestamp"),
         "health_score": audit_data["health_score"],
-        "score_available": audit_data.get("score_available", True if audit_data.get("health_score") is not None else False),
-        "total_audited_pages": audit_data["total_audited_pages"],
-        "successful_html_pages_count": audit_data.get("successful_html_pages_count", 0),
-        "blocked_pages_count": audit_data.get("blocked_pages_count", 0),
-        "evaluated_rules_count": audit_data.get("evaluated_rules_count", 14),
+        "score_available": audit_data["score_available"],
+        "scoring_formula": audit_data.get("scoring_formula"),
+        "scoring_weights": audit_data.get("scoring_weights"),
+        "analyzed_pages": audit_data.get("analyzed_pages", 0),
+        "total_audited_pages": audit_data.get("analyzed_pages", 0),
+        "html_pages_analyzed": audit_data.get("html_pages_analyzed", 0),
+        "evaluated_rules_count": audit_data.get("evaluated_rules", 14),
         "total_evaluated_checks": audit_data.get("total_evaluated_checks", 0),
-        "checks_explanation": audit_data.get("checks_explanation", ""),
-        "crawl_timestamp": latest.get("completed_at") or latest.get("timestamp") if ('latest' in locals() and latest) else None,
-        "crawl_status": latest.get("status", "completed") if os.path.exists(latest_path) else "no_crawl",
+        "checks_explanation": f"{audit_data.get('html_pages_analyzed', 0)} analyzed pages × {audit_data.get('evaluated_rules', 14)} evaluated rules",
         "summary": audit_data["summary"],
+        "rule_definitions": audit_data.get("rule_definitions", []),
+        "rule_execution_results": audit_data.get("rule_execution_results", []),
         "category_breakdown": audit_data["category_breakdown"],
         "category_checks_table": audit_data.get("category_checks_table", []),
-        "structured_data_summary": audit_data.get("structured_data_summary"),
+        "schema_summary": audit_data.get("schema_summary"),
+        "schema_evidence": audit_data.get("schema_evidence", []),
+        "robots_summary": audit_data.get("robots_summary"),
+        "robots_evidence": audit_data.get("robots_evidence", []),
         "issues": filtered_issues[off : off + lim],
-        "total_issues": len(filtered_issues),
-        "provenance": audit_data["provenance"]
+        "total_issues": len(filtered_issues)
     }
 
 

@@ -299,21 +299,27 @@ export class CustomerTopBar {
 
       if (myProjects && myProjects.length > 0) {
         optionsHtml += `<optgroup label="MY PROJECTS (Lead/Owner)">`;
-        optionsHtml += myProjects.map(p => `
+        optionsHtml += myProjects.map(p => {
+          const domStr = p.domain || p.url || '';
+          return `
           <option value="${p.id}" ${String(p.id) === String(selectedId) ? 'selected' : ''}>
-            ${p.name} (Lead)
+            ${p.name}${domStr ? ' — ' + domStr : ''} (Lead)
           </option>
-        `).join('');
+        `;
+        }).join('');
         optionsHtml += `</optgroup>`;
       }
 
       if (memberProjects && memberProjects.length > 0) {
         optionsHtml += `<optgroup label="PROJECTS I'M A MEMBER OF">`;
-        optionsHtml += memberProjects.map(p => `
+        optionsHtml += memberProjects.map(p => {
+          const domStr = p.domain || p.url || '';
+          return `
           <option value="${p.id}" ${String(p.id) === String(selectedId) ? 'selected' : ''}>
-            ${p.name} (Team Member)
+            ${p.name}${domStr ? ' — ' + domStr : ''} (Team Member)
           </option>
-        `).join('');
+        `;
+        }).join('');
         optionsHtml += `</optgroup>`;
       }
 

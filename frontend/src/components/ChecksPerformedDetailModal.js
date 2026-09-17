@@ -3,7 +3,7 @@
  * Renders an explicit breakdown of all audit checks and rules evaluated across scanned pages.
  */
 export class ChecksPerformedDetailModal {
-    static open({ totalAuditedPages, htmlPagesCount, evaluatedRulesCount, totalChecks, checksExplanation, categoryTable, onSelectCategory, domain }) {
+    static open({ totalAuditedPages, htmlPagesCount, evaluatedRulesCount, totalChecks, checksExplanation, categoryTable, ruleDefinitions, ruleExecutionResults, onSelectCategory, domain }) {
         const existing = document.getElementById('checks-performed-modal-root');
         if (existing) existing.remove();
 
@@ -22,8 +22,10 @@ export class ChecksPerformedDetailModal {
             "Mobile": "Checks mobile viewport meta tags and responsive layout readiness.",
             "International SEO": "Evaluates hreflang language annotations and international targeting setup.",
             "Security": "Verifies SSL/TLS certificate validity, expiration, and trusted CA authority verification.",
-            "Performance": "Evaluates PageSpeed loading performance (requires PageSpeed API key configured in Integrations)."
+            "Performance": "Evaluates PageSpeed loading performance (requires PageSpeed API key configured in Settings -> Integrations)."
         };
+
+        const itemsToRender = (ruleExecutionResults && ruleExecutionResults.length > 0) ? ruleExecutionResults : (categoryTable || []);
 
         const modalRoot = document.createElement('div');
         modalRoot.id = 'checks-performed-modal-root';
@@ -41,7 +43,7 @@ export class ChecksPerformedDetailModal {
                     <div>
                         <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.05em;">AUDIT RULE BREAKDOWN</div>
                         <h2 style="font-size: 20px; font-weight: 700; color: var(--text-primary); margin: 2px 0 0 0;">Checks & Rules Evaluated</h2>
-                        <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 2px;">Domain: <strong>${escapeHtml(domain || 'Target Site')}</strong> • ${escapeHtml(checksExplanation || '')}</div>
+                        <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 2px;">Domain: <strong>${escapeHtml(domain || 'Target Site')}</strong> • ${escapeHtml(checksExplanation || `${htmlPagesCount || totalAuditedPages} analyzed pages × ${evaluatedRulesCount || 14} evaluated rules`)}</div>
                     </div>
                     <button id="btn-close-checks-modal" style="background: none; border: none; font-size: 24px; line-height: 1; color: var(--text-tertiary); cursor: pointer; padding: 4px;">&times;</button>
                 </div>
@@ -58,7 +60,7 @@ export class ChecksPerformedDetailModal {
                     </div>
                     <div>
                         <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase;">Total Checks Performed</div>
-                        <div style="font-size: 22px; font-weight: 800; color: var(--text-primary); margin-top: 2px;">${(totalChecks || 0).toLocaleString()}</div>
+                        <div style="font-size: 22px; font-weight: 800; color: var(--text-primary); margin-top: 2px;">${(totalChecks || (htmlPagesCount * (evaluatedRulesCount || 14))).toLocaleString()}</div>
                     </div>
                 </div>
 
@@ -72,7 +74,7 @@ export class ChecksPerformedDetailModal {
                         <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 12.5px;">
                             <thead>
                                 <tr style="background: var(--bg-subtle); border-bottom: 1px solid var(--border); color: var(--text-secondary); font-size: 11px; text-transform: uppercase;">
-                                    <th style="padding: 10px 14px;">Check / Rule Category</th>
+                                    <th style="padding: 10px 14px;">Rule ID / Check Name</th>
                                     <th style="padding: 10px 14px;">Rule Scope & Purpose</th>
                                     <th style="padding: 10px 14px;">Pages Checked</th>
                                     <th style="padding: 10px 14px;">Status</th>
@@ -80,35 +82,54 @@ export class ChecksPerformedDetailModal {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${(categoryTable || []).map(c => `
-                                    <tr style="border-bottom: 1px solid var(--border);">
-                                        <td style="padding: 12px 14px; font-weight: 700; color: var(--text-primary); vertical-align: top;">
-                                            ${escapeHtml(c.category)}
-                                        </td>
-                                        <td style="padding: 12px 14px; color: var(--text-secondary); line-height: 1.4; vertical-align: top; max-width: 320px;">
-                                            ${ruleDescriptions[c.category] || 'Technical health and search engine compliance verification.'}
-                                        </td>
-                                        <td style="padding: 12px 14px; vertical-align: top; font-weight: 600;">
-                                            ${c.checks_performed || 0} pages
-                                        </td>
-                                        <td style="padding: 12px 14px; vertical-align: top;">
-                                            <span class="badge ${c.issues_count > 0 ? (c.critical > 0 ? 'badge-critical' : 'badge-warning') : 'badge-success'}" style="font-size: 11px;">
-                                                ${c.issues_count > 0 ? `${c.issues_count} Problem${c.issues_count === 1 ? '' : 's'}` : '✓ Passed'}
-                                            </span>
-                                        </td>
-                                        <td style="padding: 12px 14px; text-align: right; vertical-align: top;">
-                                            ${c.issues_count > 0 ? `
-                                                <button class="btn btn-secondary btn-sm btn-filter-cat-modal" 
-                                                        data-category="${escapeHtml(c.category)}"
-                                                        style="font-size: 11px; padding: 4px 10px;">
-                                                    View Problems (${c.issues_count})
-                                                </button>
-                                            ` : `
-                                                <span style="font-size: 11.5px; color: var(--success); font-weight: 600;">Clean</span>
-                                            `}
-                                        </td>
-                                    </tr>
-                                `).join('')}
+                                ${itemsToRender.map(c => {
+                                    const rId = c.rule_id || c.category;
+                                    const rName = c.rule_name || c.category;
+                                    const probCnt = c.problems !== undefined ? c.problems : (c.issues_count || 0);
+                                    const pagesChk = c.pages_checked !== undefined ? c.pages_checked : (c.checks_performed || 0);
+                                    const isEval = c.evaluated !== False && c.status !== 'Not Evaluated' && c.status !== 'Not Analyzed';
+
+                                    let badgeClass = 'badge-success';
+                                    let badgeText = '✓ Passed';
+                                    if (!isEval) {
+                                        badgeClass = 'badge-secondary';
+                                        badgeText = 'Not Evaluated';
+                                    } else if (probCnt > 0) {
+                                        badgeClass = (c.critical > 0 || c.error > 0) ? 'badge-critical' : 'badge-warning';
+                                        badgeText = `${probCnt} Problem${probCnt === 1 ? '' : 's'}`;
+                                    }
+
+                                    return `
+                                        <tr style="border-bottom: 1px solid var(--border);">
+                                            <td style="padding: 12px 14px; font-weight: 700; color: var(--text-primary); vertical-align: top;">
+                                                <div>${escapeHtml(rName)}</div>
+                                                <div style="font-size: 10px; font-weight: 600; color: var(--text-tertiary); margin-top: 2px;">${escapeHtml(rId)}</div>
+                                            </td>
+                                            <td style="padding: 12px 14px; color: var(--text-secondary); line-height: 1.4; vertical-align: top; max-width: 320px;">
+                                                ${c.description || ruleDescriptions[c.category] || 'Technical health and search engine compliance verification.'}
+                                            </td>
+                                            <td style="padding: 12px 14px; vertical-align: top; font-weight: 600;">
+                                                ${pagesChk} pages
+                                            </td>
+                                            <td style="padding: 12px 14px; vertical-align: top;">
+                                                <span class="badge ${badgeClass}" style="font-size: 11px;">
+                                                    ${badgeText}
+                                                </span>
+                                            </td>
+                                            <td style="padding: 12px 14px; text-align: right; vertical-align: top;">
+                                                ${probCnt > 0 ? `
+                                                    <button class="btn btn-secondary btn-sm btn-filter-cat-modal" 
+                                                            data-category="${escapeHtml(c.category)}"
+                                                            style="font-size: 11px; padding: 4px 10px;">
+                                                        View Problems (${probCnt})
+                                                    </button>
+                                                ` : `
+                                                    <span style="font-size: 11.5px; color: ${isEval ? 'var(--success)' : 'var(--text-tertiary)'}; font-weight: 600;">${isEval ? 'Clean' : 'N/A'}</span>
+                                                `}
+                                            </td>
+                                        </tr>
+                                    `;
+                                }).join('')}
                             </tbody>
                         </table>
                     </div>

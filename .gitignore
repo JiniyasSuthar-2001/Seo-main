@@ -42,6 +42,11 @@ data/
 backend/data/
 backend/data/websites/*
 !backend/data/websites/.gitkeep
+nullscore.com/
+pdfdemo.com/
+testdomain.com/
+xlsxdemo.com/
+/*.com/
 
 # Temporary & Scratch Files
 scratch/

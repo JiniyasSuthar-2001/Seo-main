@@ -80,6 +80,267 @@ def extract_schema_types(raw_data: Any) -> List[str]:
     _process_node(raw_data)
     return types
 
+
+def get_canonical_rule_registry() -> List[Dict[str, Any]]:
+    """
+    Returns the canonical backend audit rule registry.
+    """
+    return [
+        {
+            "rule_id": "CRAWL_001",
+            "category": "Crawlability",
+            "rule_name": "HTTP Status Errors (4xx / 5xx)",
+            "description": "Identifies pages returning HTTP client or server error status codes.",
+            "what_is_checked": "HTTP status codes of all discovered URLs.",
+            "validation_method": "Flag URLs returning status >= 400.",
+            "scope": "All Discovered Pages",
+            "severity": "critical",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "INDEX_001",
+            "category": "Indexability",
+            "rule_name": "Robots Noindex Meta Tag",
+            "description": "Identifies pages configured with noindex directive preventing search engine indexing.",
+            "what_is_checked": "Meta robots tags and X-Robots-Tag HTTP headers.",
+            "validation_method": "Flag HTML pages containing 'noindex'.",
+            "scope": "HTML Pages",
+            "severity": "error",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "HTTPS_001",
+            "category": "HTTPS",
+            "rule_name": "Unencrypted HTTP Protocol",
+            "description": "Identifies pages served over unencrypted HTTP instead of secure HTTPS.",
+            "what_is_checked": "URL scheme (http vs https).",
+            "validation_method": "Flag URLs starting with http://.",
+            "scope": "All Crawled URLs",
+            "severity": "critical",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "META_001",
+            "category": "Metadata",
+            "rule_name": "Missing HTML Page Title",
+            "description": "Identifies pages lacking an HTML <title> tag.",
+            "what_is_checked": "Presence of non-empty <title> tag.",
+            "validation_method": "Flag HTML pages missing title.",
+            "scope": "HTML Pages",
+            "severity": "critical",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "META_002",
+            "category": "Metadata",
+            "rule_name": "Missing Meta Description",
+            "description": "Identifies pages lacking a meta description tag.",
+            "what_is_checked": "Presence of non-empty <meta name='description'>.",
+            "validation_method": "Flag HTML pages missing meta description.",
+            "scope": "HTML Pages",
+            "severity": "warning",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "META_003",
+            "category": "Metadata",
+            "rule_name": "Missing Open Graph Social Tags",
+            "description": "Identifies pages lacking Open Graph metadata (og:title).",
+            "what_is_checked": "Presence of <meta property='og:title'>.",
+            "validation_method": "Flag HTML pages missing og:title.",
+            "scope": "HTML Pages",
+            "severity": "notice",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "CONT_001",
+            "category": "Content",
+            "rule_name": "Thin Body Content (< 150 words)",
+            "description": "Identifies pages with fewer than 150 words of body content.",
+            "what_is_checked": "Main body text word count.",
+            "validation_method": "Flag HTML pages with word_count < 150.",
+            "scope": "HTML Pages",
+            "severity": "warning",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "HEAD_001",
+            "category": "Headings",
+            "rule_name": "Missing H1 Heading Tag",
+            "description": "Identifies pages lacking a primary H1 heading element.",
+            "what_is_checked": "Presence of <h1> element.",
+            "validation_method": "Flag HTML pages with 0 H1 headings.",
+            "scope": "HTML Pages",
+            "severity": "warning",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "CAN_001",
+            "category": "Canonicals",
+            "rule_name": "Missing rel='canonical' Tag",
+            "description": "Identifies pages missing a canonical URL reference.",
+            "what_is_checked": "Presence of <link rel='canonical'> tag.",
+            "validation_method": "Flag HTML pages missing canonical URL.",
+            "scope": "HTML Pages",
+            "severity": "warning",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "IMG_001",
+            "category": "Images",
+            "rule_name": "Images Missing Alt Text",
+            "description": "Identifies pages containing images without alt attributes.",
+            "what_is_checked": "Alt attributes of <img> elements.",
+            "validation_method": "Flag pages with missing alt text.",
+            "scope": "HTML Pages",
+            "severity": "warning",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "LINK_001",
+            "category": "Internal Links",
+            "rule_name": "Orphan Pages (No Inbound Links)",
+            "description": "Identifies pages that receive 0 internal incoming links.",
+            "what_is_checked": "Inbound internal link count.",
+            "validation_method": "Flag HTML pages with inbound_internal_links == 0.",
+            "scope": "HTML Pages",
+            "severity": "warning",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "LINK_002",
+            "category": "Internal Links",
+            "rule_name": "Broken Internal Links",
+            "description": "Identifies internal hyperlinks resolving to broken target URLs.",
+            "what_is_checked": "HTTP status of target internal links.",
+            "validation_method": "Flag pages with broken internal links.",
+            "scope": "HTML Pages",
+            "severity": "error",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "EXT_001",
+            "category": "External Links",
+            "rule_name": "Outbound Links to Insecure HTTP Destinations",
+            "description": "Identifies external links directing users to unencrypted HTTP URLs.",
+            "what_is_checked": "Target scheme of external hyperlinks.",
+            "validation_method": "Flag pages linking to http:// external sites.",
+            "scope": "HTML Pages",
+            "severity": "notice",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "SCHEMA_001",
+            "category": "Structured Data",
+            "rule_name": "Missing Schema.org JSON-LD Structured Data",
+            "description": "Identifies pages lacking structured data markups.",
+            "what_is_checked": "JSON-LD script blocks, Microdata, and RDFa tags.",
+            "validation_method": "Flag HTML pages missing structured data.",
+            "scope": "HTML Pages",
+            "severity": "notice",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "MOB_001",
+            "category": "Mobile",
+            "rule_name": "Missing Mobile Viewport Tag",
+            "description": "Identifies pages missing a mobile viewport meta tag.",
+            "what_is_checked": "Presence of <meta name='viewport'>.",
+            "validation_method": "Flag HTML pages missing viewport tag.",
+            "scope": "HTML Pages",
+            "severity": "warning",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "HREF_001",
+            "category": "International SEO",
+            "rule_name": "Hreflang Tags Missing Self-Reference",
+            "description": "Identifies alternate language tags lacking a self-referential link.",
+            "what_is_checked": "Hreflang link tag targets.",
+            "validation_method": "Flag pages missing self-referential hreflang tag.",
+            "scope": "HTML Pages",
+            "severity": "notice",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "SEC_001",
+            "category": "Security",
+            "rule_name": "SSL / TLS Certificate Error",
+            "description": "Identifies pages failing TLS certificate verification.",
+            "what_is_checked": "SSL/TLS handshake errors.",
+            "validation_method": "Flag URLs with SSL connection errors.",
+            "scope": "All Crawled URLs",
+            "severity": "critical",
+            "enabled": True,
+            "evaluated": True,
+            "requires_integration": False,
+            "version": "1.0.0"
+        },
+        {
+            "rule_id": "PERF_001",
+            "category": "Performance",
+            "rule_name": "PageSpeed Performance Score",
+            "description": "Evaluates Core Web Vitals and PageSpeed Insights performance metrics.",
+            "what_is_checked": "Google PageSpeed Insights API metrics.",
+            "validation_method": "External API evaluation.",
+            "scope": "HTML Pages",
+            "severity": "warning",
+            "enabled": False,
+            "evaluated": False,
+            "requires_integration": True,
+            "version": "1.0.0"
+        }
+    ]
+
+
 def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Evaluates Technical Site Audit Rule Categories across crawled website pages.
@@ -859,14 +1120,15 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
     EVALUATED_RULE_COUNT = sum(1 for c in categories.values() if c.get("evaluated", False))
     evaluated_pages_for_score = html_count if html_count > 0 else total_pages
     total_evaluated_checks = evaluated_pages_for_score * EVALUATED_RULE_COUNT
-    total_weighted_penalty = (crit_cnt * 3.0) + (err_cnt * 2.0) + (warn_cnt * 1.0)
+    total_weighted_penalty = (crit_cnt * 3.0) + (err_cnt * 2.0) + (warn_cnt * 1.0) + (not_cnt * 0.25)
 
-    
-    if total_evaluated_checks > 0:
+    if total_pages > 0 and total_evaluated_checks > 0:
         score_deduction = (total_weighted_penalty / total_evaluated_checks) * 100
         health_score = max(0, min(100, round(100 - score_deduction)))
+        score_available = True
     else:
-        health_score = 100
+        health_score = None
+        score_available = False
 
     category_table = []
     for cat_name, stats in categories.items():
@@ -903,15 +1165,51 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             cat_entry["total_pages_missing_schema"] = stats.get("total_pages_missing_schema", 0)
         category_table.append(cat_entry)
 
+    total_problems = crit_cnt + err_cnt + warn_cnt + not_cnt
+    passed_checks_cnt = max(0, total_evaluated_checks - total_problems) if total_pages > 0 else 0
+
+    rule_execution_results = []
+    rule_defs = get_canonical_rule_registry()
+    rule_issue_map = {i["rule_id"]: i for i in issues}
+
+    for rd in rule_defs:
+        r_id = rd["rule_id"]
+        is_eval = rd["evaluated"] and total_pages > 0
+        iss = rule_issue_map.get(r_id)
+        
+        pages_chk = evaluated_pages_for_score if is_eval else 0
+        prob_cnt = iss["affected_count"] if iss else 0
+        pass_cnt = max(0, pages_chk - prob_cnt) if is_eval else 0
+        
+        status_str = "Not Evaluated"
+        if is_eval:
+            status_str = "Issues Found" if prob_cnt > 0 else "Passed"
+
+        rule_execution_results.append({
+            "rule_id": r_id,
+            "category": rd["category"],
+            "rule_name": rd["rule_name"],
+            "pages_checked": pages_chk,
+            "evaluated": is_eval,
+            "passed": pass_cnt,
+            "problems": prob_cnt,
+            "status": status_str,
+            "affected_urls": iss["affected_urls"] if iss else []
+        })
+
     return {
         "health_score": health_score,
-        "score_available": total_pages > 0,
+        "score_available": score_available,
+        "scoring_formula": "100 - ((critical*3.0 + error*2.0 + warning*1.0 + notice*0.25) / total_evaluated_checks) * 100",
+        "scoring_weights": {"critical": 3.0, "error": 2.0, "warning": 1.0, "notice": 0.25},
         "total_audited_pages": total_pages,
         "successful_html_pages_count": html_count,
         "blocked_pages_count": len(blocked_pages),
         "error_pages_count": len(error_pages),
         "evaluated_rules_count": EVALUATED_RULE_COUNT,
         "total_evaluated_checks": total_evaluated_checks,
+        "passed_checks": passed_checks_cnt,
+        "problem_checks": total_problems if total_pages > 0 else 0,
         "checks_explanation": f"{evaluated_pages_for_score} analyzed pages × {EVALUATED_RULE_COUNT} evaluated rules",
         "health_score_formula": "100 - ((critical*3.0 + error*2.0 + warning*1.0 + notice*0.25) / total_evaluated_checks) * 100",
         "summary": {
@@ -919,9 +1217,12 @@ def evaluate_site_audit_rules(pages: List[Dict[str, Any]]) -> Dict[str, Any]:
             "errors": err_cnt,
             "warnings": warn_cnt,
             "notices": not_cnt,
-            "passed_checks": max(0, total_evaluated_checks - (crit_cnt + err_cnt + warn_cnt + not_cnt)),
+            "passed_checks": passed_checks_cnt,
+            "problem_checks": total_problems if total_pages > 0 else 0,
             "total_checks": total_evaluated_checks
         },
+        "rule_definitions": rule_defs,
+        "rule_execution_results": rule_execution_results,
         "category_breakdown": categories,
         "category_checks_table": category_table,
         "structured_data_summary": categories.get("Structured Data", {}).get("structured_data_summary"),

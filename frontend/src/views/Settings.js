@@ -3,6 +3,7 @@ import { authStore } from '../core/authStore.js';
 import { API_BASE_URL } from '../config/api.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
 import { apiClient } from '../services/apiClient.js';
+import { uiStateStore } from '../core/uiStateStore.js';
 
 export class Settings {
     constructor() {
@@ -12,21 +13,31 @@ export class Settings {
     }
 
     render() {
+        const projectId = projectStore.getSelectedProjectId();
+        const savedState = uiStateStore.get(projectId, 'Settings');
+        if (savedState && savedState.activeTab) {
+            this.activeTab = savedState.activeTab;
+        }
+
+        const isAccount = this.activeTab === 'account';
+        const isIntegrations = this.activeTab === 'integrations';
+        const isWorkspace = this.activeTab === 'workspace';
+
         this.element.innerHTML = `
             <div class="header" style="margin-bottom: 24px;">
                 <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">Settings & Workspace Control</h1>
                 <p style="color: var(--text-secondary); margin: 0; font-size: 13.5px;">Manage platform identity, external service integrations, workspace projects, and team access.</p>
             </div>
 
-            <!-- SETTINGS NAVIGATION TABS -->
+            <!-- SETTINGS NAVIGATION TABS (Derived activeTab - BUG 2 & BUG 4) -->
             <div class="settings-tabs-bar" style="display: flex; gap: 8px; border-bottom: 1px solid var(--border); margin-bottom: 24px;">
-                <button class="settings-tab-btn active" data-tab="account" style="padding: 10px 18px; font-size: 14px; font-weight: 600; color: var(--primary); border: none; border-bottom: 2px solid var(--primary); background: transparent; cursor: pointer;">
+                <button class="settings-tab-btn ${isAccount ? 'active' : ''}" data-tab="account" style="padding: 10px 18px; font-size: 14px; font-weight: 600; color: ${isAccount ? 'var(--primary)' : 'var(--text-secondary)'}; border: none; border-bottom: 2px solid ${isAccount ? 'var(--primary)' : 'transparent'}; background: transparent; cursor: pointer;">
                     Account & Security
                 </button>
-                <button class="settings-tab-btn" data-tab="integrations" style="padding: 10px 18px; font-size: 14px; font-weight: 600; color: var(--text-secondary); border: none; border-bottom: 2px solid transparent; background: transparent; cursor: pointer;">
+                <button class="settings-tab-btn ${isIntegrations ? 'active' : ''}" data-tab="integrations" style="padding: 10px 18px; font-size: 14px; font-weight: 600; color: ${isIntegrations ? 'var(--primary)' : 'var(--text-secondary)'}; border: none; border-bottom: 2px solid ${isIntegrations ? 'var(--primary)' : 'transparent'}; background: transparent; cursor: pointer;">
                     Integrations & Services
                 </button>
-                <button class="settings-tab-btn" data-tab="workspace" style="padding: 10px 18px; font-size: 14px; font-weight: 600; color: var(--text-secondary); border: none; border-bottom: 2px solid transparent; background: transparent; cursor: pointer;">
+                <button class="settings-tab-btn ${isWorkspace ? 'active' : ''}" data-tab="workspace" style="padding: 10px 18px; font-size: 14px; font-weight: 600; color: ${isWorkspace ? 'var(--primary)' : 'var(--text-secondary)'}; border: none; border-bottom: 2px solid ${isWorkspace ? 'var(--primary)' : 'transparent'}; background: transparent; cursor: pointer;">
                     Workspace & Team
                 </button>
             </div>
@@ -49,16 +60,16 @@ export class Settings {
             btn.addEventListener('click', (e) => {
                 const targetTab = e.currentTarget.getAttribute('data-tab');
                 this.activeTab = targetTab;
+                const projectId = projectStore.getSelectedProjectId();
+                uiStateStore.save(projectId, 'Settings', { activeTab: this.activeTab });
 
                 this.element.querySelectorAll('.settings-tab-btn').forEach(tb => {
-                    tb.classList.remove('active');
-                    tb.style.color = 'var(--text-secondary)';
-                    tb.style.borderBottomColor = 'transparent';
+                    const tName = tb.getAttribute('data-tab');
+                    const isActive = tName === this.activeTab;
+                    tb.classList.toggle('active', isActive);
+                    tb.style.color = isActive ? 'var(--primary)' : 'var(--text-secondary)';
+                    tb.style.borderBottomColor = isActive ? 'var(--primary)' : 'transparent';
                 });
-
-                e.currentTarget.classList.add('active');
-                e.currentTarget.style.color = 'var(--primary)';
-                e.currentTarget.style.borderBottomColor = 'var(--primary)';
 
                 this.renderTabContent(container);
             });

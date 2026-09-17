@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Body, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.config.database import get_db
@@ -18,6 +19,14 @@ from app.config.auth import get_current_user_id
 from app.config.permissions import get_user_membership
 
 router = APIRouter()
+
+
+class DiscoverRequest(BaseModel):
+    """Optional location context for competitor discovery."""
+    country: Optional[str] = None
+    country_code: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
 
 
 def _get_project_or_404(project_id: str, db: Session, user_id: str) -> Project:
@@ -112,16 +121,26 @@ def get_discovered_competitors(
     db: Session = Depends(get_db)
 ):
     """
-    Returns suggested auto-discovered competitors for the project along with SERP provider status.
+    READ-ONLY endpoint.  Returns existing suggested competitors from the database
+    plus SERP provider status.  Does NOT trigger a live SERP scan.
+
+    Live SERP discovery is exclusively triggered by POST /discover.
     """
     project = _get_project_or_404(project_id, db, user_id)
-    disc_res = discover_competitors_for_project(project, db)
-    suggested = disc_res.get("suggested_competitors", [])
-    
+
+    # Cheap DB read — no external API calls
+    from app.services.competitor_service import check_serp_provider_status
+    serp_status = check_serp_provider_status(project, db)
+
+    suggested = db.query(Competitor).filter(
+        Competitor.project_id == project.id,
+        Competitor.status == "Suggested"
+    ).order_by(Competitor.relevance_score.desc()).all()
+
     return {
-        "has_serp_provider": disc_res.get("has_serp_provider", False),
-        "provider_name": disc_res.get("provider_name", "None"),
-        "message": disc_res.get("message", ""),
+        "has_serp_provider": serp_status.get("has_serp_provider", False),
+        "provider_name": serp_status.get("provider_name", "None"),
+        "message": serp_status.get("message", ""),
         "suggested_competitors": [_serialize_competitor(c) for c in suggested]
     }
 
@@ -130,22 +149,36 @@ def get_discovered_competitors(
 def run_competitor_discovery(
     project_id: str,
     user_id: str = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    body: DiscoverRequest = Body(default=DiscoverRequest()),
 ):
     """
-    Triggers automated competitor discovery for the project.
+    Triggers automated live SERP competitor discovery for the project.
+    Accepts an optional location body (country, country_code, state, city).
+    Only this endpoint performs live SERP API calls.
     """
     project = _get_project_or_404(project_id, db, user_id)
-    disc_res = discover_competitors_for_project(project, db)
-    
+
+    location = None
+    if body and any([body.country, body.country_code, body.state, body.city]):
+        location = {
+            "country": (body.country or "").strip() or None,
+            "country_code": (body.country_code or "").strip().upper() or None,
+            "state": (body.state or "").strip() or None,
+            "city": (body.city or "").strip() or None,
+        }
+
+    disc_res = discover_competitors_for_project(project, db, location=location)
+
     suggested = disc_res.get("suggested_competitors", [])
     confirmed = disc_res.get("confirmed_competitors", [])
-    
+
     return {
         "status": "success" if disc_res.get("has_serp_provider") else "no_serp_provider",
         "has_serp_provider": disc_res.get("has_serp_provider", False),
         "provider_name": disc_res.get("provider_name", "None"),
         "message": disc_res.get("message", ""),
+        "location": location,
         "discovered_count": len(suggested),
         "confirmed_count": len(confirmed),
         "suggested_competitors": [_serialize_competitor(c) for c in suggested],

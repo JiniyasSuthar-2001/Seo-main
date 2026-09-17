@@ -5,6 +5,7 @@ import { FileInspectorModal } from '../components/FileInspectorModal.js';
 import { renderBackendOfflineState, renderFeatureErrorState } from '../components/ErrorState.js';
 import { Pagination } from '../components/Pagination.js';
 import { apiClient } from '../services/apiClient.js';
+import { SHARED_UPLOAD_CONFIG, EMPTY_IMPORT_HISTORY_MESSAGE } from '../config/uploadGuidance.js';
 
 export class Import {
     constructor() {
@@ -53,13 +54,13 @@ export class Import {
                     </div>
 
                     <div id="dropzone" style="border: 2px dashed var(--border); border-radius: 10px; padding: 36px 20px; text-align: center; background: var(--bg-secondary); cursor: pointer; transition: all 0.2s ease;">
-                        <input type="file" id="file-input" accept=".csv,.xlsx,.xls,.json" style="display: none;" />
+                        <input type="file" id="file-input" accept="${SHARED_UPLOAD_CONFIG.accepted_mime_types}" style="display: none;" />
                         <div style="font-size: 32px; margin-bottom: 12px; color: var(--text-tertiary);">📁</div>
                         <div style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">
                             Click to upload or drag & drop CSV / Excel file
                         </div>
                         <div style="font-size: 12.5px; color: var(--text-tertiary);">
-                            Supported formats: .csv, .xlsx, .xls, .json (max 10MB)
+                            Supported formats: .csv, .xlsx, .xls, .json (max ${SHARED_UPLOAD_CONFIG.max_file_size_label})
                         </div>
                     </div>
                 </div>
@@ -149,6 +150,13 @@ export class Import {
     }
 
     handleFileSelected(file) {
+        if (!file) return;
+        if (file.size > SHARED_UPLOAD_CONFIG.max_file_size_mb * 1024 * 1024) {
+            this.errorMessage = SHARED_UPLOAD_CONFIG.error_messages.file_too_large;
+            this.reRender();
+            return;
+        }
+
         const modal = new FileInspectorModal({
             file,
             dataType: this.selectedDataType,
@@ -209,7 +217,7 @@ export class Import {
             const history = await apiClient.get(`/api/projects/${projectId}/import/history`);
 
             if (!Array.isArray(history) || history.length === 0) {
-                historyContainer.innerHTML = '<div style="padding: 20px; text-align: center;">No previous file imports recorded for this website.</div>';
+                historyContainer.innerHTML = `<div style="padding: 20px; text-align: center;">${EMPTY_IMPORT_HISTORY_MESSAGE}</div>`;
                 return;
             }
 
@@ -257,7 +265,7 @@ export class Import {
             }
 
         } catch (e) {
-            historyContainer.innerHTML = '<div style="padding: 20px;">Import history records available upon next file upload.</div>';
+            historyContainer.innerHTML = `<div style="padding: 20px; text-align: center;">${EMPTY_IMPORT_HISTORY_MESSAGE}</div>`;
         }
     }
 

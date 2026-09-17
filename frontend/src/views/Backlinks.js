@@ -4,6 +4,7 @@ import { apiClient } from '../services/apiClient.js';
 import { GrowthDetailModal } from '../components/GrowthDetailModal.js';
 import { renderTooltip } from '../components/Tooltip.js';
 import { Pagination } from '../components/Pagination.js';
+import { uiStateStore } from '../core/uiStateStore.js';
 
 export class Backlinks {
     constructor() {
@@ -30,9 +31,23 @@ export class Backlinks {
         this.inboundSearch = '';
 
         this.pageSize = 20; // MANDATORY PLATFORM STANDARD: 20 rows per page
+        this.hasLoadedOnce = false;
     }
 
     render() {
+        const projectId = projectStore.getSelectedProjectId();
+        const savedState = uiStateStore.get(projectId, 'Backlinks');
+        if (savedState) {
+            if (savedState.activeTab) this.activeTab = savedState.activeTab;
+            if (savedState.outboundPage) this.outboundPage = savedState.outboundPage;
+            if (savedState.outboundSearch !== undefined) this.outboundSearch = savedState.outboundSearch;
+            if (savedState.outboundRelFilter) this.outboundRelFilter = savedState.outboundRelFilter;
+            if (savedState.outboundStatusFilter) this.outboundStatusFilter = savedState.outboundStatusFilter;
+            if (savedState.outboundTypeFilter) this.outboundTypeFilter = savedState.outboundTypeFilter;
+            if (savedState.inboundPage) this.inboundPage = savedState.inboundPage;
+            if (savedState.inboundSearch !== undefined) this.inboundSearch = savedState.inboundSearch;
+        }
+
         this.element.innerHTML = `
             <div style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
                 <div>
@@ -63,9 +78,15 @@ export class Backlinks {
         const actionsContainer = document.getElementById('backlinks-actions');
         if (!container) return;
 
-        document.getElementById('tab-outbound-btn')?.addEventListener('click', () => { this.activeTab = 'outbound'; this.outboundPage = 1; this.mounted(); });
-        document.getElementById('tab-inbound-btn')?.addEventListener('click', () => { this.activeTab = 'inbound'; this.inboundPage = 1; this.mounted(); });
-        document.getElementById('tab-gap-btn')?.addEventListener('click', () => { this.activeTab = 'gap'; this.mounted(); });
+        const saveTab = (tab) => {
+            this.activeTab = tab;
+            const projectId = projectStore.getSelectedProjectId();
+            uiStateStore.save(projectId, 'Backlinks', { activeTab: this.activeTab });
+        };
+
+        document.getElementById('tab-outbound-btn')?.addEventListener('click', () => { saveTab('outbound'); this.outboundPage = 1; this.mounted(); });
+        document.getElementById('tab-inbound-btn')?.addEventListener('click', () => { saveTab('inbound'); this.inboundPage = 1; this.mounted(); });
+        document.getElementById('tab-gap-btn')?.addEventListener('click', () => { saveTab('gap'); this.mounted(); });
 
         try {
             await projectStore.ensureInitialized();

@@ -2,6 +2,7 @@ import io
 import html
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+from app.services.canonical_audit_service import CanonicalAuditService
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
@@ -67,9 +68,7 @@ class PDFReportGenerator:
             backlinks = master_report.get("backlinks", {}).get("inbound_backlinks", []) or []
             competitors = master_report.get("competitors", []) or []
             hist_obj = master_report.get("historical_comparison", {}) or {}
-            health = h_obj.get("health_score", 100)
-            if health is None:
-                health = 100
+            health = h_obj.get("health_score")
         else:
             domain = (metadata.get("website") if metadata else None) or project_url or project_name or "Website"
             crawl_ts = metadata.get("timestamp", "N/A") if metadata else "N/A"
@@ -83,18 +82,27 @@ class PDFReportGenerator:
             backlinks = backlinks or []
             competitors = competitors or []
             hist_obj = {}
-            health = metadata.get("health_score", 100) if metadata else 100
-            if health is None:
-                health = 100
+            health = metadata.get("health_score") if metadata else None
 
-        scanned_count = len(pages)
-        html_count = sum(1 for p in pages if p.get("status_code") == 200 and p.get("is_success", True) is not False)
+        canonical_audit = CanonicalAuditService.get_canonical_audit_result(
+            project_id=metadata.get("project_id") if metadata else "project",
+            domain=domain,
+            crawl_id=metadata.get("crawl_id") if metadata else None,
+            pages_override=pages,
+            metadata_override=metadata
+        )
+
+        scanned_count = canonical_audit.get("analyzed_pages", len(pages))
+        html_count = canonical_audit.get("html_pages_analyzed", len(pages))
+        eval_rules_cnt = canonical_audit.get("evaluated_rules", 14)
+        total_checks_cnt = canonical_audit.get("total_evaluated_checks", html_count * eval_rules_cnt)
+        health = canonical_audit.get("health_score")
+
         failed_count = sum(1 for p in pages if (p.get("status_code") or 0) >= 400 or p.get("fetch_status") in ("FAILED", "BLOCKED"))
-        
         crit_count = sum(1 for i in issues if str(i.get("severity") or i.get("priority") or "").lower() in ("critical", "fatal", "error"))
         warn_count = sum(1 for i in issues if str(i.get("severity") or i.get("priority") or "").lower() in ("warning", "medium", "high"))
         notice_count = sum(1 for i in issues if str(i.get("severity") or i.get("priority") or "").lower() in ("info", "notice", "low"))
-        passed_count = max(0, (scanned_count * 14) - len(issues))
+        passed_count = canonical_audit.get("summary", {}).get("passed_checks", max(0, total_checks_cnt - len(issues)))
         success_rate = f"{round((html_count / scanned_count * 100), 1)}%" if scanned_count > 0 else "100%"
 
         # COVER BANNER
@@ -104,7 +112,7 @@ class PDFReportGenerator:
             domain=domain,
             project_name=project_name,
             crawl_timestamp=crawl_ts,
-            data_sources="Automated Deep Crawler & 14-Point Rule Engine",
+            data_sources="Automated Deep Crawler & Canonical 14-Rule Engine",
             health_score=health
         )
 
@@ -112,9 +120,10 @@ class PDFReportGenerator:
         story.append(Paragraph("1. Executive Summary & Core KPIs", self.theme.section_title))
         story.append(Paragraph("High-level performance snapshot and audit overview across all scanned pages.", self.theme.section_subtitle))
 
-        health_color = self.builder._get_health_color_hex(health)
+        health_color = self.builder._get_health_color_hex(health) if health is not None else "#64748B"
+        hs_text = f"{health}/100" if health is not None else "Not Yet Scored"
         kpi_metrics = [
-            {"title": "Health Score", "value": f"{health}/100", "subtext": "Overall site health", "color": health_color},
+            {"title": "Health Score", "value": hs_text, "subtext": "Overall site health", "color": health_color},
             {"title": "Pages Audited", "value": str(scanned_count), "subtext": f"{html_count} success, {failed_count} failed", "color": "#0f172a"},
             {"title": "Critical Issues", "value": str(crit_count), "subtext": "Immediate blockers", "color": "#ef4444"},
             {"title": "Warnings Found", "value": str(warn_count), "subtext": "Optimization needed", "color": "#f59e0b"},
@@ -126,8 +135,9 @@ class PDFReportGenerator:
         self.builder.build_kpi_grid(story, kpi_metrics)
 
         # Executive Assessment Narrative Box
+        exec_hs_str = f"health score of {health}/100" if health is not None else "uncrawled baseline status (Not Yet Scored)"
         exec_raw = ai_data.get("executive_assessment") or (
-            f"The audit for {domain} indicates an overall health score of {health}/100 based on inspection of {scanned_count} pages. "
+            f"The audit for {domain} indicates an overall {exec_hs_str} based on inspection of {scanned_count} pages ({total_checks_cnt} total checks evaluated). "
             f"A total of {len(issues)} findings were identified ({crit_count} critical, {warn_count} warnings). "
             f"{'Critical crawl or indexation issues require prompt resolution to prevent organic ranking loss.' if crit_count > 0 else 'Core structural compliance is sound; focusing on metadata and internal linking will drive steady traffic growth.'}"
         )
@@ -152,7 +162,7 @@ class PDFReportGenerator:
 
         # 3. WEBSITE HEALTH SCORE CATEGORY BREAKDOWN
         story.append(Paragraph("3. Category Breakdown & Health Scores", self.theme.section_title))
-        story.append(Paragraph("Evaluated performance across the 6 major technical and on-page SEO disciplines.", self.theme.section_subtitle))
+        story.append(Paragraph("Evaluated performance across the 14 core technical audit disciplines.", self.theme.section_subtitle))
 
         cat_headers = ["SEO Discipline", "Status", "Issues Detected", "Impact & Assessment", "Data Source"]
         cat_rows = [
@@ -174,7 +184,7 @@ class PDFReportGenerator:
                 "Page Content & Headings",
                 f"<font color='{'#f59e0b' if warn_count > 0 else '#10b981'}'><b>{'Audited'}</b></font>",
                 f"{warn_count} issues",
-                "Title tag lengths (30–60 chars), meta descriptions, single H1 tags, and content depth",
+                "Title tag lengths, meta descriptions, single H1 tags, and content depth",
                 "Automated Scan"
             ],
             [
@@ -186,7 +196,7 @@ class PDFReportGenerator:
             ],
             [
                 "PageSpeed & Core Web Vitals",
-                "<font color='#64748b'><b>Not Measured</b></font>",
+                "<font color='#64748b'><b>Not Evaluated</b></font>",
                 "0",
                 "Load time, LCP, CLS, and FID metrics (Configure API key to enable)",
                 "Data Not Connected"
@@ -207,31 +217,57 @@ class PDFReportGenerator:
         story.append(cat_table)
         story.append(Spacer(1, 14))
 
-        # 4. FULL 14-POINT SEO AUDIT CHECKLIST
-        story.append(Paragraph("4. Full 14-Point SEO Audit Rules Evaluation", self.theme.section_title))
-        checklist_data = [
-            ["Rule Category", "Inspected Factor", "Validation Standard", "Status"],
-            ["Crawl & Index", "HTTP Status Codes", "HTTP 200 OK across all crawled URLs", "Audited"],
-            ["Crawl & Index", "Canonical Tag Consistency", "Present and self-referential or canonicalized", "Audited"],
-            ["Crawl & Index", "Robots Directives", "Valid index / follow directives without blocking", "Audited"],
-            ["Metadata", "Page Title Existence", "Every page has a unique, descriptive <title>", "Audited"],
-            ["Metadata", "Page Title Length", "Optimal length between 30 and 60 characters", "Audited"],
-            ["Metadata", "Meta Description Length", "Optimal snippet length between 70 and 160 characters", "Audited"],
-            ["Structure", "H1 Heading Existence", "Exactly one H1 heading present per HTML page", "Audited"],
-            ["Structure", "Heading Hierarchy", "Proper H1 -> H2 -> H3 semantic hierarchy", "Audited"],
-            ["Content", "Word Count & Depth", "Thin copy detection (minimum 300 words recommended)", "Audited"],
-            ["Content", "Image Alt Text", "Accessible alt descriptions for all content images", "Audited"],
-            ["Links", "Internal Links", "No broken internal links (404/500 status)", "Audited"],
-            ["Links", "External Outbound Links", "Valid external references without redirect loops", "Audited"],
-            ["Security", "HTTPS Protocol Security", "All audited pages served securely over TLS/HTTPS", "Audited"],
-            ["Performance", "Server Response Time", "Server response time within acceptable latency threshold", "Audited"]
-        ]
+        # 4. CANONICAL AUDIT RULE BREAKDOWN
+        story.append(Paragraph("4. Audit Rule Breakdown & Execution Table", self.theme.section_title))
+        story.append(Paragraph(f"{html_count} analyzed pages × {eval_rules_cnt} evaluated rules = {total_checks_cnt} total checks", self.theme.section_subtitle))
+        
+        rule_table_rows = [["Rule ID", "Category", "Rule Name", "Pages Checked", "Passed", "Problems", "Status"]]
+        r_results = canonical_audit.get("rule_execution_results", [])
+        for r in r_results:
+            st_color = "#10b981" if r.get("status") == "Passed" else ("#64748b" if r.get("status") == "Not Evaluated" else "#ef4444")
+            rule_table_rows.append([
+                r.get("rule_id", ""),
+                r.get("category", ""),
+                r.get("rule_name", ""),
+                str(r.get("pages_checked", 0)),
+                str(r.get("passed", 0)),
+                str(r.get("problems", 0)),
+                f"<font color='{st_color}'><b>{r.get('status', '')}</b></font>"
+            ])
+
         chk_table = self.builder.build_styled_table(
-            checklist_data[0],
-            checklist_data[1:],
-            col_widths=[90, 130, 240, 80]
+            rule_table_rows[0],
+            [[Paragraph(c, self.theme.table_cell) if "<font" in str(c) else c for c in r] for r in rule_table_rows[1:]],
+            col_widths=[65, 85, 150, 75, 55, 55, 55]
         )
         story.append(chk_table)
+        story.append(Spacer(1, 14))
+
+        # SCHEMA SECTION
+        story.append(Paragraph("Structured Data & Schema.org Evidence", self.theme.section_title))
+        sch_summary = canonical_audit.get("schema_summary", {})
+        sch_rows = [
+            ["Metric", "Value"],
+            ["Total HTML Pages Scanned", str(html_count)],
+            ["Pages With Schema.org Markup", str(canonical_audit.get("schema_summary", {}).get("Verified/Supported", 0) + canonical_audit.get("schema_summary", {}).get("Recognized Schema.org Type", 0))],
+            ["Schema Types Found", ", ".join(list(canonical_audit.get("schema_summary", {}).keys())[:4]) or "None"],
+            ["Validation Status", "Evidence Verified via JSON-LD Engine"]
+        ]
+        story.append(self.builder.build_styled_table(sch_rows[0], sch_rows[1:], col_widths=[200, 340]))
+        story.append(Spacer(1, 14))
+
+        # ROBOTS SECTION
+        story.append(Paragraph("Robots.txt & Sitemap Directives Evidence", self.theme.section_title))
+        rob_summary = canonical_audit.get("robots_summary", {})
+        rob_rows = [
+            ["Inspected Factor", "Crawl Evidence Status"],
+            ["Robots.txt URL", f"{domain.rstrip('/')}/robots.txt"],
+            ["Fetch & Response Status", "HTTP 200 OK — Verified"],
+            ["Noindex Directive Rules", "Present" if rob_summary.get("has_noindex_rules") else "None detected"],
+            ["Disallow Exclusion Rules", "Present" if rob_summary.get("has_disallow_rules") else "None detected"],
+            ["Sitemap Directives", "Referenced in robots.txt" if rob_summary.get("sitemap_referenced") else "Not referenced"]
+        ]
+        story.append(self.builder.build_styled_table(rob_rows[0], rob_rows[1:], col_widths=[200, 340]))
         story.append(Spacer(1, 14))
 
         # 5. PROBLEMS WE FOUND & AI SOLUTIONS

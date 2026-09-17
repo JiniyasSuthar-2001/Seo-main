@@ -290,9 +290,12 @@ class PDFComponentBuilder:
         project_name: str,
         crawl_timestamp: str = "N/A",
         data_sources: str = "Automated Website Scan & SEO Auditing Engine",
-        health_score: int = 100
+        health_score: Optional[Any] = None
     ):
         now_str = datetime.now().strftime("%d %B %Y, %I:%M %p")
+
+        hs_str = f"{health_score} / 100" if (health_score is not None and str(health_score) not in ("N/A", "None")) else "Not Yet Scored"
+        hs_color = self._get_health_color_hex(health_score) if health_score is not None else "#64748B"
 
         # Top Category Brand Pill
         story.append(Paragraph("SEO INTELLIGENCE PLATFORM • EXECUTIVE REPORT", self.theme.cover_brand))
@@ -318,7 +321,7 @@ class PDFComponentBuilder:
                 Paragraph("<b>Data Engine:</b>", self.theme.table_header),
                 Paragraph(data_sources, self.theme.table_cell),
                 Paragraph("<b>Overall Health:</b>", self.theme.table_header),
-                Paragraph(f"<font color='{self._get_health_color_hex(health_score)}'><b>{health_score} / 100</b></font>", self.theme.table_header)
+                Paragraph(f"<font color='{hs_color}'><b>{hs_str}</b></font>", self.theme.table_header)
             ]
         ]
         t_meta = Table(meta_data, colWidths=[105, 165, 105, 165])

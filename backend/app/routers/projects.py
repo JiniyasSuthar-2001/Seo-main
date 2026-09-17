@@ -249,31 +249,47 @@ def create_project(
 
     safe_domain = get_sanitized_domain(url_val)
 
-    # Check if caller already has a project matching this domain
+    user = db.query(User).filter((User.id == user_id) | (User.email == user_id)).first()
+    user_ids = [email, user_id]
+    if user:
+        if user.id:
+            user_ids.append(user.id)
+            user_ids.append(user.id.lower())
+        if user.email:
+            user_ids.append(user.email)
+            user_ids.append(user.email.lower())
+
     user_memberships = db.query(ProjectMembership).filter(
-        ProjectMembership.user_id == email,
+        ProjectMembership.user_id.in_(list(set(user_ids))),
         ProjectMembership.status == "ACTIVE"
     ).all()
 
+    # Check if caller already has a project matching this domain or duplicate project name
     for m in user_memberships:
         proj = db.query(Project).filter(Project.id == m.project_id).first()
-        if proj and (get_sanitized_domain(proj.url) == safe_domain or proj.domain == safe_domain):
-            return {
-                "status": "exists",
-                "message": f"Project for '{safe_domain}' already exists in your workspace.",
-                "project": {
-                    "id": proj.id,
-                    "name": proj.name,
-                    "url": proj.url,
-                    "domain": proj.domain,
-                    "industry": proj.industry or "",
-                    "services": getattr(proj, "services", "") or "",
-                    "service_areas": getattr(proj, "service_areas", "") or "",
-                    "user_role": m.role,
-                    "role_label": "Lead" if m.role == "OWNER" else "Team Member",
-                    **get_project_metrics(proj.domain)
+        if proj:
+            if (proj.name or "").strip().lower() == name_val.strip().lower():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"A project named '{name_val}' already exists in your workspace. Please choose a unique project name."
+                )
+            if get_sanitized_domain(proj.url) == safe_domain or proj.domain == safe_domain:
+                return {
+                    "status": "exists",
+                    "message": f"Project for '{safe_domain}' already exists in your workspace.",
+                    "project": {
+                        "id": proj.id,
+                        "name": proj.name,
+                        "url": proj.url,
+                        "domain": proj.domain,
+                        "industry": proj.industry or "",
+                        "services": getattr(proj, "services", "") or "",
+                        "service_areas": getattr(proj, "service_areas", "") or "",
+                        "user_role": m.role,
+                        "role_label": "Lead" if m.role == "OWNER" else "Team Member",
+                        **get_project_metrics(proj.domain)
+                    }
                 }
-            }
 
     new_proj = Project(
         name=name_val,

@@ -320,6 +320,40 @@ def update_competitor(
     return _serialize_competitor(competitor)
 
 
+@router.post("/{competitor_id}/toggle-primary")
+def toggle_primary_competitor(
+    project_id: str,
+    competitor_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Toggles the primary competitor flag for a competitor.
+    Ensures only ONE competitor can remain primary per project.
+    """
+    project = _get_project_or_404(project_id, db, user_id)
+    
+    competitor = db.query(Competitor).filter(
+        Competitor.id == competitor_id,
+        Competitor.project_id == project.id
+    ).first()
+    
+    if not competitor:
+        raise HTTPException(status_code=404, detail="Competitor not found.")
+
+    new_primary = not bool(competitor.is_primary)
+    
+    if new_primary:
+        # Clear primary flag from all other competitors in this project
+        db.query(Competitor).filter(Competitor.project_id == project.id).update({"is_primary": False})
+    
+    competitor.is_primary = new_primary
+    competitor.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(competitor)
+    return _serialize_competitor(competitor)
+
+
 @router.post("/{competitor_id}/approve")
 def approve_competitor(
     project_id: str,

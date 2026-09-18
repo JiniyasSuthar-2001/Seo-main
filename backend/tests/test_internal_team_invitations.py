@@ -47,7 +47,7 @@ class TestInternalTeamInvitations(unittest.TestCase):
 
     def test_01_account_search(self):
         """User account search returns matching registered accounts."""
-        res = search_users(q="userb", user_id=self.user_a.id, db=self.db)
+        res = search_users(q="userb", project_id=self.project_a.id, user_id=self.user_a.id, db=self.db)
         users = res.get("users", [])
         self.assertEqual(len(users), 1)
         self.assertEqual(users[0]["email"], "userb@example.com")

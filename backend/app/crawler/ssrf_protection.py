@@ -59,12 +59,27 @@ def is_ip_allowed(ip_str: str) -> bool:
     """
     Checks whether an IP address is a publicly routable global address.
     Returns False if the IP belongs to any private, loopback, link-local, multicast, or reserved range.
+    Handles decimal IP ints, hex IP ints, IPv4-mapped IPv6 addresses, and standard IPv4/IPv6 strings.
     """
     try:
-        clean_ip = ip_str.strip().strip("[]")
-        ip = ipaddress.ip_address(clean_ip)
-    except ValueError:
+        clean_ip = str(ip_str).strip().strip("[]")
+        if clean_ip.isdigit():
+            ip = ipaddress.ip_address(int(clean_ip))
+        elif clean_ip.lower().startswith("0x"):
+            ip = ipaddress.ip_address(int(clean_ip, 16))
+        else:
+            ip = ipaddress.ip_address(clean_ip)
+    except Exception:
         return False
+
+    # Check for IPv4-mapped IPv6 address (e.g. ::ffff:127.0.0.1)
+    if hasattr(ip, "ipv4_mapped") and ip.ipv4_mapped is not None:
+        mapped = ip.ipv4_mapped
+        if mapped.is_private or mapped.is_loopback or mapped.is_link_local or mapped.is_multicast or mapped.is_unspecified or mapped.is_reserved:
+            return False
+        for net in BLOCKED_NETWORKS:
+            if mapped in net:
+                return False
 
     if (
         ip.is_private
@@ -148,9 +163,6 @@ def validate_url_ssrf(url: str, allow_local_dev: bool = False) -> Tuple[bool, Op
     resolved_ips = resolve_hostname_ips(hostname, port)
     
     if not resolved_ips:
-        # If unable to resolve DNS, allow httpx to attempt DNS resolution or block if strict
-        if "127." in hostname or "169.254" in hostname or "192.168" in hostname or "10." in hostname:
-            return False, f"Destination host '{hostname}' references blocked IP ranges."
         return True, None
 
     for ip_str in resolved_ips:

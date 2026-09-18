@@ -87,7 +87,7 @@ export class ChecksPerformedDetailModal {
                                     const rName = c.rule_name || c.category;
                                     const probCnt = c.problems !== undefined ? c.problems : (c.issues_count || 0);
                                     const pagesChk = c.pages_checked !== undefined ? c.pages_checked : (c.checks_performed || 0);
-                                    const isEval = c.evaluated !== False && c.status !== 'Not Evaluated' && c.status !== 'Not Analyzed';
+                                    const isEval = c.evaluated !== false && c.status !== 'Not Evaluated' && c.status !== 'Not Analyzed';
 
                                     let badgeClass = 'badge-success';
                                     let badgeText = '✓ Passed';

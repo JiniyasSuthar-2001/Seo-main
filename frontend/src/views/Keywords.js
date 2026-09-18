@@ -41,7 +41,9 @@ export class Keywords {
                     <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">Keywords</h1>
                     <p style="color: var(--text-secondary); margin: 0; font-size: 13.5px;">Discover search suggestions, organize keyword topics, and track how often key terms appear in your content.</p>
                 </div>
-                <div style="display: flex; gap: 10px;" id="kw-actions-container">
+                <div style="display: flex; gap: 10px; align-items: center;" id="kw-actions-container">
+                    <input type="file" id="input-kw-csv-file" accept=".csv" style="display: none;" />
+                    <button id="btn-import-kw-csv" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 4px;">📥 Import CSV</button>
                     <button id="btn-export-kw-csv" class="btn btn-secondary btn-sm">Download CSV</button>
                     <button id="btn-export-kw-pdf" class="btn btn-secondary btn-sm">Download Report (PDF)</button>
                     <button class="btn btn-secondary btn-sm" id="btn-auto-cluster">⚡ Group Keyword Topics</button>
@@ -148,8 +150,42 @@ export class Keywords {
 
             const pdfBtn = document.getElementById('btn-export-kw-pdf');
             const csvBtn = document.getElementById('btn-export-kw-csv');
+            const importBtn = document.getElementById('btn-import-kw-csv');
+            const fileInput = document.getElementById('input-kw-csv-file');
+
             if (pdfBtn) pdfBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/keywords/report.pdf`, `${safeProjName}-Keywords-${todayStr}.pdf`, e.currentTarget);
             if (csvBtn) csvBtn.onclick = (e) => apiClient.downloadFile(`/api/projects/${projectId}/keywords/export.csv`, `${safeProjName}-Keywords-${todayStr}.csv`, e.currentTarget);
+
+            if (importBtn && fileInput) {
+                importBtn.onclick = () => fileInput.click();
+                fileInput.onchange = async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (!file.name.toLowerCase().endsWith('.csv')) {
+                        alert('Please select a valid CSV (.csv) file.');
+                        fileInput.value = '';
+                        return;
+                    }
+                    importBtn.disabled = true;
+                    const origText = importBtn.innerHTML;
+                    importBtn.innerText = 'Importing...';
+                    try {
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        formData.append('data_type', 'keywords');
+                        const res = await apiClient.post(`/api/projects/${projectId}/keywords/import-csv`, formData);
+                        const count = res.imported_count || res.count || 0;
+                        alert(`Successfully imported ${count} keyword${count === 1 ? '' : 's'}.`);
+                        await this.mounted();
+                    } catch (err) {
+                        alert('Failed to import keywords: ' + (err.message || 'Unknown error'));
+                    } finally {
+                        importBtn.disabled = false;
+                        importBtn.innerHTML = origText;
+                        fileInput.value = '';
+                    }
+                };
+            }
 
             if (this.activeTab === 'research') {
                 this.renderResearchView(contentContainer, projectId);

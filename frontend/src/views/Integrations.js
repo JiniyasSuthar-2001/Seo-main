@@ -342,7 +342,7 @@ export class Integrations {
                 try {
                     btn.disabled = true;
                     btn.innerText = 'Connecting...';
-                    const res = await apiClient.get('/api/oauth/google/authorize');
+                    const res = await apiClient.get('/api/integrations/google/authorize');
                     if (res && res.authorization_url) {
                         window.location.href = res.authorization_url;
                     } else {

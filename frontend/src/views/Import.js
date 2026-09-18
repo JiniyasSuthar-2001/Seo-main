@@ -195,15 +195,63 @@ export class Import {
 
     renderResultsHTML() {
         const res = this.importResults || {};
+        const total = res.total_records !== undefined ? res.total_records : (res.total || 0);
+        const imported = res.imported_count !== undefined ? res.imported_count : (res.count || 0);
+        const skipped = res.skipped !== undefined ? res.skipped : (res.skipped_records || 0);
+        const duplicates = res.duplicates !== undefined ? res.duplicates : 0;
+        const invalid = res.invalid_rows !== undefined ? res.invalid_rows : (res.invalid_count || 0);
+        const warnings = Array.isArray(res.warnings) ? res.warnings : [];
+        const errors = Array.isArray(res.errors) ? res.errors : [];
+
         return `
             <div class="card" style="padding: 24px; background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                    <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--success);">✓ Data Import Successful</h3>
+                    <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--success);">✓ Import Completed</h3>
                     <button class="btn btn-secondary btn-sm" id="btn-import-another">Import Another File</button>
                 </div>
-                <div style="font-size: 13.5px; color: var(--text-secondary); margin-bottom: 12px;">
-                    Rows Imported: <strong>${res.imported_count || res.count || 0}</strong>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin-bottom: 16px; background: var(--bg-secondary); padding: 16px; border-radius: 8px; border: 1px solid var(--border);">
+                    <div>
+                        <div style="font-size: 11px; color: var(--text-tertiary); text-transform: uppercase; font-weight: 700;">Total Rows</div>
+                        <div style="font-size: 20px; font-weight: 800; color: var(--text-primary); margin-top: 2px;">${total}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; color: var(--success); text-transform: uppercase; font-weight: 700;">Imported</div>
+                        <div style="font-size: 20px; font-weight: 800; color: var(--success); margin-top: 2px;">${imported}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; color: var(--warning); text-transform: uppercase; font-weight: 700;">Skipped</div>
+                        <div style="font-size: 20px; font-weight: 800; color: var(--warning); margin-top: 2px;">${skipped}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase; font-weight: 700;">Duplicates</div>
+                        <div style="font-size: 20px; font-weight: 800; color: var(--text-secondary); margin-top: 2px;">${duplicates}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 11px; color: var(--danger); text-transform: uppercase; font-weight: 700;">Invalid</div>
+                        <div style="font-size: 20px; font-weight: 800; color: var(--danger); margin-top: 2px;">${invalid}</div>
+                    </div>
                 </div>
+
+                ${warnings.length > 0 ? `
+                    <div style="margin-top: 12px; padding: 12px; background: rgba(245, 158, 11, 0.1); border: 1px solid var(--warning); border-radius: 6px; font-size: 12.5px;">
+                        <strong style="color: var(--warning);">Warnings (${warnings.length}):</strong>
+                        <ul style="margin: 6px 0 0 18px; padding: 0;">
+                            ${warnings.slice(0, 5).map(w => `<li>${this.escapeHtml(typeof w === 'string' ? w : JSON.stringify(w))}</li>`).join('')}
+                            ${warnings.length > 5 ? `<li><em>...and ${warnings.length - 5} more warnings</em></li>` : ''}
+                        </ul>
+                    </div>
+                ` : ''}
+
+                ${errors.length > 0 ? `
+                    <div style="margin-top: 12px; padding: 12px; background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); border-radius: 6px; font-size: 12.5px;">
+                        <strong style="color: var(--danger);">Errors (${errors.length}):</strong>
+                        <ul style="margin: 6px 0 0 18px; padding: 0;">
+                            ${errors.slice(0, 5).map(e => `<li>${this.escapeHtml(typeof e === 'string' ? e : JSON.stringify(e))}</li>`).join('')}
+                            ${errors.length > 5 ? `<li><em>...and ${errors.length - 5} more errors</em></li>` : ''}
+                        </ul>
+                    </div>
+                ` : ''}
             </div>
         `;
     }

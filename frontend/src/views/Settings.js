@@ -213,6 +213,9 @@ export class Settings {
                 const projIndustry = selectedProj ? (selectedProj.industry || '') : '';
                 const projServices = selectedProj ? (selectedProj.services || '') : '';
                 const projServiceAreas = selectedProj ? (selectedProj.service_areas || '') : '';
+                const projWebhookUrl = selectedProj ? (selectedProj.webhook_url || '') : '';
+                const projWebhookEvents = selectedProj ? (selectedProj.webhook_events || []) : [];
+                const eventsList = Array.isArray(projWebhookEvents) ? projWebhookEvents : (typeof projWebhookEvents === 'string' ? projWebhookEvents.split(',') : []);
 
                 container.innerHTML = `
                     <div style="display: flex; flex-direction: column; gap: 20px; max-width: 840px;">
@@ -236,7 +239,7 @@ export class Settings {
                                 <select id="settings-project-select" style="width: 100%; padding: 9px 12px; font-size: 13.5px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-primary); cursor: pointer;">
                                     ${projects.map(p => `
                                         <option value="${this.escapeHtml(p.id)}" ${p.id === projectId ? 'selected' : ''}>
-                                            ${this.escapeHtml(p.name)} — ${this.escapeHtml(p.domain || p.url || '')}
+                                             ${this.escapeHtml(p.name)} — ${this.escapeHtml(p.domain || p.url || '')}
                                         </option>
                                     `).join('')}
                                 </select>
@@ -271,14 +274,40 @@ export class Settings {
                                     <input type="text" id="ctx-services" value="${this.escapeHtml(projServices)}" placeholder="e.g. Level 2 Electrical, Solar Power Installation, Battery Storage, EV Chargers, Air Conditioning" style="width: 100%; padding: 8px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-primary);"/>
                                 </div>
 
+                                <!-- WEBHOOK CONFIGURATION -->
+                                <div style="margin-top: 6px; padding-top: 14px; border-top: 1px solid var(--border);">
+                                    <label style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text-secondary);">Webhook Notification URL</label>
+                                    <input type="url" id="ctx-webhook-url" value="${this.escapeHtml(projWebhookUrl)}" placeholder="https://api.yourdomain.com/seo-webhook" style="width: 100%; padding: 8px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text-primary); margin-bottom: 8px;"/>
+                                    
+                                    <div style="font-size: 11.5px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">Trigger Webhook On Events:</div>
+                                    <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+                                        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-primary); cursor: pointer;">
+                                            <input type="checkbox" class="webhook-event-chk" value="crawl.completed" ${eventsList.includes('crawl.completed') ? 'checked' : ''} />
+                                            Crawl Completed
+                                        </label>
+                                        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-primary); cursor: pointer;">
+                                            <input type="checkbox" class="webhook-event-chk" value="crawl.failed" ${eventsList.includes('crawl.failed') ? 'checked' : ''} />
+                                            Crawl Failed
+                                        </label>
+                                        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-primary); cursor: pointer;">
+                                            <input type="checkbox" class="webhook-event-chk" value="alert.triggered" ${eventsList.includes('alert.triggered') ? 'checked' : ''} />
+                                            SEO Alerts
+                                        </label>
+                                        <label style="display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-primary); cursor: pointer;">
+                                            <input type="checkbox" class="webhook-event-chk" value="audit.completed" ${eventsList.includes('audit.completed') ? 'checked' : ''} />
+                                            Audit Completed
+                                        </label>
+                                    </div>
+                                </div>
+
                                 <div id="ctx-save-status" style="display: none; font-size: 12.5px; padding: 8px 12px; border-radius: 6px;"></div>
 
                                 ${isOwner ? `
                                     <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
-                                        <button type="submit" id="btn-save-context" class="btn btn-primary btn-sm">Save Business Context</button>
+                                        <button type="submit" id="btn-save-context" class="btn btn-primary btn-sm">Save Project Settings</button>
                                     </div>
                                 ` : `
-                                    <span style="font-size: 12px; color: var(--text-tertiary);">Only project owners can modify business context settings.</span>
+                                    <span style="font-size: 12px; color: var(--text-tertiary);">Only project owners can modify project settings.</span>
                                 `}
                             </form>
                         </div>
@@ -322,17 +351,23 @@ export class Settings {
                             const indVal = (container.querySelector('#ctx-industry')?.value || '').trim();
                             const servVal = (container.querySelector('#ctx-services')?.value || '').trim();
                             const areasVal = (container.querySelector('#ctx-service-areas')?.value || '').trim();
+                            const hookVal = (container.querySelector('#ctx-webhook-url')?.value || '').trim();
+                            const checkedEvents = Array.from(container.querySelectorAll('.webhook-event-chk:checked')).map(c => c.value);
 
                             await apiClient.put(`/api/projects/${projectId}`, {
                                 industry: indVal,
                                 services: servVal,
-                                service_areas: areasVal
+                                service_areas: areasVal,
+                                webhook_url: hookVal,
+                                webhook_events: checkedEvents
                             });
 
                             if (selectedProj) {
                                 selectedProj.industry = indVal;
                                 selectedProj.services = servVal;
                                 selectedProj.service_areas = areasVal;
+                                selectedProj.webhook_url = hookVal;
+                                selectedProj.webhook_events = checkedEvents;
                             }
 
                             if (statusBox) {
@@ -340,7 +375,7 @@ export class Settings {
                                 statusBox.style.background = 'rgba(34, 197, 94, 0.1)';
                                 statusBox.style.color = '#22c55e';
                                 statusBox.style.border = '1px solid rgba(34, 197, 94, 0.3)';
-                                statusBox.textContent = 'Business context saved successfully. Future reports will tailor AI recommendations with this context.';
+                                statusBox.textContent = 'Project settings and webhook configurations saved successfully.';
                             }
                         } catch (err) {
                             if (statusBox) {

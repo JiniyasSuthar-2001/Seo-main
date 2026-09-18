@@ -59,9 +59,10 @@ class TestAIProblemSolutionFix(unittest.TestCase):
             "description": "3 pages are missing meta descriptions for search snippet optimization.",
             "recommendation": "Write compelling 140-160 character meta descriptions summarizing page topic.",
             "affected_urls": ["https://aisolutiontest.com/about", "https://aisolutiontest.com/contact"],
-            "evidence_text": "Meta description tag is missing from HTML head"
+            "evidence_text": "Meta description tag is missing from HTML head",
+            "project_id": self.proj_id
         }
-        res = self.client.post(f"/api/projects/{self.proj_id}/ai/problem-solution", json=payload, headers=self.headers)
+        res = self.client.post(f"/api/ai/{self.proj_id}/problem-solution", json=payload, headers=self.headers)
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertIn("status", data)
@@ -84,12 +85,13 @@ class TestAIProblemSolutionFix(unittest.TestCase):
             "description": "Pages return HTTP 404 response.",
             "recommendation": "Implement 301 permanent redirects.",
             "affected_urls": ["https://aisolutiontest.com/old-page"],
-            "evidence_text": "HTTP status 404"
+            "evidence_text": "HTTP status 404",
+            "project_id": self.proj_id
         }
-        res1 = self.client.post(f"/api/projects/{self.proj_id}/ai/problem-solution", json=payload, headers=self.headers)
+        res1 = self.client.post(f"/api/ai/{self.proj_id}/problem-solution", json=payload, headers=self.headers)
         self.assertEqual(res1.status_code, 200)
 
-        res2 = self.client.post(f"/api/projects/{self.proj_id}/ai/problem-solution", json=payload, headers=self.headers)
+        res2 = self.client.post(f"/api/ai/{self.proj_id}/problem-solution", json=payload, headers=self.headers)
         self.assertEqual(res2.status_code, 200)
         self.assertEqual(res1.json(), res2.json())
 

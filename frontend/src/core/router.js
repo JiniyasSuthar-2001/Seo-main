@@ -125,8 +125,17 @@ export class Router {
     
     window.dispatchEvent(new CustomEvent('routechange', { detail: { path } }));
 
+    if (this.currentView && typeof this.currentView.unmount === 'function') {
+      try {
+        this.currentView.unmount();
+      } catch (err) {
+        console.warn('[ROUTER] Error unmounting view:', err);
+      }
+    }
+
     if (ViewComponent) {
       const view = new ViewComponent();
+      this.currentView = view;
       this.viewContainer.innerHTML = '';
       
       const element = await view.render();

@@ -532,13 +532,14 @@ export class AuditEvidenceModal {
                     recommendation: recommendation,
                     affected_url: currentUrl,
                     evidence_text: evidenceText,
-                    force_regenerate: forceRegenerate
+                    force_regenerate: forceRegenerate,
+                    project_id: targetProjectId
                 };
 
-                const res = await apiClient.post(`/api/projects/${targetProjectId}/ai/solve`, payload, { signal: abortController.signal });
+                const res = await apiClient.post('/api/ai/generate-fix', payload, { signal: abortController.signal });
 
-                if (res && res.solution) {
-                    aiSolutionState.solution = res.solution;
+                if (res && (res.solution || res.fix)) {
+                    aiSolutionState.solution = res.solution || res.fix;
                 } else {
                     aiSolutionState.error = 'Unable to generate solution from crawl evidence.';
                 }

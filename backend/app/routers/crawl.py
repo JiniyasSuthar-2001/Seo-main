@@ -114,6 +114,25 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
         db.commit()
         print(f"[CRAWL FINISHED] Session {session_id} status: '{crawl_status}'. Saved {len(results.get('pages', []))} pages to {crawl_dir}", flush=True)
 
+        # Trigger Webhook delivery if configured
+        try:
+            if project:
+                from app.services.webhook_service import WebhookService
+                evt = "crawl_completed" if crawl_status in ("completed", "completed_with_errors") else "crawl_failed"
+                WebhookService.send_event(
+                    project=project,
+                    event_type=evt,
+                    payload={
+                        "session_id": session_id,
+                        "status": crawl_status,
+                        "pages_crawled": crawl_session.pages_crawled,
+                        "issues_found": crawl_session.issues_found,
+                        "completed_at": str(crawl_session.completed_at)
+                    }
+                )
+        except Exception as wh_err:
+            print(f"[CRAWL WEBHOOK ERROR] {wh_err}", flush=True)
+
         # Trigger automatic re-evaluation of opportunities for project
         try:
             if project:
@@ -159,6 +178,14 @@ async def run_crawl_task(session_id: str, start_url: str, options: Optional[Dict
                 crawl_session.status = "failed"
                 crawl_session.completed_at = datetime.utcnow()
                 db.commit()
+                project = db.query(Project).filter(Project.id == crawl_session.project_id).first()
+                if project:
+                    from app.services.webhook_service import WebhookService
+                    WebhookService.send_event(
+                        project=project,
+                        event_type="crawl_failed",
+                        payload={"session_id": session_id, "status": "failed", "error": str(e)}
+                    )
         except Exception:
             pass
     finally:

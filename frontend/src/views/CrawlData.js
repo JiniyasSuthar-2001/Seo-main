@@ -43,6 +43,13 @@ export class CrawlData {
             { id: 'broken-links', label: 'Broken Links' },
             { id: 'issues', label: 'Issues' }
         ];
+
+        this._onCrawlCompleted = () => {
+            if (document.body.contains(this.element)) {
+                this.mounted();
+            }
+        };
+        window.addEventListener('seo:crawl-completed', this._onCrawlCompleted);
     }
 
     render() {

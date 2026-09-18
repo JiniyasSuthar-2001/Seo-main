@@ -256,14 +256,15 @@ export class SolveWithAIModal {
                     description: description,
                     recommendation: recommendation,
                     affected_url: affectedUrl,
-                    evidence_text: evidenceText
+                    evidence_text: evidenceText,
+                    project_id: targetProjectId
                 };
 
-                const res = await apiClient.post(`/api/projects/${targetProjectId}/ai/solve`, payload, { signal: abortController.signal });
+                const res = await apiClient.post('/api/ai/generate-fix', payload, { signal: abortController.signal });
                 if (isClosed || abortController.signal.aborted) return;
 
-                if (res?.solution) {
-                    solution = res.solution;
+                if (res?.solution || res?.fix) {
+                    solution = res.solution || res.fix;
                     isLoading = false;
                     isError = false;
                 } else {

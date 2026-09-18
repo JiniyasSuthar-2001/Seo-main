@@ -334,6 +334,51 @@ def create_project(
         }
     }
 
+@router.get("/users/search")
+def search_users(
+    q: str = Query(""),
+    project_id: Optional[str] = Query(None),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Searches registered platform accounts scoped to caller's project or shared project memberships.
+    Prevents unauthenticated or cross-organization global user directory enumeration.
+    """
+    clean_q = (q or "").strip().lower()
+    if len(clean_q) < 2:
+        return {"users": []}
+
+    if project_id:
+        get_user_membership(db, user_id, project_id)
+        matching = db.query(User).filter(
+            (User.email.ilike(f"%{clean_q}%")) | (User.name.ilike(f"%{clean_q}%"))
+        ).limit(10).all()
+    else:
+        my_project_ids = [m.project_id for m in db.query(ProjectMembership).filter(ProjectMembership.user_id == user_id, ProjectMembership.status == "ACTIVE").all()]
+        if not my_project_ids:
+            return {"users": []}
+        
+        shared_user_ids = [m.user_id for m in db.query(ProjectMembership).filter(ProjectMembership.project_id.in_(my_project_ids), ProjectMembership.status == "ACTIVE").all()]
+        shared_user_ids.append(user_id)
+        
+        matching = db.query(User).filter(
+            User.id.in_(shared_user_ids),
+            (User.email.ilike(f"%{clean_q}%")) | (User.name.ilike(f"%{clean_q}%"))
+        ).limit(10).all()
+
+    return {
+        "users": [
+            {
+                "id": u.id,
+                "email": u.email,
+                "name": u.name or u.email.split("@")[0],
+                "picture": u.picture
+            } for u in matching
+        ]
+    }
+
+
 @router.get("/{project_id}")
 def get_project(
     project_id: str,
@@ -344,6 +389,14 @@ def get_project(
     p = db.query(Project).filter(Project.id == project_id).first()
 
     m = get_project_metrics(p.domain)
+    
+    events = []
+    if getattr(p, "webhook_events", None):
+        try:
+            events = json.loads(p.webhook_events) if p.webhook_events.startswith("[") else [e.strip() for e in p.webhook_events.split(",") if e.strip()]
+        except Exception:
+            events = [p.webhook_events]
+
     return {
         "id": p.id,
         "name": p.name,
@@ -354,6 +407,8 @@ def get_project(
         "services": getattr(p, "services", "") or "",
         "service_areas": getattr(p, "service_areas", "") or "",
         "notes": p.notes or "",
+        "webhook_url": getattr(p, "webhook_url", "") or "",
+        "webhook_events": events,
         "user_role": membership.role,
         "role_label": "Lead" if membership.role == "OWNER" else "Team Member",
         "created_at": p.created_at.isoformat() if p.created_at else None,
@@ -415,35 +470,6 @@ def get_project_team(
         "max_team_members": 2,
         "members": members,
         "pending_invitations": invites
-    }
-
-@router.get("/users/search")
-def search_users(
-    q: str = Query(""),
-    user_id: str = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
-):
-    """
-    Searches registered platform accounts by name or email.
-    Does NOT search external Google Search Console or third-party identities.
-    """
-    clean_q = (q or "").strip().lower()
-    if len(clean_q) < 2:
-        return {"users": []}
-
-    matching = db.query(User).filter(
-        (User.email.ilike(f"%{clean_q}%")) | (User.name.ilike(f"%{clean_q}%"))
-    ).limit(10).all()
-
-    return {
-        "users": [
-            {
-                "id": u.id,
-                "email": u.email,
-                "name": u.name or u.email.split("@")[0],
-                "picture": u.picture
-            } for u in matching
-        ]
     }
 
 
@@ -728,12 +754,24 @@ def update_project(
         p.service_areas = payload['service_areas'].strip()
     if 'notes' in payload:
         p.notes = payload['notes'].strip()
+    if 'webhook_url' in payload:
+        p.webhook_url = payload['webhook_url'].strip() if payload['webhook_url'] else None
+    if 'webhook_events' in payload:
+        events_val = payload['webhook_events']
+        p.webhook_events = json.dumps(events_val) if isinstance(events_val, list) else str(events_val or "")
 
     p.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(p)
 
     m = get_project_metrics(p.domain)
+    events = []
+    if getattr(p, "webhook_events", None):
+        try:
+            events = json.loads(p.webhook_events) if p.webhook_events.startswith("[") else [e.strip() for e in p.webhook_events.split(",") if e.strip()]
+        except Exception:
+            events = [p.webhook_events]
+
     return {
         "status": "updated",
         "project": {
@@ -746,9 +784,53 @@ def update_project(
             "services": getattr(p, "services", "") or "",
             "service_areas": getattr(p, "service_areas", "") or "",
             "notes": p.notes or "",
+            "webhook_url": getattr(p, "webhook_url", "") or "",
+            "webhook_events": events,
             "updated_at": p.updated_at.isoformat() if p.updated_at else None,
             **m
         }
+    }
+
+@router.post("/{project_id}/test-webhook")
+async def test_project_webhook(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Sends a safe test payload to the configured project webhook URL.
+    Validates destination against SSRF rules.
+    """
+    get_user_membership(db, user_id, project_id)
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    webhook_url = getattr(p, "webhook_url", None)
+    if not webhook_url or not webhook_url.strip():
+        raise HTTPException(status_code=400, detail="No webhook URL configured for this project.")
+
+    from app.services.webhook_service import WebhookService
+    payload = {
+        "timestamp": datetime.utcnow().isoformat(),
+        "project_id": p.id,
+        "domain": p.domain,
+        "data": {
+            "message": "Test webhook payload from SEO Intelligence Platform",
+            "test": True
+        }
+    }
+
+    res = await WebhookService.dispatch_webhook_async(webhook_url, "test_notification", payload)
+    if res.get("status") == "blocked":
+        raise HTTPException(status_code=400, detail=res.get("reason"))
+    elif res.get("status") == "failed":
+        raise HTTPException(status_code=502, detail=f"Webhook delivery failed: {res.get('reason')}")
+
+    return {
+        "status": "success",
+        "message": f"Test webhook successfully delivered to {webhook_url}",
+        "delivery": res
     }
 
 @router.delete("/{project_id}")

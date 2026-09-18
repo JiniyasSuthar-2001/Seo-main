@@ -39,7 +39,7 @@ export class Discovery {
   }
 
   renderDiscoveryUI() {
-    const accountEmail = authStore.user && authStore.user.email ? authStore.user.email : 'jiniyassuthar87@gmail.com';
+    const accountEmail = authStore.user && authStore.user.email ? authStore.user.email : 'Connected Account';
 
     this.element.innerHTML = `
       <div class="discovery-wrapper">

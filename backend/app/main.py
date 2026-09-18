@@ -79,14 +79,12 @@ app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"]
 app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
 
 app.include_router(integrations.router, prefix="/api/integrations", tags=["integrations"])
-app.include_router(integrations.router, prefix="/api/oauth", tags=["oauth"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 
 app.include_router(reports.router, prefix="/api/projects/{project_id}", tags=["reports"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(crawl.router, prefix="/api/projects", tags=["crawl"])
 app.include_router(opportunities.router, prefix="/api/projects/{project_id}/opportunities", tags=["opportunities"])
-app.include_router(opportunities.router, prefix="/api/projects/opportunities", tags=["opportunities"])
 
 app.include_router(pages.router, prefix="/api/projects/{project_id}/pages", tags=["pages"])
 app.include_router(keywords.router, prefix="/api/projects/{project_id}/keywords", tags=["keywords"])
@@ -95,7 +93,6 @@ app.include_router(internal_links.router, prefix="/api/projects/{project_id}/int
 app.include_router(backlinks.router, prefix="/api/projects/{project_id}/backlinks", tags=["backlinks"])
 app.include_router(rankings.router, prefix="/api/projects/{project_id}/rankings", tags=["rankings"])
 app.include_router(datasources.router, prefix="/api/projects/{project_id}/datasources", tags=["datasources"])
-app.include_router(ai.router, prefix="/api/projects", tags=["ai"])
 app.include_router(imports.router, prefix="/api/projects/{project_id}/imports", tags=["imports"])
 app.include_router(imports.router, prefix="/api/projects/{project_id}/import", tags=["imports"])
 app.include_router(imports.router, prefix="/api", tags=["guidelines"])

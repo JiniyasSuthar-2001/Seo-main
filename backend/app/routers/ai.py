@@ -35,6 +35,7 @@ class PreferenceRequest(BaseModel):
     model: Optional[str] = None
 
 class ProblemSolutionRequest(BaseModel):
+    project_id: Optional[str] = None
     rule_id: Optional[str] = None
     title: str
     category: Optional[str] = "Website Health"
@@ -45,6 +46,7 @@ class ProblemSolutionRequest(BaseModel):
     evidence_text: Optional[str] = None
 
 class SolveRequest(BaseModel):
+    project_id: Optional[str] = None
     rule_id: Optional[str] = None
     title: str
     category: Optional[str] = "Website Health"
@@ -479,10 +481,13 @@ def chat_with_project_ai(
 
 PROBLEM_SOLUTION_CACHE: Dict[str, Dict[str, Any]] = {}
 
+@router.post("/generate-fix")
+@router.post("/solve")
+@router.post("/{project_id}/solve")
 @router.post("/{project_id}/ai/solve")
 def solve_problem_with_ai(
-    project_id: str,
     payload: SolveRequest,
+    project_id: Optional[str] = None,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
@@ -491,7 +496,11 @@ def solve_problem_with_ai(
     Analyzes the actual detected problem and affected page to generate an actionable,
     evidence-grounded replacement and implementation code.
     """
-    project = _get_project_or_404(project_id, db, user_id)
+    target_project_id = project_id or payload.project_id
+    if not target_project_id:
+        raise HTTPException(status_code=400, detail="project_id is required.")
+
+    project = _get_project_or_404(target_project_id, db, user_id)
     solution = AISolutionService.get_or_generate_solution(
         project=project,
         rule_id=payload.rule_id,
@@ -509,20 +518,26 @@ def solve_problem_with_ai(
     )
     return {
         "status": "success",
-        "solution": solution
+        "solution": solution,
+        "fix": solution
     }
 
-@router.post("/{project_id}/ai/problem-solution")
+@router.post("/problem-solution")
+@router.post("/{project_id}/problem-solution")
 def get_problem_ai_solution(
-    project_id: str,
     payload: ProblemSolutionRequest,
+    project_id: Optional[str] = None,
     db: Session = Depends(get_db),
     user_id: str = Depends(get_current_user_id)
 ):
-    project = _get_project_or_404(project_id, db, user_id)
+    target_project_id = project_id or payload.project_id
+    if not target_project_id:
+        raise HTTPException(status_code=400, detail="project_id is required.")
 
-    # 1. Check cache first for instant repeat response
-    cache_key = f"{project_id}:{payload.rule_id or payload.title}"
+    project = _get_project_or_404(target_project_id, db, user_id)
+
+    # 1. Check cache first for instant repeat response (scoped strictly by authorized project ID)
+    cache_key = f"{project.id}:{payload.rule_id or payload.title}"
     if cache_key in PROBLEM_SOLUTION_CACHE:
         return PROBLEM_SOLUTION_CACHE[cache_key]
 

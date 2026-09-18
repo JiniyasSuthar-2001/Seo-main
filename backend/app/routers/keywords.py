@@ -486,6 +486,9 @@ def get_competitor_keyword_gap(
     }
 
 from app.routers.reports import export_keywords_csv
+from fastapi import UploadFile, File
+from app.importers.keyword_importer import KeywordImporter
+from app.routers.imports import parse_uploaded_file
 
 @router.get("/export.csv")
 def keywords_export_csv(
@@ -494,3 +497,36 @@ def keywords_export_csv(
     db: Session = Depends(get_db)
 ):
     return export_keywords_csv(project_id, user_id, db)
+
+
+@router.post("/import-csv")
+async def import_keywords_csv(
+    project_id: str,
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Direct CSV bulk keyword import for a project.
+    """
+    get_user_membership(db, user_id, project_id)
+    if not file.filename.lower().endswith((".csv", ".txt")):
+        raise HTTPException(status_code=400, detail="Only CSV files (.csv) are supported for keyword import.")
+    
+    contents = await file.read()
+    if len(contents) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File size exceeds 10MB limit.")
+    
+    records = parse_uploaded_file(file.filename, contents)
+    importer = KeywordImporter(db=db, project_id=project_id, filename=file.filename, source="CSV Keyword Import")
+    importer.start_import("keywords")
+    importer.process_records(records)
+    importer.finish_import()
+    report = importer.get_structured_import_report()
+    return {
+        "status": "success",
+        "imported_count": report.get("records_imported", 0),
+        "total_records": report.get("total_records", len(records)),
+        "message": f"Successfully imported {report.get('records_imported', 0)} keywords.",
+        "report": report
+    }

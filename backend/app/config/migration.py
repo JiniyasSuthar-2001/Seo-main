@@ -64,6 +64,8 @@ def _migrate_single_file(db_file: str):
             "target_language": "TEXT",
             "target_device": "TEXT",
             "crawl_config": "TEXT",
+            "webhook_url": "TEXT",
+            "webhook_events": "TEXT",
             "created_at": "DATETIME",
             "updated_at": "DATETIME"
         },

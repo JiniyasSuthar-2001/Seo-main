@@ -156,6 +156,38 @@ def get_position_tracking_overview(
     }
 
 
+@router.get("/config")
+@router.get("/campaign-config")
+def get_campaign_config(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns campaign tracking configuration for a project.
+    """
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    cfg = {
+        "target_type": project.target_type or "Domain",
+        "search_engine": project.search_engine or "Google",
+        "target_country": project.target_country or "United States",
+        "target_language": project.target_language or "English",
+        "target_device": project.target_device or "Desktop"
+    }
+
+    return {
+        "project_id": project.id,
+        "domain": project.domain,
+        **cfg,
+        "campaign_config": cfg
+    }
+
+
+@router.post("/config")
 @router.post("/campaign-config")
 def update_campaign_config(
     project_id: str,
@@ -180,13 +212,18 @@ def update_campaign_config(
     db.commit()
     db.refresh(project)
 
-    return {
-        "project_id": project.id,
+    cfg = {
         "target_type": project.target_type,
         "search_engine": project.search_engine,
         "target_country": project.target_country,
         "target_language": project.target_language,
         "target_device": project.target_device,
+    }
+
+    return {
+        "project_id": project.id,
+        **cfg,
+        "campaign_config": cfg,
         "message": "Campaign configuration updated successfully."
     }
 

@@ -23,6 +23,8 @@ class Project(Base):
     target_language = Column(String, default="English")
     target_device = Column(String, default="Desktop")  # Desktop, Mobile, Tablet
     crawl_config = Column(String, nullable=True)
+    webhook_url = Column(String, nullable=True)
+    webhook_events = Column(String, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

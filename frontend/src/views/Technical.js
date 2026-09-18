@@ -19,6 +19,13 @@ export class Technical {
         this.selectedCategoryFilter = 'all';
         this.issuesPage = 1;
         this.pageSize = 20; // MANDATORY PLATFORM STANDARD: 20 rows per page
+
+        this._onCrawlCompleted = () => {
+            if (document.body.contains(this.element)) {
+                this.mounted();
+            }
+        };
+        window.addEventListener('seo:crawl-completed', this._onCrawlCompleted);
     }
 
     render() {
@@ -449,12 +456,12 @@ export class Technical {
                     <div class="card kpi-card-clickable" id="kpi-problems-found" tabindex="0" role="button" aria-label="Go to Problems We Found Table"
                          style="padding: 20px; background: var(--bg-card); cursor: pointer; transition: all 0.2s ease; border: 1px solid var(--border);">
                         <div style="font-size: 11px; color: var(--text-secondary); text-transform: uppercase; font-weight: 700; display: flex; justify-content: space-between; align-items: center;">
-                            <span>Problems Found ${renderTooltip('Total technical problems detected. Click to view table findings.')}</span>
+                            <span>Problems Found ${renderTooltip('Total technical rule failures and affected page occurrences detected across your site.')}</span>
                             <span style="font-size: 10px; color: var(--primary); font-weight: 600;">Table ↓</span>
                         </div>
                         ${hasCrawl ? `
-                            <div style="font-size: 28px; font-weight: 700; color: var(--critical); margin-top: 4px;">${allIssues.length}</div>
-                            <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 2px;">${summary.critical_errors || 0} critical, ${summary.warnings || 0} warnings</div>
+                            <div style="font-size: 28px; font-weight: 700; color: var(--critical); margin-top: 4px;">${allIssues.length} <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary);">Rule Failures</span></div>
+                            <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 2px;">${(summary.critical_errors || 0) + (summary.warnings || 0) + (summary.errors || 0)} total occurrences (${summary.critical_errors || 0} critical, ${summary.warnings || 0} warnings)</div>
                         ` : `
                             <div style="font-size: 20px; font-weight: 700; color: var(--text-tertiary); margin-top: 6px;">No audit data yet</div>
                             <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 2px;">0 critical, 0 warnings</div>
@@ -731,6 +738,12 @@ export class Technical {
                 }
             }
         });
+    }
+
+    unmount() {
+        if (this._onCrawlCompleted) {
+            window.removeEventListener('seo:crawl-completed', this._onCrawlCompleted);
+        }
     }
 
     escapeHtml(str) {

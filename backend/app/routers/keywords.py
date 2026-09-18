@@ -530,3 +530,242 @@ async def import_keywords_csv(
         "message": f"Successfully imported {report.get('records_imported', 0)} keywords.",
         "report": report
     }
+
+
+@router.get("/{keyword_id}/evidence")
+@router.get("/evidence")
+def get_keyword_evidence(
+    project_id: str,
+    keyword_id: Optional[str] = None,
+    keyword: Optional[str] = None,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns verified on-page content frequency evidence from real crawl data
+    across Page Title, Meta Description, H1, H2/H3, First Paragraph, Body,
+    Image Alt Text, Anchor Text, and Schema structured data.
+    """
+    get_user_membership(db, user_id, project_id)
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    kw_record = None
+    if keyword_id:
+        kw_record = db.query(Keyword).filter(Keyword.id == keyword_id, Keyword.project_id == project_id).first()
+    if not kw_record and keyword:
+        kw_record = db.query(Keyword).filter(Keyword.keyword.ilike(keyword), Keyword.project_id == project_id).first()
+
+    kw_text = kw_record.keyword if kw_record else (keyword or "").strip()
+    if not kw_text:
+        raise HTTPException(status_code=404, detail="Keyword not found.")
+
+    proj_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, project.domain, project.id)
+    latest_path = os.path.join(proj_dir, "latest.json")
+
+    pages = []
+    if os.path.exists(latest_path):
+        try:
+            with open(latest_path, "r", encoding="utf-8") as f:
+                latest = json.load(f)
+            if isinstance(latest, dict) and isinstance(latest.get("pages"), list) and len(latest["pages"]) > 0:
+                pages = latest["pages"]
+            elif isinstance(latest, dict) and latest.get("path"):
+                crawl_dir = normalize_stored_path(latest.get("path"))
+                pages_file = os.path.join(crawl_dir, "pages.json")
+                if os.path.exists(pages_file):
+                    with open(pages_file, "r", encoding="utf-8") as pf:
+                        pages = json.load(pf)
+        except Exception as e:
+            print(f"[KEYWORD EVIDENCE] Error loading crawl pages: {e}", flush=True)
+
+    evidence_items = []
+    import re
+    kw_escaped = re.escape(kw_text.strip())
+    # Word boundary match, fallback to case-insensitive literal if special characters
+    try:
+        pattern = re.compile(rf"\b{kw_escaped}\b", re.IGNORECASE)
+    except Exception:
+        pattern = re.compile(kw_escaped, re.IGNORECASE)
+
+    for page in pages:
+        p_url = page.get("url") or ""
+        p_title = page.get("title") or "Untitled Page"
+
+        # 1. Page Title
+        title_val = page.get("title") or ""
+        matches = len(pattern.findall(title_val))
+        if matches > 0:
+            evidence_items.append({
+                "page_url": p_url,
+                "page_title": p_title,
+                "location": "Page title",
+                "occurrences": matches,
+                "snippet": title_val
+            })
+
+        # 2. Meta Description
+        desc_val = page.get("meta_description") or ""
+        matches = len(pattern.findall(desc_val))
+        if matches > 0:
+            evidence_items.append({
+                "page_url": p_url,
+                "page_title": p_title,
+                "location": "Meta description",
+                "occurrences": matches,
+                "snippet": desc_val
+            })
+
+        # 3. H1 tags
+        h1_tags = page.get("h1_tags") or ([page.get("h1")] if page.get("h1") else [])
+        for h1_text in h1_tags:
+            if not h1_text:
+                continue
+            matches = len(pattern.findall(str(h1_text)))
+            if matches > 0:
+                evidence_items.append({
+                    "page_url": p_url,
+                    "page_title": p_title,
+                    "location": "H1",
+                    "occurrences": matches,
+                    "snippet": str(h1_text)
+                })
+
+        # 4. H2 & H3 tags
+        for h2_text in (page.get("h2") or []):
+            if not h2_text:
+                continue
+            matches = len(pattern.findall(str(h2_text)))
+            if matches > 0:
+                evidence_items.append({
+                    "page_url": p_url,
+                    "page_title": p_title,
+                    "location": "H2",
+                    "occurrences": matches,
+                    "snippet": str(h2_text)
+                })
+
+        for h3_text in (page.get("h3") or []):
+            if not h3_text:
+                continue
+            matches = len(pattern.findall(str(h3_text)))
+            if matches > 0:
+                evidence_items.append({
+                    "page_url": p_url,
+                    "page_title": p_title,
+                    "location": "H3",
+                    "occurrences": matches,
+                    "snippet": str(h3_text)
+                })
+
+        # 5. First Paragraph
+        first_p = page.get("first_paragraph")
+        if not first_p and page.get("paragraphs"):
+            first_p = page.get("paragraphs")[0]
+        if first_p:
+            matches = len(pattern.findall(str(first_p)))
+            if matches > 0:
+                evidence_items.append({
+                    "page_url": p_url,
+                    "page_title": p_title,
+                    "location": "First paragraph",
+                    "occurrences": matches,
+                    "snippet": str(first_p)[:160] + ("..." if len(str(first_p)) > 160 else "")
+                })
+
+        # 6. Body Content (Remaining paragraphs or text snippets)
+        remaining_paras = (page.get("paragraphs") or [])[1:]
+        if remaining_paras:
+            for para in remaining_paras:
+                matches = len(pattern.findall(str(para)))
+                if matches > 0:
+                    evidence_items.append({
+                        "page_url": p_url,
+                        "page_title": p_title,
+                        "location": "Body content",
+                        "occurrences": matches,
+                        "snippet": str(para)[:160] + ("..." if len(str(para)) > 160 else "")
+                    })
+        elif page.get("body_text"):
+            b_text = page.get("body_text")
+            matches = len(pattern.findall(b_text))
+            if matches > 0:
+                # Extract sentence snippet around match
+                m = pattern.search(b_text)
+                start_idx = max(0, m.start() - 50) if m else 0
+                end_idx = min(len(b_text), m.end() + 80) if m else 130
+                snip = b_text[start_idx:end_idx].strip()
+                evidence_items.append({
+                    "page_url": p_url,
+                    "page_title": p_title,
+                    "location": "Body content",
+                    "occurrences": matches,
+                    "snippet": f"...{snip}..."
+                })
+
+        # 7. Image Alt Text
+        for img in (page.get("image_inventory") or []):
+            alt = img.get("alt_text") or ""
+            if alt:
+                matches = len(pattern.findall(alt))
+                if matches > 0:
+                    evidence_items.append({
+                        "page_url": p_url,
+                        "page_title": p_title,
+                        "location": "Image alt text",
+                        "occurrences": matches,
+                        "snippet": f'Alt text: "{alt}" on image {img.get("image_url", "")}'
+                    })
+
+        # 8. Anchor Text
+        for link in (page.get("link_records") or []):
+            anchor = link.get("anchor_text") or ""
+            if anchor:
+                matches = len(pattern.findall(anchor))
+                if matches > 0:
+                    tgt = link.get("target_url") or link.get("target") or ""
+                    evidence_items.append({
+                        "page_url": p_url,
+                        "page_title": p_title,
+                        "location": "Anchor text",
+                        "occurrences": matches,
+                        "snippet": f'Anchor text: "{anchor}" pointing to {tgt}'
+                    })
+
+        # 9. Schema / Structured Data
+        if page.get("structured_data"):
+            s_dump = json.dumps(page.get("structured_data"))
+            matches = len(pattern.findall(s_dump))
+            if matches > 0:
+                evidence_items.append({
+                    "page_url": p_url,
+                    "page_title": p_title,
+                    "location": "Schema",
+                    "occurrences": matches,
+                    "snippet": "Declared in JSON-LD structured data"
+                })
+
+    evidence_total = sum(e["occurrences"] for e in evidence_items)
+
+    # Reconcile with DB record if evidence was calculated from crawl data
+    if kw_record and evidence_total > 0 and kw_record.frequency != evidence_total:
+        kw_record.frequency = evidence_total
+        kw_record.pages_found = len(set(e["page_url"] for e in evidence_items))
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+
+    final_total = evidence_total if evidence_total > 0 else (kw_record.frequency if kw_record else 1)
+
+    return {
+        "status": "success",
+        "keyword_id": kw_record.id if kw_record else None,
+        "keyword": kw_text,
+        "total_frequency": final_total,
+        "pages_count": len(set(e["page_url"] for e in evidence_items)),
+        "has_evidence": len(evidence_items) > 0,
+        "evidence": evidence_items
+    }
+

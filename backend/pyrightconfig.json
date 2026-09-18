@@ -1,0 +1,10 @@
+{
+  "include": [
+    "."
+  ],
+  "extraPaths": [
+    ".",
+    "C:/Users/Jiniyas Suthar/AppData/Roaming/Python/Python314/site-packages",
+    "C:/Users/Jiniyas Suthar/AppData/Local/Python/pythoncore-3.14-64/Lib/site-packages"
+  ]
+}

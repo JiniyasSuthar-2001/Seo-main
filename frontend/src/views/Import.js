@@ -9,7 +9,16 @@ import { SHARED_UPLOAD_CONFIG, EMPTY_IMPORT_HISTORY_MESSAGE } from '../config/up
 
 export class Import {
     constructor() {
-        this.selectedDataType = 'keywords';
+        const urlParams = new URLSearchParams(window.location.search);
+        const qType = urlParams.get('type') || urlParams.get('guideline');
+        const validTypes = ['keywords', 'rankings', 'backlinks', 'competitors'];
+        this.selectedDataType = (qType && validTypes.includes(qType.toLowerCase())) ? qType.toLowerCase() : 'keywords';
+        
+        const qProj = urlParams.get('project');
+        if (qProj) {
+            projectStore.setSelectedProjectId(qProj);
+        }
+
         this.importResults = null;
         this.isUploading = false;
         this.errorMessage = null;

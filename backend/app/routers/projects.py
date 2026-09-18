@@ -841,48 +841,219 @@ def delete_project(
 ):
     require_project_owner(db, user_id, project_id)
     p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
 
-    domain = p.domain
-    safe_domain = get_sanitized_domain(domain)
+    project_name = p.name or "Project"
+    domain = p.domain or p.url
 
-    db.delete(p)
-    db.commit()
+    # Explicit cascade cleanup across all project-dependent tables
+    try:
+        from app.models.audit_issue import AuditIssue
+        from app.models.competitor_ranking import CompetitorRanking
+        from app.models.competitor import Competitor
+        from app.models.action_opportunity import ActionOpportunity
+        from app.models.ai_usage_log import AIUsageLog
+        from app.models.keyword import Keyword
+        from app.models.keyword_group import KeywordGroup
+        from app.models.page import Page
+        from app.models.crawl_session import CrawlSession
+        from app.models.dataset import Dataset
+        from app.models.report import ReportRecord
 
-    website_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, project_id)
-    if os.path.exists(website_dir):
-        try:
-            shutil.rmtree(website_dir)
-        except Exception as e:
-            print(f"[PROJECTS API] Error deleting storage directory {website_dir}: {e}", flush=True)
+        db.query(AuditIssue).filter(AuditIssue.project_id == project_id).delete(synchronize_session=False)
+        db.query(CompetitorRanking).filter(CompetitorRanking.project_id == project_id).delete(synchronize_session=False)
+        db.query(Competitor).filter(Competitor.project_id == project_id).delete(synchronize_session=False)
+        db.query(ActionOpportunity).filter(ActionOpportunity.project_id == project_id).delete(synchronize_session=False)
+        db.query(AIUsageLog).filter(AIUsageLog.project_id == project_id).delete(synchronize_session=False)
+        db.query(Keyword).filter(Keyword.project_id == project_id).delete(synchronize_session=False)
+        db.query(KeywordGroup).filter(KeywordGroup.project_id == project_id).delete(synchronize_session=False)
+        db.query(Page).filter(Page.project_id == project_id).delete(synchronize_session=False)
+        db.query(CrawlSession).filter(CrawlSession.project_id == project_id).delete(synchronize_session=False)
+        db.query(Dataset).filter(Dataset.project_id == project_id).delete(synchronize_session=False)
+        db.query(ReportRecord).filter(ReportRecord.project_id == project_id).delete(synchronize_session=False)
+        db.query(Notification).filter(Notification.project_id == project_id).delete(synchronize_session=False)
+        db.query(ProjectInvitation).filter(ProjectInvitation.project_id == project_id).delete(synchronize_session=False)
+        db.query(ProjectMembership).filter(ProjectMembership.project_id == project_id).delete(synchronize_session=False)
 
-    return {"status": "success", "message": f"Project '{p.name}' deleted cleanly."}
+        db.delete(p)
+        db.commit()
+    except Exception as db_err:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error deleting project: {db_err}")
 
+    # Remove storage directory safely
+    if domain:
+        website_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, domain, project_id)
+        if os.path.exists(website_dir):
+            try:
+                shutil.rmtree(website_dir, ignore_errors=True)
+            except Exception as e:
+                print(f"[PROJECTS API] Error deleting storage directory {website_dir}: {e}", flush=True)
+
+    return {"status": "success", "message": f"Project '{project_name}' deleted cleanly."}
+
+@router.get("/{project_id}/overview")
 @router.get("/{project_id}/summary")
-def get_project_summary(
+def get_project_overview(
     project_id: str,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     get_user_membership(db, user_id, project_id)
     p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
 
-    website_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, p.domain, p.id)
+    website_dir = get_project_storage_dir(settings.CRAWL_DATA_DIR, p.domain or p.url, p.id)
     latest_path = os.path.join(website_dir, "latest.json")
-    if not os.path.exists(latest_path):
-        return {"status": "empty", "message": "No crawl data available yet."}
-        
-    try:
-        with open(latest_path, "r") as f:
-            latest = json.load(f)
-        crawl_dir = normalize_stored_path(latest.get("path"))
-        metadata_path = os.path.join(crawl_dir, "metadata.json")
-        if os.path.exists(metadata_path):
-            with open(metadata_path, "r") as mf:
-                return {"status": "success", "latest_crawl": json.load(mf)}
-    except Exception as e:
-        print(f"[PROJECTS API] Exception reading snapshot: {e}", flush=True)
-        
-    return {"status": "error", "message": "Failed to read crawl data"}
+    crawls_dir = os.path.join(website_dir, "crawls")
+
+    all_crawls = []
+    if os.path.exists(crawls_dir):
+        try:
+            for folder in sorted(os.listdir(crawls_dir), reverse=True):
+                c_dir = os.path.join(crawls_dir, folder)
+                if not os.path.isdir(c_dir):
+                    continue
+                meta_path = os.path.join(c_dir, "metadata.json")
+                if os.path.exists(meta_path):
+                    with open(meta_path, "r", encoding="utf-8") as mf:
+                        c_meta = json.load(mf)
+
+                    pages_path = os.path.join(c_dir, "pages.json")
+                    if os.path.exists(pages_path):
+                        try:
+                            with open(pages_path, "r", encoding="utf-8") as pf:
+                                p_data = json.load(pf)
+                            ev = evaluate_site_audit_rules(p_data)
+                            c_meta["health_score"] = ev.get("health_score")
+                            c_meta["critical_issues"] = ev.get("summary", {}).get("critical", c_meta.get("critical_issues", 0))
+                        except Exception:
+                            pass
+                    all_crawls.append(c_meta)
+        except Exception as e:
+            print(f"[PROJECT OVERVIEW] Error reading crawls: {e}", flush=True)
+
+    total_runs = len(all_crawls)
+    has_crawl = os.path.exists(latest_path) and total_runs > 0
+
+    if not has_crawl:
+        return {
+            "status": "empty",
+            "has_crawl": False,
+            "message": "No crawl data available yet.",
+            "project": {
+                "id": p.id,
+                "name": p.name,
+                "domain": p.domain,
+                "url": p.url,
+                "created_at": p.created_at.isoformat() if p.created_at else None
+            },
+            "kpis": {
+                "health_score": None,
+                "total_pages": None,
+                "total_runs": total_runs,
+                "critical_problems": None
+            },
+            "health_trend": [],
+            "issues_trend": [],
+            "previews": {
+                "technical_audit": {"health_score": None, "total_issues": 0, "critical_issues": 0, "evaluated_rules": 0, "url": "/technical"},
+                "keywords": {"total_keywords": 0, "top_keywords": [], "url": "/keywords"},
+                "rankings": {"total_ranked": 0, "top_rankings": [], "url": "/rankings"},
+                "pages": {"total_pages": 0, "indexable_pages": 0, "url": "/crawl-data"},
+                "internal_links": {"total_links": 0, "broken_links": 0, "url": "/internal-links"},
+                "reports": {"report_count": 0, "url": "/reports"}
+            }
+        }
+
+    latest_meta = all_crawls[0] if all_crawls else {}
+    latest_health = latest_meta.get("health_score")
+    latest_pages = latest_meta.get("pages_crawled", 0)
+    latest_critical = latest_meta.get("critical_issues", 0)
+
+    sorted_chronological = sorted(all_crawls, key=lambda x: x.get("timestamp", ""))
+    health_trend = [
+        {
+            "timestamp": c.get("timestamp"),
+            "health_score": c.get("health_score"),
+            "crawl_id": c.get("crawl_id")
+        }
+        for c in sorted_chronological if c.get("health_score") is not None
+    ]
+    issues_trend = [
+        {
+            "timestamp": c.get("timestamp"),
+            "pages_crawled": c.get("pages_crawled", 0),
+            "critical_issues": c.get("critical_issues", 0),
+            "total_issues": c.get("total_issues", 0),
+            "warnings": c.get("warning_issues", 0),
+            "crawl_id": c.get("crawl_id")
+        }
+        for c in sorted_chronological
+    ]
+
+    from app.models.keyword import Keyword
+    from app.models.report import Report
+    total_kw = db.query(Keyword).filter(Keyword.project_id == project_id).count()
+    top_kws = db.query(Keyword).filter(Keyword.project_id == project_id).limit(5).all()
+    top_kw_list = [{"keyword": k.keyword, "frequency": k.frequency or 1, "position": k.position} for k in top_kws]
+    total_reps = db.query(Report).filter(Report.project_id == project_id).count()
+
+    return {
+        "status": "success",
+        "has_crawl": True,
+        "latest_crawl": latest_meta,
+        "project": {
+            "id": p.id,
+            "name": p.name,
+            "domain": p.domain,
+            "url": p.url,
+            "created_at": p.created_at.isoformat() if p.created_at else None
+        },
+        "kpis": {
+            "health_score": latest_health,
+            "total_pages": latest_pages,
+            "total_runs": total_runs,
+            "critical_problems": latest_critical
+        },
+        "health_trend": health_trend,
+        "issues_trend": issues_trend,
+        "previews": {
+            "technical_audit": {
+                "health_score": latest_health,
+                "total_issues": latest_meta.get("total_issues", 0),
+                "critical_issues": latest_critical,
+                "evaluated_rules": 14,
+                "url": "/technical"
+            },
+            "keywords": {
+                "total_keywords": total_kw,
+                "top_keywords": top_kw_list,
+                "url": "/keywords"
+            },
+            "rankings": {
+                "total_ranked": sum(1 for k in top_kws if k.position),
+                "top_rankings": [k for k in top_kw_list if k.get("position")],
+                "url": "/rankings"
+            },
+            "pages": {
+                "total_pages": latest_pages,
+                "indexable_pages": latest_pages,
+                "url": "/crawl-data"
+            },
+            "internal_links": {
+                "total_links": latest_meta.get("internal_links_count", 0),
+                "broken_links": latest_meta.get("broken_links_count", 0),
+                "url": "/internal-links"
+            },
+            "reports": {
+                "report_count": total_reps,
+                "url": "/reports"
+            }
+        }
+    }
 
 
 DEFAULT_CRAWL_CONFIG = {

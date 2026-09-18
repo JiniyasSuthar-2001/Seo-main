@@ -8,6 +8,7 @@ export class CrawlCompleteModalManager {
         this.isOpen = false;
         this.modalElement = null;
         this.completionData = null;
+        this.openedSessions = new Set();
     }
 
     formatDuration(seconds) {
@@ -27,6 +28,15 @@ export class CrawlCompleteModalManager {
     }
 
     open(data = {}) {
+        const sId = data.session_id || data.sessionId;
+        if (sId && this.openedSessions.has(sId)) {
+            // Prevent duplicate modal popup flash for the same completed session
+            return;
+        }
+        if (sId) {
+            this.openedSessions.add(sId);
+        }
+
         this.close(); // Clean up any existing instance
 
         this.isOpen = true;

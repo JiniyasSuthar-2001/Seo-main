@@ -5,6 +5,7 @@ import { renderBackendOfflineState, renderFeatureErrorState } from '../component
 import { renderTooltip } from '../components/Tooltip.js';
 import { Pagination } from '../components/Pagination.js';
 import { uiStateStore } from '../core/uiStateStore.js';
+import { KeywordEvidenceModal } from '../components/KeywordEvidenceModal.js';
 
 export class Keywords {
     constructor() {
@@ -369,7 +370,12 @@ export class Keywords {
                 <tr style="border-bottom: 1px solid var(--border);">
                     <td style="padding: 12px 18px; font-weight: 700; color: var(--text-primary);">${this.escapeHtml(k.keyword)}</td>
                     <td style="padding: 12px;">${this.escapeHtml(k.group_name || k.category || k.type || 'Content Keyword')}</td>
-                    <td style="padding: 12px; font-weight: 600;">${k.frequency || k.search_volume || 1} times ${renderTooltip('Content Frequency: How often this keyword appears in your scanned website content.')}</td>
+                    <td style="padding: 12px; font-weight: 600;">
+                        <button class="btn-kw-evidence" data-id="${k.id || ''}" data-kw="${this.escapeHtml(k.keyword)}" style="background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.25); color: var(--primary); padding: 4px 10px; border-radius: 6px; font-size: 12.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s;" title="Click to view real on-page occurrence evidence">
+                            <span>${k.frequency || k.search_volume || 1} times</span>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                        </button>
+                    </td>
                     <td style="padding: 12px;">${k.pages_found || 1} pages</td>
                     <td style="padding: 12px; font-size: 12px; color: var(--text-secondary);">
                         ${k.position_display || (k.position ? `#${k.position}` : '<span style="color: var(--text-tertiary);">Not available (Connect Search Data)</span>')}
@@ -381,7 +387,10 @@ export class Keywords {
             contentContainer.innerHTML = `
                 <div class="card" style="padding: 0; overflow: hidden; border-radius: 14px;">
                     <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
-                        <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Keywords Found in Content (${keywords.length})</h3>
+                        <div>
+                            <h3 style="font-size: 15px; font-weight: 700; margin: 0; color: var(--text-primary);">Keywords Found in Content (${keywords.length})</h3>
+                            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Click any Content Frequency number to view verified on-page evidence.</div>
+                        </div>
                     </div>
                     <div style="overflow-x: auto;">
                         <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
@@ -403,6 +412,20 @@ export class Keywords {
                     <div id="kw-pagination-slot"></div>
                 </div>
             `;
+
+            // Bind Keyword Evidence Click Listeners
+            contentContainer.querySelectorAll('.btn-kw-evidence').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const kwId = btn.getAttribute('data-id');
+                    const kwText = btn.getAttribute('data-kw');
+                    KeywordEvidenceModal.open({
+                        projectId,
+                        keywordId: kwId,
+                        keywordText: kwText
+                    });
+                });
+            });
 
             // Append Pagination Controls
             const pageSlot = contentContainer.querySelector('#kw-pagination-slot');

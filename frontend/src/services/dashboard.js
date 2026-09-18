@@ -10,6 +10,12 @@ export const dashboardService = {
         const id = resolveProjectId(projectId);
         if (!id) return { status: 'empty', message: 'No project selected.' };
         return await apiClient.get(`/api/projects/${id}/summary`);
+    },
+
+    async getProjectOverview(projectId) {
+        const id = resolveProjectId(projectId);
+        if (!id) return { status: 'empty', message: 'No project selected.' };
+        return await apiClient.get(`/api/projects/${id}/overview`);
     }
 };
 

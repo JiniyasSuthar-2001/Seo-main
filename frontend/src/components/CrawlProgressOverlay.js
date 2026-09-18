@@ -8,6 +8,8 @@ class CrawlProgressOverlayManager {
         this.overlayElement = null;
         this.activeSessionId = null;
         this.isCrawling = false;
+        this.isPolling = false;
+        this.completedSessions = new Set();
     }
 
     createOverlayElement(targetUrl) {
@@ -159,6 +161,9 @@ class CrawlProgressOverlayManager {
         }
 
         this.activeInterval = setInterval(async () => {
+            if (this.isPolling) return;
+            this.isPolling = true;
+
             try {
                 // Guard against stale polling callback from a replaced session
                 if (this.activeSessionId !== sessionId) {
@@ -242,7 +247,10 @@ class CrawlProgressOverlayManager {
 
                     this.setButtonsState(false);
                     await projectStore.fetchProjects().catch(() => {});
-                    window.dispatchEvent(new CustomEvent('seo:crawl-completed', { detail: { projectId, sessionId, ...statusData } }));
+                    if (!this.completedSessions.has(sessionId)) {
+                        this.completedSessions.add(sessionId);
+                        window.dispatchEvent(new CustomEvent('seo:crawl-completed', { detail: { projectId, sessionId, ...statusData } }));
+                    }
 
                 } else if (statusData.status === 'completed' || statusData.status === 'completed_with_errors') {
                     // 1. Immediately halt polling
@@ -264,14 +272,20 @@ class CrawlProgressOverlayManager {
                     // 4. Refresh background project data
                     await projectStore.fetchProjects().catch(() => {});
 
-                    // 5. Notify the active view to re-render in the background
-                    window.dispatchEvent(new CustomEvent('seo:crawl-completed', { detail: { projectId, sessionId, ...statusData } }));
+                    // 5. Deduplicate completion events and popups per session_id
+                    if (!this.completedSessions.has(sessionId)) {
+                        this.completedSessions.add(sessionId);
 
-                    // 6. Open Crawl Completed popup
-                    crawlCompleteModal.open({
-                        ...statusData,
-                        target_url: targetUrl
-                    });
+                        // Notify active views to re-render
+                        window.dispatchEvent(new CustomEvent('seo:crawl-completed', { detail: { projectId, sessionId, ...statusData } }));
+
+                        // Open Crawl Completed popup once
+                        crawlCompleteModal.open({
+                            ...statusData,
+                            session_id: sessionId,
+                            target_url: targetUrl
+                        });
+                    }
 
                 } else if (statusData.status === 'failed' || statusData.status === 'blocked_by_protection' || statusData.status === 'blocked_by_robots') {
                     clearInterval(this.activeInterval);
@@ -294,6 +308,8 @@ class CrawlProgressOverlayManager {
                 }
             } catch (err) {
                 console.error("[CRAWL OVERLAY] Status polling error:", err);
+            } finally {
+                this.isPolling = false;
             }
         }, 1000);
     }

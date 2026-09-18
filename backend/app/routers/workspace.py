@@ -151,13 +151,29 @@ def get_workspace_overview(
         if os.path.exists(crawls_dir):
             try:
                 for folder in os.listdir(crawls_dir):
-                    meta_path = os.path.join(crawls_dir, folder, "metadata.json")
+                    c_folder_path = os.path.join(crawls_dir, folder)
+                    if not os.path.isdir(c_folder_path):
+                        continue
+                    meta_path = os.path.join(c_folder_path, "metadata.json")
                     if os.path.exists(meta_path):
-                        with open(meta_path, "r") as mf:
+                        with open(meta_path, "r", encoding="utf-8") as mf:
                             c_meta = json.load(mf)
                             c_meta["project_id"] = p.id
                             c_meta["project_name"] = p.name
                             c_meta["domain"] = p.domain
+
+                            # Calculate canonical health score from stored pages
+                            pages_path = os.path.join(c_folder_path, "pages.json")
+                            if os.path.exists(pages_path):
+                                try:
+                                    with open(pages_path, "r", encoding="utf-8") as pf:
+                                        p_data = json.load(pf)
+                                    ev = evaluate_site_audit_rules(p_data)
+                                    c_meta["health_score"] = ev.get("health_score")
+                                    c_meta["critical_issues"] = ev.get("summary", {}).get("critical", c_meta.get("critical_issues", 0))
+                                except Exception:
+                                    pass
+
                             all_crawls.append(c_meta)
 
                             # Activity item: Crawl completed
@@ -179,15 +195,50 @@ def get_workspace_overview(
 
     avg_health = round(sum(health_scores) / len(health_scores)) if health_scores else None
 
-    # Historical trend points (only from real crawl records)
+    # Sort chronological for genuine trend graphs
+    sorted_crawls = sorted(all_crawls, key=lambda x: x.get("timestamp", ""))
+
+    # Graph 1: Workspace Health Trend across authorized projects
     health_trend = []
-    if len(all_crawls) >= 2:
-        for c in reversed(all_crawls[:10]):
+    for c in sorted_crawls:
+        if c.get("health_score") is not None and c.get("timestamp"):
             health_trend.append({
                 "timestamp": c.get("timestamp"),
-                "domain": c.get("domain"),
+                "domain": c.get("domain") or c.get("website"),
+                "project_name": c.get("project_name"),
+                "project_id": c.get("project_id"),
+                "health_score": c.get("health_score"),
+                "crawl_id": c.get("crawl_id")
+            })
+
+    # Group health scores by date for aggregated historical progression across projects
+    by_date = defaultdict(list)
+    for h in health_trend:
+        dt = h["timestamp"].split("T")[0] if "T" in h["timestamp"] else h["timestamp"][:10]
+        by_date[dt].append(h["health_score"])
+
+    aggregate_health_trend = []
+    for dt in sorted(by_date.keys()):
+        scores = by_date[dt]
+        aggregate_health_trend.append({
+            "date": dt,
+            "average_health_score": round(sum(scores) / len(scores)),
+            "crawls_count": len(scores)
+        })
+
+    # Graph 2: Workspace Crawl & Issues Trend across authorized projects
+    crawl_issues_trend = []
+    for c in sorted_crawls:
+        if c.get("timestamp"):
+            crawl_issues_trend.append({
+                "timestamp": c.get("timestamp"),
+                "domain": c.get("domain") or c.get("website"),
+                "project_name": c.get("project_name"),
+                "project_id": c.get("project_id"),
                 "pages_crawled": c.get("pages_crawled", 0),
-                "issues": c.get("total_issues", 0)
+                "critical_issues": c.get("critical_issues", 0),
+                "total_issues": c.get("total_issues", 0),
+                "crawl_id": c.get("crawl_id")
             })
 
     # Format account-wide issue summary list
@@ -220,5 +271,7 @@ def get_workspace_overview(
         "recent_crawls": all_crawls[:10],
         "account_issues_summary": account_issues[:10],
         "recent_activity": recent_activity[:10],
-        "health_trend": health_trend
+        "health_trend": health_trend,
+        "aggregate_health_trend": aggregate_health_trend,
+        "crawl_issues_trend": crawl_issues_trend
     }

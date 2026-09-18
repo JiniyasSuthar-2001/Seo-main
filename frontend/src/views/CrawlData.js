@@ -620,7 +620,10 @@ export class CrawlData {
         }
     }
 
-    unmounted() {
+    unmount() {
+        if (this._onCrawlCompleted) {
+            window.removeEventListener('seo:crawl-completed', this._onCrawlCompleted);
+        }
         ImageDetailsModal.close();
         PageEvidenceDetailModal.close();
         AISuggestModal.close();

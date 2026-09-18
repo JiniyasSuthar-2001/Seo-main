@@ -199,12 +199,40 @@ export class Projects {
         };
 
         window.executeDeleteProject = async (id) => {
+            const btn = document.querySelector('#delete-proj-modal button[style*="background: #ef4444"]');
+            if (btn) {
+                btn.disabled = true;
+                btn.innerText = 'Deleting Project...';
+            }
             try {
-                await projectStore.deleteProject(id);
+                const res = await projectStore.deleteProject(id);
                 const modal = document.getElementById('delete-proj-modal');
                 if (modal) modal.remove();
+
+                // If the deleted project was selected, clear/update to All Workspaces
+                const currentSelected = projectStore.getSelectedProjectId();
+                if (String(currentSelected) === String(id)) {
+                    projectStore.setSelectedProjectId('all');
+                    window.dispatchEvent(new CustomEvent('project:selected', { detail: { projectId: 'all' } }));
+                }
+
                 await this.mounted();
+
+                // Confirmed server success notification
+                const toast = document.createElement('div');
+                toast.style.cssText = `
+                    position: fixed; bottom: 24px; right: 24px; background: #10b981; color: #fff;
+                    padding: 12px 20px; border-radius: 8px; font-weight: 600; font-size: 13.5px;
+                    box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); z-index: 100000; animation: fadeInModal 0.2s ease;
+                `;
+                toast.innerText = (res && res.message) ? res.message : 'Project deleted successfully.';
+                document.body.appendChild(toast);
+                setTimeout(() => toast.remove(), 4000);
             } catch (err) {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = 'Delete Project Workspace';
+                }
                 alert(`Failed to delete project: ${err.message || "Server error"}`);
             }
         };
@@ -338,7 +366,9 @@ export class Projects {
                                 <button class="btn btn-secondary btn-sm" onclick="window.openEditProjectModal('${p.id}')">Edit</button>
                                 <button class="btn btn-secondary btn-sm" title="Download Full Project PDF Report" onclick="apiClient.downloadFile('/api/projects/${p.id}/report.pdf', 'project-report.pdf', this)">Download PDF</button>
                                 <button class="btn btn-secondary btn-sm" title="Download ZIP CSV Package" onclick="apiClient.downloadFile('/api/projects/${p.id}/export', 'project-export.zip', this)">Download Data</button>
-                                <button class="btn btn-secondary btn-sm" style="color: #ef4444;" onclick="window.confirmDeleteProject('${p.id}', '${p.name.replace(/'/g, "\\'")}')">Delete</button>
+                                ${p.user_role === 'OWNER' ? `
+                                    <button class="btn btn-secondary btn-sm" style="color: #ef4444;" onclick="window.confirmDeleteProject('${p.id}', '${p.name.replace(/'/g, "\\'")}')">Delete</button>
+                                ` : ''}
                             </div>
                         </div>
                     </div>

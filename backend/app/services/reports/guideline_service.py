@@ -12,28 +12,30 @@ BACKEND_GUIDELINES = {
     "keywords": {
         "id": "keywords",
         "title": "Keyword Dataset Upload Guide",
-        "purpose": "Import target keyword lists, search term frequencies, CPC, and difficulty metrics into your project workspace.",
-        "where_to_get": "Export keyword lists from your rank-tracking software, keyword planner, or SEO analytics tool.",
+        "purpose": "Import target keyword lists, search term frequencies, CPC, difficulty, and intent metrics into your project workspace.",
+        "where_to_get": "Export keyword lists from Google Search Console, rank-tracking tools, or SEO keyword planners.",
         "supported_formats": ["CSV", "XLSX"],
         "max_file_size": "25 MB",
-        "version": "Version 1.2 — August 2026",
+        "version": "Version 1.3 — September 2026",
         "required_columns": [
-            {"name": "Keyword", "description": "Target search phrase", "example": "solar panels australia"}
+            {"name": "Keyword", "description": "Target search phrase (Required)", "example": "seo audit checklist"}
         ],
         "optional_columns": [
-            {"name": "URL", "description": "Target landing page URL on your domain", "example": "https://example.com/solar-panels"},
-            {"name": "Search Volume", "description": "Monthly search volume number", "example": "2400"},
-            {"name": "Position", "description": "External rank position (if available)", "example": "5"},
-            {"name": "Difficulty", "description": "Keyword difficulty percentage (0-100)", "example": "45"},
-            {"name": "CPC", "description": "Cost Per Click in USD/AUD", "example": "3.50"},
-            {"name": "Country", "description": "2-letter country code", "example": "AU"},
-            {"name": "Language", "description": "Target language", "example": "English"}
+            {"name": "Target URL", "description": "Target landing page URL on your domain (e.g. https://example.com/page)", "example": "https://example.com/blog/seo-audit"},
+            {"name": "Search Volume", "description": "Estimated monthly search queries (integer >= 0)", "example": "3600"},
+            {"name": "Difficulty", "description": "Keyword difficulty score between 0 and 100", "example": "42"},
+            {"name": "CPC", "description": "Cost Per Click in currency units (decimal number)", "example": "4.20"},
+            {"name": "Intent", "description": "Search intent: Informational, Commercial, Transactional, Navigational", "example": "Informational"},
+            {"name": "Position", "description": "Google SERP position rank if available (integer 1-100)", "example": "8"},
+            {"name": "Country", "description": "2-letter ISO country code (e.g. US, AU, GB)", "example": "US"}
         ],
-        "synthetic_headers": ["Keyword", "URL", "Search Volume", "Position", "Difficulty", "CPC", "Country", "Language"],
+        "synthetic_headers": ["Keyword", "Target URL", "Search Volume", "Difficulty", "CPC", "Intent", "Position", "Country"],
         "synthetic_rows": [
-            ["solar panels australia", "https://example.com/solar-panels", "2400", "5", "45", "3.50", "AU", "English"],
-            ["commercial electrician sydney", "https://example.com/commercial", "1200", "12", "58", "5.20", "AU", "English"],
-            ["emergency electrical repair", "https://example.com/emergency", "880", "3", "32", "6.10", "AU", "English"]
+            ["seo audit checklist", "https://example.com/blog/seo-audit", "3600", "42", "4.20", "Informational", "8", "US"],
+            ["enterprise technical seo", "https://example.com/services/technical-seo", "1200", "65", "8.50", "Commercial", "3", "US"],
+            ["local seo agency sydney", "https://example.com/locations/sydney", "880", "51", "6.75", "Transactional", "5", "AU"],
+            ["page speed optimization service", "https://example.com/services/page-speed", "1450", "38", "5.10", "Commercial", "12", "US"],
+            ["xml sitemap generator tool", "https://example.com/tools/sitemap", "5400", "29", "2.80", "Navigational", "2", "GB"]
         ],
         "privacy_warning": "Do not upload passwords, API keys, OAuth tokens, authentication cookies, private keys, payment information, or unnecessary personal/customer data."
     },
@@ -44,24 +46,26 @@ BACKEND_GUIDELINES = {
         "where_to_get": "Export position history from your rank tracking platform, Search Console performance export, or SERP provider.",
         "supported_formats": ["CSV", "XLSX"],
         "max_file_size": "25 MB",
-        "version": "Version 1.2 — August 2026",
+        "version": "Version 1.3 — September 2026",
         "required_columns": [
-            {"name": "Keyword", "description": "Ranked search phrase", "example": "electrician near me"},
-            {"name": "URL", "description": "Ranking target URL on your domain", "example": "https://example.com/services"},
-            {"name": "Position", "description": "Actual Google search rank position number", "example": "8"}
+            {"name": "Keyword", "description": "Ranked search phrase (Required)", "example": "seo audit services"},
+            {"name": "URL", "description": "Ranking target URL on your domain (Required)", "example": "https://example.com/services/audit"},
+            {"name": "Position", "description": "Actual Google search rank position number (1-100, Required)", "example": "4"}
         ],
         "optional_columns": [
-            {"name": "Search Volume", "description": "Monthly estimated volume", "example": "3600"},
-            {"name": "Country", "description": "Target geographic country code", "example": "AU"},
-            {"name": "Device", "description": "Desktop or Mobile", "example": "Desktop"},
-            {"name": "Search Engine", "description": "Search provider name", "example": "Google"},
-            {"name": "Date", "description": "Snapshot ranking date (YYYY-MM-DD)", "example": "2026-08-26"}
+            {"name": "Search Volume", "description": "Monthly estimated search volume (integer >= 0)", "example": "4500"},
+            {"name": "Country", "description": "Target geographic country code (e.g. US, AU, GB)", "example": "US"},
+            {"name": "Device", "description": "Target device type: Desktop or Mobile", "example": "Desktop"},
+            {"name": "Search Engine", "description": "Search provider name (e.g. Google, Bing)", "example": "Google"},
+            {"name": "Date", "description": "Snapshot ranking date in ISO format (YYYY-MM-DD)", "example": "2026-09-01"}
         ],
         "synthetic_headers": ["Keyword", "URL", "Position", "Search Volume", "Country", "Device", "Search Engine", "Date"],
         "synthetic_rows": [
-            ["electrician near me", "https://example.com/services", "8", "3600", "AU", "Desktop", "Google", "2026-08-26"],
-            ["solar battery installer", "https://example.com/solar-batteries", "4", "1400", "AU", "Mobile", "Google", "2026-08-26"],
-            ["industrial wiring expert", "https://example.com/industrial", "14", "590", "AU", "Desktop", "Google", "2026-08-26"]
+            ["seo audit services", "https://example.com/services/audit", "4", "4500", "US", "Desktop", "Google", "2026-09-01"],
+            ["best backlink checker", "https://example.com/tools/backlinks", "7", "8200", "US", "Desktop", "Google", "2026-09-01"],
+            ["local seo consultant", "https://example.com/consulting", "3", "1900", "AU", "Mobile", "Google", "2026-09-01"],
+            ["ecommerce schema markup", "https://example.com/guides/schema", "11", "950", "GB", "Desktop", "Google", "2026-09-01"],
+            ["broken link checker free", "https://example.com/tools/broken-links", "6", "6100", "US", "Mobile", "Google", "2026-09-01"]
         ],
         "privacy_warning": "Do not upload passwords, API keys, OAuth tokens, authentication cookies, private keys, payment information, or unnecessary personal/customer data."
     },
@@ -72,23 +76,26 @@ BACKEND_GUIDELINES = {
         "where_to_get": "Export backlink reports from your SEO analytics tool or Google Search Console links report.",
         "supported_formats": ["CSV", "XLSX"],
         "max_file_size": "25 MB",
-        "version": "Version 1.2 — August 2026",
+        "version": "Version 1.3 — September 2026",
         "required_columns": [
-            {"name": "Source URL", "description": "External website URL containing the link", "example": "https://industry-news.com/top-electricians"},
-            {"name": "Target URL", "description": "Your website URL being linked to", "example": "https://example.com/services"},
-            {"name": "Anchor Text", "description": "Clickable text of the link", "example": "Licensed Sydney Electricians"}
+            {"name": "Source URL", "description": "External website URL containing the inbound link (Required)", "example": "https://tech-journal.com/top-seo-tools-2026"},
+            {"name": "Target URL", "description": "Your website destination URL being linked to (Required)", "example": "https://example.com/services/audit"},
+            {"name": "Anchor Text", "description": "Clickable anchor text of the link (Required)", "example": "Comprehensive SEO Audit Suite"}
         ],
         "optional_columns": [
-            {"name": "Referring Domain", "description": "External root domain name", "example": "industry-news.com"},
-            {"name": "Link Type", "description": "Text, Image, or Redirect", "example": "Text"},
-            {"name": "Follow/Nofollow", "description": "Follow, Nofollow, UGC, or Sponsored attribute", "example": "Follow"},
-            {"name": "First Seen", "description": "Discovered date timestamp", "example": "2026-01-15"},
-            {"name": "Last Seen", "description": "Last verified date timestamp", "example": "2026-08-20"}
+            {"name": "Referring Domain", "description": "External root domain name (e.g. tech-journal.com)", "example": "tech-journal.com"},
+            {"name": "Follow/Nofollow", "description": "Link rel attribute: Follow, Nofollow, UGC, or Sponsored", "example": "Follow"},
+            {"name": "Status", "description": "Backlink status: Active or Lost", "example": "Active"},
+            {"name": "First Seen", "description": "Initial discovery date timestamp (YYYY-MM-DD)", "example": "2026-02-10"},
+            {"name": "Last Seen", "description": "Last verified crawl date timestamp (YYYY-MM-DD)", "example": "2026-08-15"}
         ],
-        "synthetic_headers": ["Source URL", "Target URL", "Anchor Text", "Referring Domain", "Link Type", "Follow/Nofollow", "First Seen", "Last Seen"],
+        "synthetic_headers": ["Source URL", "Target URL", "Anchor Text", "Referring Domain", "Follow/Nofollow", "Status", "First Seen", "Last Seen"],
         "synthetic_rows": [
-            ["https://industry-news.com/top-electricians", "https://example.com/services", "Licensed Sydney Electricians", "industry-news.com", "Text", "Follow", "2026-01-15", "2026-08-20"],
-            ["https://trade-directory.org/listings/solar", "https://example.com/solar-panels", "Visit Website", "trade-directory.org", "Text", "Nofollow", "2026-03-10", "2026-08-22"]
+            ["https://tech-journal.com/top-seo-tools-2026", "https://example.com/services/audit", "Comprehensive SEO Audit Suite", "tech-journal.com", "Follow", "Active", "2026-02-10", "2026-08-15"],
+            ["https://marketing-insider.org/resources", "https://example.com/blog/seo-audit", "SEO Guide", "marketing-insider.org", "Nofollow", "Active", "2026-03-22", "2026-08-20"],
+            ["https://industry-directory.net/agencies", "https://example.com/", "Visit Website", "industry-directory.net", "Follow", "Active", "2026-01-05", "2026-08-18"],
+            ["https://dev-community.io/discussions/crawlers", "https://example.com/tools/sitemap", "fast sitemap tool", "dev-community.io", "UGC", "Active", "2026-05-14", "2026-08-25"],
+            ["https://business-weekly.com/news/digital-trends", "https://example.com/services/technical-seo", "Technical SEO Specialist", "business-weekly.com", "Sponsored", "Active", "2026-06-01", "2026-08-22"]
         ],
         "privacy_warning": "Do not upload passwords, API keys, OAuth tokens, authentication cookies, private keys, payment information, or unnecessary personal/customer data."
     },
@@ -96,23 +103,26 @@ BACKEND_GUIDELINES = {
         "id": "competitors",
         "title": "Competitor Dataset Upload Guide",
         "purpose": "Import verified competitor domain lists and keyword overlap records for market intelligence.",
-        "where_to_get": "Export competitor domain tracking datasets or SERP analysis files.",
+        "where_to_get": "Export competitor domain tracking datasets or SERP competitive analysis files.",
         "supported_formats": ["CSV", "XLSX"],
         "max_file_size": "25 MB",
-        "version": "Version 1.2 — August 2026",
+        "version": "Version 1.3 — September 2026",
         "required_columns": [
-            {"name": "Competitor Domain", "description": "Competitor root domain name", "example": "competitor-electric.com"}
+            {"name": "Competitor Domain", "description": "Competitor root domain name (e.g. bright-seo-solutions.com, Required)", "example": "bright-seo-solutions.com"}
         ],
         "optional_columns": [
-            {"name": "Competitor Name", "description": "Company or business name", "example": "Competitor Electric Co"},
-            {"name": "Competitor URL", "description": "Main website homepage URL", "example": "https://competitor-electric.com"},
-            {"name": "Location", "description": "Geographic market location", "example": "Sydney, Australia"},
-            {"name": "Overlapping Keywords", "description": "Count of shared search phrases", "example": "450"}
+            {"name": "Competitor Name", "description": "Company or business brand name", "example": "Bright SEO Solutions"},
+            {"name": "Location", "description": "Primary geographic market location", "example": "New York, USA"},
+            {"name": "Overlapping Keywords", "description": "Count of shared search ranking phrases (integer >= 0)", "example": "840"},
+            {"name": "Relevance Score", "description": "Market relevance percentage score between 0.0 and 100.0", "example": "88.5"}
         ],
-        "synthetic_headers": ["Competitor Domain", "Competitor Name", "Competitor URL", "Location", "Overlapping Keywords"],
+        "synthetic_headers": ["Competitor Domain", "Competitor Name", "Location", "Overlapping Keywords", "Relevance Score"],
         "synthetic_rows": [
-            ["competitor-electric.com", "Competitor Electric Co", "https://competitor-electric.com", "Sydney, Australia", "450"],
-            ["apex-solar-solutions.com.au", "Apex Solar Solutions", "https://apex-solar-solutions.com.au", "Melbourne, Australia", "320"]
+            ["bright-seo-solutions.com", "Bright SEO Solutions", "New York, USA", "840", "88.5"],
+            ["apex-digital-search.co.uk", "Apex Digital Search", "London, UK", "620", "79.2"],
+            ["pacific-rankings.com.au", "Pacific Rankings", "Sydney, Australia", "490", "74.0"],
+            ["vanguard-organic.com", "Vanguard Organic Growth", "Chicago, USA", "310", "65.8"],
+            ["summit-search-partners.com", "Summit Search Partners", "San Francisco, USA", "950", "92.4"]
         ],
         "privacy_warning": "Do not upload passwords, API keys, OAuth tokens, authentication cookies, private keys, payment information, or unnecessary personal/customer data."
     }

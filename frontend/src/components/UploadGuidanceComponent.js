@@ -212,28 +212,58 @@ export class UploadGuidanceComponent {
 
     async handleShare() {
         const g = this.guidance;
+        const pId = projectStore.getSelectedProjectId();
+        const projectParam = pId && pId !== 'all' ? `&project=${encodeURIComponent(pId)}` : '';
+        const shareUrl = `${window.location.origin}/import?type=${encodeURIComponent(g.id)}${projectParam}`;
+
         const shareData = {
             title: g.title,
             text: `${g.title}: ${g.purpose}. Required columns: ${g.required_columns.map(c => c.name).join(', ')}.`,
-            url: `${window.location.origin}/#/import?guideline=${g.id}`
+            url: shareUrl
         };
 
         if (navigator.share) {
             try {
                 await navigator.share(shareData);
+                return;
             } catch (err) {
-                this.fallbackCopyLink(shareData.url);
+                if (err.name !== 'AbortError') {
+                    this.fallbackCopyLink(shareData.url);
+                }
+                return;
             }
-        } else {
-            this.fallbackCopyLink(shareData.url);
         }
+        this.fallbackCopyLink(shareData.url);
     }
 
     fallbackCopyLink(url) {
-        navigator.clipboard.writeText(url).then(() => {
-            alert(`Guideline shareable link copied to clipboard!\n\nLink: ${url}`);
-        }).catch(() => {
-            alert(`Shareable Guideline Link:\n${url}`);
-        });
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(url).then(() => {
+                this.showToast(`Shareable guideline link copied to clipboard!`);
+            }).catch(() => {
+                prompt(`Shareable Guideline Link:`, url);
+            });
+        } else {
+            prompt(`Shareable Guideline Link:`, url);
+        }
+    }
+
+    showToast(message) {
+        const existing = document.getElementById('share-guideline-toast');
+        if (existing) existing.remove();
+
+        const toast = document.createElement('div');
+        toast.id = 'share-guideline-toast';
+        toast.style.cssText = `
+            position: fixed; bottom: 24px; right: 24px; z-index: 999999;
+            background: #10b981; color: #ffffff; padding: 12px 20px;
+            border-radius: 8px; font-size: 13.5px; font-weight: 600;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+            display: flex; align-items: center; gap: 8px;
+            animation: fadeInModal 0.2s ease-out;
+        `;
+        toast.innerHTML = `<span>✓</span> <span>${this.escapeHtml ? this.escapeHtml(message) : message}</span>`;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 4000);
     }
 }

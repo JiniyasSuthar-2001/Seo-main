@@ -67,7 +67,7 @@ class KeywordImporter(BaseImporter):
                     })
                     continue
 
-                raw_keyword = (row.get("keyword") or "").strip()
+                raw_keyword = (row.get("keyword") or row.get("Keyword") or "").strip()
                 if not raw_keyword:
                     errors += 1
                     self.error_details.append({
@@ -78,12 +78,25 @@ class KeywordImporter(BaseImporter):
                     })
                     continue
 
-                # Parse search_volume, difficulty, position
-                search_vol, sv_err = parse_optional_int(row.get("search_volume"), "search_volume")
-                difficulty_val, diff_err = parse_optional_float(row.get("difficulty"), "difficulty")
-                pos_val, pos_err = parse_optional_int(row.get("position"), "position")
+                # Parse search_volume, difficulty, position, cpc
+                search_vol, sv_err = parse_optional_int(
+                    row.get("search_volume") if "search_volume" in row else row.get("Search Volume"),
+                    "search_volume"
+                )
+                difficulty_val, diff_err = parse_optional_float(
+                    row.get("difficulty") if "difficulty" in row else row.get("Difficulty"),
+                    "difficulty"
+                )
+                pos_val, pos_err = parse_optional_int(
+                    row.get("position") if "position" in row else row.get("Position"),
+                    "position"
+                )
+                cpc_val, cpc_err = parse_optional_float(
+                    row.get("cpc") if "cpc" in row else row.get("CPC"),
+                    "cpc"
+                )
 
-                row_error_msgs = [err for err in (sv_err, diff_err, pos_err) if err]
+                row_error_msgs = [err for err in (sv_err, diff_err, pos_err, cpc_err) if err]
                 if row_error_msgs:
                     errors += 1
                     msg = f"Row {row_num}: " + "; ".join(row_error_msgs)
@@ -101,11 +114,13 @@ class KeywordImporter(BaseImporter):
                         project_id=self.project_id,
                         dataset_id=self.dataset.id,
                         keyword=raw_keyword,
-                        target_url=(row.get("target_url") or "").strip() or None,
+                        target_url=(row.get("target_url") or row.get("Target URL") or row.get("url") or row.get("URL") or "").strip() or None,
                         search_volume=search_vol if search_vol is not None else 0,
                         difficulty=difficulty_val if difficulty_val is not None else 0.0,
-                        intent=(row.get("intent") or "").strip() or None,
-                        position=pos_val  # Preserves 0 as integer 0, None for empty/missing
+                        intent=(row.get("intent") or row.get("Intent") or "").strip() or "Informational",
+                        position=pos_val,  # Preserves 0 as integer 0, None for empty/missing
+                        cpc=cpc_val if cpc_val is not None else 0.0,
+                        country=(row.get("country") or row.get("Country") or "").strip() or None
                     )
                     self.db.add(kw)
                     successful += 1

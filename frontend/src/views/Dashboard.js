@@ -55,7 +55,9 @@ export class Dashboard {
         this.sortOption = 'health_desc';
         this.trendTimeframe = '30D';
         this.healthTrend = [];
-        this.hasLoadedOnce = false;
+        this.crawlIssuesTrend = [];
+        this.aggregateHealthTrend = [];
+        this.unsubProjectStore = null;
     }
 
     render() {
@@ -77,397 +79,711 @@ export class Dashboard {
         return this.element;
     }
 
+    unmount() {
+        if (this.unsubProjectStore) {
+            this.unsubProjectStore();
+            this.unsubProjectStore = null;
+        }
+    }
+
     async mounted() {
         try {
             await projectStore.ensureInitialized();
 
-            const overviewData = await dashboardService.getWorkspaceOverview();
-            const summary = overviewData.workspace_summary || {};
-            this.allProjects = overviewData.projects || [];
-            const recentCrawls = overviewData.recent_crawls || [];
-            const accountIssues = overviewData.account_issues_summary || [];
-            this.healthTrend = overviewData.health_trend || [];
-            const healthTrend = this.healthTrend;
-
-            if (!this.allProjects || this.allProjects.length === 0) {
-                this.element.innerHTML = `
-                    <div class="header" style="margin-bottom: 24px;">
-                        <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.06em;">ACCOUNT OVERVIEW</div>
-                        <h1 style="font-size: 24px; font-weight: 700; margin-top: 2px;">Your Account Overview</h1>
-                    </div>
-                    <div class="card" style="padding: 48px 32px; text-align: center; max-width: 600px; margin: 32px auto;">
-                        <div style="width: 64px; height: 64px; border-radius: 16px; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center; margin: 0 auto 24px;">
-                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                        </div>
-                        <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 10px; color: var(--text-primary);">Add Your First Website</h2>
-                        <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 24px; line-height: 1.6;">Add your website domain to begin running scans, discovering pages, identifying technical health issues, and tracking Google search rankings.</p>
-                        <button class="btn btn-primary btn-lg" onclick="window.showCreateProjectModal()" style="font-weight: 600;">+ Add Your First Website</button>
-                    </div>
-                `;
-                return;
+            // Subscribe to projectStore changes if not already subscribed
+            if (!this.unsubProjectStore) {
+                this.unsubProjectStore = projectStore.subscribe(() => {
+                    this.mounted();
+                });
             }
 
-            const totalSites = summary.total_websites || this.allProjects.length;
-            const avgHealth = (summary.average_health_score !== undefined && summary.average_health_score !== null) ? summary.average_health_score : null;
-            const totalCrawledPages = summary.total_crawled_pages || 0;
-            const totalIssuesCount = summary.total_critical_issues || 0;
+            const selectedProjectId = projectStore.getSelectedProjectId();
+            const isWorkspaceContext = !selectedProjectId || selectedProjectId === 'all';
 
-            this.element.innerHTML = `
-                <!-- HEADER SECTION -->
-                <div class="header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
-                    <div>
-                        <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 0 0 4px 0;">SEO Overview</h1>
-                        <p style="color: var(--text-secondary); font-size: 13.5px; margin: 0;">Overview of your connected websites, health summaries, recent activity, and quick actions.</p>
-                    </div>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <button class="btn btn-primary btn-sm" onclick="window.showCreateProjectModal()" style="display: inline-flex; align-items: center; gap: 6px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                            Add Website
-                        </button>
-                        <button class="btn btn-secondary btn-sm" onclick="window.startCrawlFromOverview()" style="display: inline-flex; align-items: center; gap: 6px;">
-                            Scan Website
-                        </button>
-                        <a href="/import" data-link class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
-                            Import Data
-                        </a>
-                        <a href="/reports" data-link class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
-                            Download Report
-                        </a>
-                    </div>
-                </div>
-
-                <!-- LEVEL 1: ACCOUNT PORTFOLIO SUMMARY CARDS -->
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 28px;">
-                    <div class="card" style="padding: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                            <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">
-                                Total Websites ${renderTooltip('Number of websites registered in your account.')}
-                            </div>
-                            <span class="badge badge-secondary" style="font-size: 10px;">Account</span>
-                        </div>
-                        <div style="font-size: 28px; font-weight: 800; color: var(--text-primary);">${totalSites}</div>
-                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Connected websites</div>
-                    </div>
-
-                    <div class="card" style="padding: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                            <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">
-                                Average Health Score ${renderTooltip('Overall health score across all your websites (0-100). Higher is better.')}
-                            </div>
-                            ${renderSourceBadge('crawl')}
-                        </div>
-                        ${avgHealth !== null ? `
-                            <div style="font-size: 28px; font-weight: 800; color: ${avgHealth >= 80 ? '#10b981' : (avgHealth >= 60 ? '#f59e0b' : '#ef4444')};">${avgHealth}<span style="font-size: 16px; font-weight: 600;">/100</span></div>
-                        ` : `
-                            <div style="font-size: 20px; font-weight: 700; color: var(--text-secondary); margin-top: 4px;">Not yet scored</div>
-                        `}
-                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Overall health across websites</div>
-                    </div>
-
-                    <div class="card" style="padding: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                            <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">
-                                Pages Found ${renderTooltip('Total number of pages discovered during your latest website scans.')}
-                            </div>
-                            ${renderSourceBadge('crawl')}
-                        </div>
-                        <div style="font-size: 28px; font-weight: 800; color: #3b82f6;">${totalCrawledPages.toLocaleString()}</div>
-                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Discovered pages on your sites</div>
-                    </div>
-
-                    <div class="card" style="padding: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                            <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">
-                                Critical Problems ${renderTooltip('Problems that may seriously affect your website search visibility or usability.')}
-                            </div>
-                            ${renderSourceBadge('crawl')}
-                        </div>
-                        <div style="font-size: 28px; font-weight: 800; color: ${totalIssuesCount > 0 ? '#ef4444' : '#10b981'};">${totalIssuesCount}</div>
-                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Problems requiring attention</div>
-                    </div>
-                </div>
-
-                <!-- LEVEL 2: WEBSITE LIST TABLE -->
-                <div class="card" style="padding: 24px; margin-bottom: 28px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 12px;">
-                        <div>
-                            <h2 style="font-size: 18px; font-weight: 700; margin: 0; color: var(--text-primary);">Your Websites</h2>
-                            <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 2px;">Manage and monitor health checks across all your websites.</div>
-                        </div>
-
-                        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                            <input type="text" id="website-search-input" placeholder="Search websites..." style="padding: 7px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; width: 190px; background: var(--bg-subtle); color: var(--text-primary);"/>
-                            
-                            <select id="website-status-filter" style="padding: 7px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-subtle); color: var(--text-primary); cursor: pointer;">
-                                <option value="all">All Statuses</option>
-                                <option value="Healthy">Healthy</option>
-                                <option value="Needs Attention">Needs Attention</option>
-                                <option value="Critical">Critical</option>
-                                <option value="Never Crawled">Never Scanned</option>
-                            </select>
-
-                            <select id="website-sort-option" style="padding: 7px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-subtle); color: var(--text-primary); cursor: pointer;">
-                                <option value="health_desc">Sort: Health (High to Low)</option>
-                                <option value="health_asc">Sort: Health (Low to High)</option>
-                                <option value="name_asc">Sort: Name (A - Z)</option>
-                                <option value="issues_desc">Sort: Critical Problems</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    <div id="portfolio-table-container"></div>
-                </div>
-
-                <!-- DYNAMIC AI ASSISTANT SECTION -->
-                <div class="card" style="padding: 24px; margin-bottom: 28px; border-left: 4px solid #3b82f6; background: var(--bg-card);">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
-                        <div>
-                            <div style="display: flex; align-items: center; gap: 10px;">
-                                <h3 style="font-size: 17px; font-weight: 700; margin: 0; color: var(--text-primary);" id="ai-card-title">AI Assistant</h3>
-                                <span id="gemini-status-badge" class="badge badge-secondary" style="font-size: 11px;">Checking status...</span>
-                            </div>
-                            <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 4px;" id="ai-card-subtext">
-                                Automated assistant providing plain-English explanations and step-by-step guidance based on real scan data.
-                            </div>
-                        </div>
-
-                        <div style="display: flex; gap: 10px;" id="gemini-actions">
-                            <button type="button" id="btn-test-gemini" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
-                                ⚡ Test Connection
-                            </button>
-                            <button type="button" id="btn-analyze-gemini" class="btn btn-primary btn-sm" style="display: inline-flex; align-items: center; gap: 6px; background: #2563eb;">
-                                ✨ Ask AI Assistant
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- AI OUTPUT / RESULT BOX -->
-                    <div id="gemini-output-box" style="padding: 16px; background: var(--bg-subtle); border-radius: 10px; border: 1px solid var(--border); font-size: 13px; color: var(--text-secondary);">
-                        <div id="gemini-default-msg">
-                            Click <strong id="ai-test-btn-label">Test Connection</strong> to check your AI connection or <strong id="ai-analyze-btn-label">Ask AI Assistant</strong> to review your selected website.
-                        </div>
-                    </div>
-                </div>
-
-                <!-- WEBSITE HEALTH TREND -->
-                <div class="card" style="padding: 24px; margin-bottom: 28px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 12px;">
-                        <div>
-                            <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--text-primary);">Website Health Progress Over Time</h3>
-                            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Track how your website's health score improves across recent scans.</div>
-                        </div>
-                        <div id="trend-timeframe-pills" style="display: flex; gap: 4px; background: var(--bg-subtle); padding: 4px; border-radius: 8px; border: 1px solid var(--border);">
-                            <button class="pill-btn ${this.trendTimeframe === '7D' ? 'active' : ''}" data-tf="7D" style="padding: 4px 10px; font-size: 11px;">7 Days</button>
-                            <button class="pill-btn ${this.trendTimeframe === '30D' ? 'active' : ''}" data-tf="30D" style="padding: 4px 10px; font-size: 11px;">30 Days</button>
-                            <button class="pill-btn ${this.trendTimeframe === '90D' ? 'active' : ''}" data-tf="90D" style="padding: 4px 10px; font-size: 11px;">90 Days</button>
-                        </div>
-                    </div>
-
-                    <div id="health-trend-content"></div>
-                </div>
-
-                <!-- TOP PROBLEMS REQUIRING ATTENTION -->
-                <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 28px;">
-                    <div style="padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-                        <div>
-                            <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--text-primary);">Top Problems Requiring Attention</h3>
-                            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Critical problems detected during website health checks</div>
-                        </div>
-                        <a href="/technical" data-link class="btn btn-secondary btn-sm" style="font-size: 11.5px;">View Health Checks &rarr;</a>
-                    </div>
-                    ${accountIssues.length === 0 ? `
-                        <div style="padding: 28px; text-align: center; color: var(--text-secondary); font-size: 13.5px;">
-                            ✓ Zero critical problems detected across your websites.
-                        </div>
-                    ` : `
-                        <div style="overflow-x: auto;">
-                            <table class="data-table">
-                                <thead>
-                                    <tr>
-                                        <th style="padding: 12px 20px;">Severity</th>
-                                        <th style="padding: 12px 20px;">Problem Title</th>
-                                        <th style="padding: 12px 20px;">Affected Websites</th>
-                                        <th style="padding: 12px 20px;">Affected Pages</th>
-                                        <th style="padding: 12px 20px; text-align: right;">Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${accountIssues.map(iss => {
-                                        const isCrit = iss.severity === 'critical' || iss.severity === 'error';
-                                        const badgeClass = isCrit ? 'badge-critical' : (iss.severity === 'warning' ? 'badge-warning' : 'badge-info');
-                                        return `
-                                            <tr>
-                                                <td style="padding: 13px 20px;"><span class="badge ${badgeClass}">${(iss.severity || 'HIGH').toUpperCase()}</span></td>
-                                                <td style="padding: 13px 20px; font-weight: 600; color: var(--text-primary);">${this.escapeHtml(iss.title)}</td>
-                                                <td style="padding: 13px 20px; font-size: 13px;">${iss.affected_websites_count} ${iss.affected_websites_count === 1 ? 'website' : 'websites'}</td>
-                                                <td style="padding: 13px 20px; font-family: monospace; font-size: 12px; color: var(--text-secondary);">${iss.total_urls_count} pages</td>
-                                                <td style="padding: 13px 20px; text-align: right;"><a href="/technical" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">View Proof &rarr;</a></td>
-                                            </tr>
-                                        `;
-                                    }).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    `}
-                </div>
-            `;
-
-            this.bindPortfolioControls();
-            this.renderPortfolioTable();
-            this.bindTrendPills();
-            await this.bindGeminiSection();
-
+            if (isWorkspaceContext) {
+                await this.renderWorkspaceOverview();
+            } else {
+                await this.renderIndividualProjectOverview(selectedProjectId);
+            }
         } catch (e) {
-            if (e.name === 'TypeError' || e.message.includes('fetch') || apiClient.status === 'OFFLINE') {
+            if (e.name === 'TypeError' || (e.message && e.message.includes('fetch')) || apiClient.status === 'OFFLINE') {
                 renderBackendOfflineState(this.element, `Unable to connect right now. Please try again.`, () => this.mounted());
             } else {
-                renderFeatureErrorState(this.element, "Account Overview Error", e.message || "Failed to load account overview.", () => this.mounted());
+                renderFeatureErrorState(this.element, "Overview Error", e.message || "Failed to load overview data.", () => this.mounted());
             }
         }
     }
 
-    async bindGeminiSection() {
-        const titleEl = this.element.querySelector('#ai-card-title');
-        const badge = this.element.querySelector('#gemini-status-badge');
-        const btnTest = this.element.querySelector('#btn-test-gemini');
-        const btnAnalyze = this.element.querySelector('#btn-analyze-gemini');
-        const outputBox = this.element.querySelector('#gemini-output-box');
+    // ==========================================
+    // ALL WORKSPACES OVERVIEW (Req 3A, 5, 6)
+    // ==========================================
+    async renderWorkspaceOverview() {
+        const overviewData = await dashboardService.getWorkspaceOverview();
+        this.allProjects = overviewData.projects || [];
+        const accountIssues = overviewData.account_issues_summary || [];
+        this.healthTrend = overviewData.health_trend || [];
+        this.aggregateHealthTrend = overviewData.aggregate_health_trend || [];
+        this.crawlIssuesTrend = overviewData.crawl_issues_trend || [];
 
-        let activeProvider = "groq";
-        let testEndpoint = "/api/ai/groq/test";
-
-        try {
-            const statusData = await apiClient.get('/api/ai/status');
-            activeProvider = (statusData.provider || "groq").toLowerCase();
-            let providerTitle = "AI Assistant";
-
-            if (titleEl) titleEl.innerText = providerTitle;
-            if (btnTest) btnTest.innerText = `⚡ Test Connection`;
-            if (btnAnalyze) btnAnalyze.innerText = `✨ Ask AI Assistant`;
-
-            if (badge) {
-                if (statusData && statusData.configured) {
-                    badge.className = 'badge badge-success';
-                    badge.innerHTML = `✓ Connected`;
-                } else {
-                    badge.className = 'badge badge-secondary';
-                    badge.innerHTML = `Not Configured`;
-                }
-            }
-        } catch (err) {
-            if (badge) {
-                badge.className = 'badge badge-secondary';
-                badge.innerHTML = `Not Configured`;
-            }
+        if (!this.allProjects || this.allProjects.length === 0) {
+            this.element.innerHTML = `
+                <div class="header" style="margin-bottom: 24px;">
+                    <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.06em;">ALL WORKSPACES OVERVIEW</div>
+                    <h1 style="font-size: 24px; font-weight: 700; margin-top: 2px;">Your Account Overview</h1>
+                </div>
+                <div class="card" style="padding: 48px 32px; text-align: center; max-width: 600px; margin: 32px auto;">
+                    <div style="width: 64px; height: 64px; border-radius: 16px; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center; margin: 0 auto 24px;">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                    </div>
+                    <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 10px; color: var(--text-primary);">Add Your First Website</h2>
+                    <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 24px; line-height: 1.6;">Add your website domain to begin running scans, discovering pages, identifying technical health issues, and tracking Google search rankings.</p>
+                    <button class="btn btn-primary btn-lg" onclick="window.showCreateProjectModal()" style="font-weight: 600;">+ Add Your First Website</button>
+                </div>
+            `;
+            return;
         }
 
-        if (btnTest) {
-            btnTest.addEventListener('click', async (e) => {
-                e.preventDefault();
-                btnTest.disabled = true;
-                const origText = btnTest.innerHTML;
-                btnTest.innerText = 'Testing...';
+        // REQUIREMENT 5: The 4 KPI cards (Total Websites, Critical Problems, Pages Found, Average Health Score)
+        // are explicitly REMOVED from the All Workspaces Overview.
+        this.element.innerHTML = `
+            <!-- HEADER SECTION -->
+            <div class="header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+                <div>
+                    <div style="font-size: 11px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 0.06em;">ALL WORKSPACES</div>
+                    <h1 style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin: 2px 0 4px 0;">Portfolio Overview</h1>
+                    <p style="color: var(--text-secondary); font-size: 13.5px; margin: 0;">Cross-project health progress, crawl trends, and aggregated site audits across your authorized projects.</p>
+                </div>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-primary btn-sm" onclick="window.showCreateProjectModal()" style="display: inline-flex; align-items: center; gap: 6px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        Add Website
+                    </button>
+                    <button class="btn btn-secondary btn-sm" onclick="window.startCrawlFromOverview()" style="display: inline-flex; align-items: center; gap: 6px;">
+                        Scan Website
+                    </button>
+                    <a href="/import" data-link class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                        Import Data
+                    </a>
+                    <a href="/reports" data-link class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                        Download Report
+                    </a>
+                </div>
+            </div>
 
-                try {
-                    const testRes = await apiClient.post(testEndpoint, {});
-                    if (testRes.status === 'connected' || testRes.available) {
-                        if (outputBox) {
-                            outputBox.innerHTML = `
-                                <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); color: #10b981; padding: 14px; border-radius: 8px;">
-                                    <strong style="display: block; margin-bottom: 4px; font-size: 14px;">✓ Connection Successful</strong>
-                                    <span>AI Assistant is connected and ready to analyze your website scans.</span>
-                                </div>
-                            `;
-                        }
-                    } else {
-                        if (outputBox) {
-                            outputBox.innerHTML = `
-                                <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 14px; border-radius: 8px;">
-                                    <strong style="display: block; margin-bottom: 4px; font-size: 14px;">✕ Connection Needed</strong>
-                                    <span>AI Assistant is not configured yet. You can configure AI settings in Account Settings -> Connected Accounts.</span>
-                                </div>
-                            `;
-                        }
-                    }
-                } catch (err) {
-                    if (outputBox) {
-                        outputBox.innerHTML = `
-                            <div style="background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; padding: 14px; border-radius: 8px;">
-                                <strong>✕ Connection Error:</strong> Unable to test AI connection right now.
-                            </div>
-                        `;
-                    }
-                } finally {
-                    btnTest.disabled = false;
-                    btnTest.innerHTML = origText;
-                }
-            });
-        }
+            <!-- REQUIREMENT 6: GRAPH 1 - WORKSPACE HEALTH TREND -->
+            <div class="card" style="padding: 24px; margin-bottom: 24px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <h2 style="font-size: 17px; font-weight: 700; margin: 0; color: var(--text-primary);">Workspace Health Trend</h2>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Average canonical audit health score across all authorized website scans.</div>
+                    </div>
+                    <div id="ws-health-timeframe-pills" style="display: flex; gap: 4px; background: var(--bg-subtle); padding: 4px; border-radius: 8px; border: 1px solid var(--border);">
+                        <button class="pill-btn ${this.trendTimeframe === '7D' ? 'active' : ''}" data-tf="7D" style="padding: 4px 10px; font-size: 11px;">7 Days</button>
+                        <button class="pill-btn ${this.trendTimeframe === '30D' ? 'active' : ''}" data-tf="30D" style="padding: 4px 10px; font-size: 11px;">30 Days</button>
+                        <button class="pill-btn ${this.trendTimeframe === '90D' ? 'active' : ''}" data-tf="90D" style="padding: 4px 10px; font-size: 11px;">90 Days</button>
+                        <button class="pill-btn ${this.trendTimeframe === 'ALL' ? 'active' : ''}" data-tf="ALL" style="padding: 4px 10px; font-size: 11px;">All Time</button>
+                    </div>
+                </div>
+                <div id="workspace-health-trend-container"></div>
+            </div>
 
-        if (btnAnalyze) {
-            btnAnalyze.addEventListener('click', async (e) => {
-                e.preventDefault();
-                const selectedProjId = projectStore.getSelectedProjectId();
+            <!-- REQUIREMENT 6: GRAPH 2 - WORKSPACE CRAWL & ISSUES TREND -->
+            <div class="card" style="padding: 24px; margin-bottom: 28px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <h2 style="font-size: 17px; font-weight: 700; margin: 0; color: var(--text-primary);">Workspace Crawl & Issues Trend</h2>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Pages crawled and critical issues detected in recent website scan snapshots.</div>
+                    </div>
+                </div>
+                <div id="workspace-crawl-issues-trend-container"></div>
+            </div>
 
-                if (!selectedProjId) {
-                    alert('Please select a website first.');
-                    return;
-                }
+            <!-- WEBSITES DIRECTORY TABLE -->
+            <div class="card" style="padding: 24px; margin-bottom: 28px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <h2 style="font-size: 18px; font-weight: 700; margin: 0; color: var(--text-primary);">Your Websites</h2>
+                        <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 2px;">Manage and monitor health checks across all your websites.</div>
+                    </div>
 
-                btnAnalyze.disabled = true;
-                const origText = btnAnalyze.innerHTML;
-                btnAnalyze.innerText = 'Analyzing Scan Data...';
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                        <input type="text" id="website-search-input" placeholder="Search websites..." style="padding: 7px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; width: 190px; background: var(--bg-subtle); color: var(--text-primary);"/>
+                        
+                        <select id="website-status-filter" style="padding: 7px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-subtle); color: var(--text-primary); cursor: pointer;">
+                            <option value="all">All Statuses</option>
+                            <option value="Healthy">Healthy</option>
+                            <option value="Needs Attention">Needs Attention</option>
+                            <option value="Critical">Critical</option>
+                            <option value="Never Crawled">Never Scanned</option>
+                        </select>
 
-                if (outputBox) {
-                    outputBox.innerHTML = `
-                        <div style="padding: 24px; text-align: center; color: var(--primary);">
-                            <span class="crawl-spinner" style="width: 20px; height: 20px; border-width: 3px; display: inline-block; vertical-align: middle; margin-right: 8px;"></span>
-                            Reviewing scan metrics, health findings, and page signals with AI Assistant...
+                        <select id="website-sort-option" style="padding: 7px 12px; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-subtle); color: var(--text-primary); cursor: pointer;">
+                            <option value="health_desc">Sort: Health (High to Low)</option>
+                            <option value="health_asc">Sort: Health (Low to High)</option>
+                            <option value="name_asc">Sort: Name (A - Z)</option>
+                            <option value="issues_desc">Sort: Critical Problems</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="portfolio-table-container"></div>
+            </div>
+
+            <!-- TOP PROBLEMS REQUIRING ATTENTION -->
+            <div class="card" style="padding: 0; overflow: hidden; margin-bottom: 28px;">
+                <div style="padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                    <div>
+                        <h3 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--text-primary);">Top Problems Requiring Attention</h3>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Critical problems detected during website health checks</div>
+                    </div>
+                    <a href="/technical" data-link class="btn btn-secondary btn-sm" style="font-size: 11.5px;">View Health Checks &rarr;</a>
+                </div>
+                ${accountIssues.length === 0 ? `
+                    <div style="padding: 28px; text-align: center; color: var(--text-secondary); font-size: 13.5px;">
+                        ✓ Zero critical problems detected across your websites.
+                    </div>
+                ` : `
+                    <div style="overflow-x: auto;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th style="padding: 12px 20px;">Severity</th>
+                                    <th style="padding: 12px 20px;">Problem Title</th>
+                                    <th style="padding: 12px 20px;">Affected Websites</th>
+                                    <th style="padding: 12px 20px;">Affected Pages</th>
+                                    <th style="padding: 12px 20px; text-align: right;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${accountIssues.map(iss => {
+                                    const isCrit = iss.severity === 'critical' || iss.severity === 'error';
+                                    const badgeClass = isCrit ? 'badge-critical' : (iss.severity === 'warning' ? 'badge-warning' : 'badge-info');
+                                    return `
+                                        <tr>
+                                            <td style="padding: 13px 20px;"><span class="badge ${badgeClass}">${(iss.severity || 'HIGH').toUpperCase()}</span></td>
+                                            <td style="padding: 13px 20px; font-weight: 600; color: var(--text-primary);">${this.escapeHtml(iss.title)}</td>
+                                            <td style="padding: 13px 20px; font-size: 13px;">${iss.affected_websites_count} ${iss.affected_websites_count === 1 ? 'website' : 'websites'}</td>
+                                            <td style="padding: 13px 20px; font-family: monospace; font-size: 12px; color: var(--text-secondary);">${iss.total_urls_count} pages</td>
+                                            <td style="padding: 13px 20px; text-align: right;"><a href="/technical" data-link class="btn btn-secondary btn-sm" style="font-size: 11px;">View Proof &rarr;</a></td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `}
+            </div>
+        `;
+
+        this.bindPortfolioControls();
+        this.renderPortfolioTable();
+        this.bindWorkspaceTrendPills();
+        this.renderWorkspaceHealthTrend();
+        this.renderWorkspaceCrawlIssuesTrend();
+    }
+
+    // ==========================================
+    // INDIVIDUAL PROJECT OVERVIEW (Req 3B, 4, 7, 8)
+    // ==========================================
+    async renderIndividualProjectOverview(projectId) {
+        const projData = await dashboardService.getProjectOverview(projectId);
+        const p = projData.project || {};
+        const kpis = projData.kpis || {};
+        const hasCrawl = projData.has_crawl;
+        const previews = projData.previews || {};
+        const healthTrend = projData.health_trend || [];
+        const issuesTrend = projData.issues_trend || [];
+
+        const hScore = kpis.health_score;
+        const totalPages = kpis.total_pages;
+        const totalRuns = kpis.total_runs || 0;
+        const criticalIssues = kpis.critical_problems;
+
+        this.element.innerHTML = `
+            <!-- HEADER SECTION -->
+            <div class="header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+                <div>
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                        <span class="badge badge-primary" style="font-size: 10px; font-weight: 700; text-transform: uppercase;">PROJECT OVERVIEW</span>
+                        <span style="font-size: 12px; color: var(--text-tertiary);">•</span>
+                        <span style="font-size: 12.5px; color: var(--text-secondary); font-family: monospace;">${this.escapeHtml(p.domain || p.url || '')}</span>
+                    </div>
+                    <h1 style="font-size: 26px; font-weight: 800; color: var(--text-primary); margin: 0 0 4px 0;">${this.escapeHtml(p.name || 'Website Overview')}</h1>
+                    <p style="color: var(--text-secondary); font-size: 13.5px; margin: 0;">Dedicated audit insights, crawl history, and SEO metrics for this website.</p>
+                </div>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-primary btn-sm" onclick="window.startCrawlFromOverview('${p.id}', '${p.domain || p.url}')" style="display: inline-flex; align-items: center; gap: 6px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                        Scan Website
+                    </button>
+                    <a href="/technical" data-link class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                        Technical Audit
+                    </a>
+                    <a href="/reports" data-link class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 6px;">
+                        Export Report
+                    </a>
+                </div>
+            </div>
+
+            <!-- EMPTY STATE NOTICE IF NO CRAWL AVAILABLE -->
+            ${!hasCrawl ? `
+                <div class="card" style="padding: 24px; margin-bottom: 24px; border-left: 4px solid var(--primary); background: var(--bg-card); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+                    <div style="display: flex; align-items: center; gap: 16px;">
+                        <div style="width: 44px; height: 44px; border-radius: 10px; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
                         </div>
-                    `;
-                }
+                        <div>
+                            <strong style="font-size: 15px; color: var(--text-primary); display: block; margin-bottom: 2px;">No crawl data available yet.</strong>
+                            <span style="font-size: 13px; color: var(--text-secondary);">Run your first website scan to analyze technical health, discover pages, and find SEO issues.</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="window.startCrawlFromOverview('${p.id}', '${p.domain || p.url}')">Run First Scan Now</button>
+                </div>
+            ` : ''}
 
-                try {
-                    const res = await apiClient.post(`/api/projects/${selectedProjId}/ai/analyze`, {});
-                    if (res.status === 'AI_ANALYSIS_COMPLETE' && outputBox) {
-                        const insights = res.insights || [];
-                        const actions = res.actions || [];
+            <!-- REQUIREMENT 4: FOUR PRIMARY PROJECT METRICS -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 28px;">
+                <!-- 1. Health Score -->
+                <div class="card" style="padding: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">
+                            Health Score ${renderTooltip('Canonical site audit health score (0-100) based on all evaluated SEO rules.')}
+                        </div>
+                        ${renderSourceBadge('crawl')}
+                    </div>
+                    ${hScore !== null && hScore !== undefined ? `
+                        <div style="font-size: 28px; font-weight: 800; color: ${hScore >= 80 ? '#10b981' : (hScore >= 60 ? '#f59e0b' : '#ef4444')};">
+                            ${hScore}<span style="font-size: 16px; font-weight: 600; color: var(--text-tertiary);">/100</span>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Latest canonical audit score</div>
+                    ` : `
+                        <div style="font-size: 18px; font-weight: 700; color: var(--text-secondary); margin-top: 6px;">Not yet scored</div>
+                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Run a scan to calculate</div>
+                    `}
+                </div>
 
-                        let insightsHTML = insights.map(i => `
-                            <div style="margin-bottom: 12px; padding: 12px; background: var(--bg-card); border-radius: 8px; border-left: 3px solid ${i.severity === 'Critical' ? '#ef4444' : '#f59e0b'}; border-top: 1px solid var(--border); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                                    <strong style="color: var(--text-primary); font-size: 13.5px;">${this.escapeHtml(i.finding || i.title || 'Finding')}</strong>
-                                    <span class="badge ${i.severity === 'Critical' ? 'badge-critical' : 'badge-warning'}" style="font-size: 10px;">${i.severity}</span>
-                                </div>
-                                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">${this.escapeHtml(i.impact || i.details || '')}</div>
-                                <div style="font-size: 12px; color: #10b981; font-weight: 600;">Recommended Action: ${this.escapeHtml(i.recommendation || '')}</div>
-                            </div>
-                        `).join('');
+                <!-- 2. Total Pages -->
+                <div class="card" style="padding: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">
+                            Total Pages ${renderTooltip('Number of crawled pages found during the latest completed scan.')}
+                        </div>
+                        ${renderSourceBadge('crawl')}
+                    </div>
+                    ${totalPages !== null && totalPages !== undefined ? `
+                        <div style="font-size: 28px; font-weight: 800; color: #3b82f6;">${totalPages.toLocaleString()}</div>
+                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Pages in latest completed crawl</div>
+                    ` : `
+                        <div style="font-size: 18px; font-weight: 700; color: var(--text-secondary); margin-top: 6px;">No pages crawled</div>
+                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Awaiting initial scan</div>
+                    `}
+                </div>
 
-                        outputBox.innerHTML = `
-                            <div style="color: var(--text-primary);">
-                                <div style="font-size: 14px; font-weight: 700; color: #3b82f6; margin-bottom: 8px;">Summary & Recommendations</div>
-                                <p style="font-size: 13px; line-height: 1.5; color: var(--text-primary); margin-bottom: 12px;">${this.escapeHtml(res.summary || 'Analysis completed.')}</p>
-                                ${insights.length > 0 ? `<div style="margin-top: 12px;">${insightsHTML}</div>` : ''}
+                <!-- 3. Total Runs -->
+                <div class="card" style="padding: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">
+                            Total Runs ${renderTooltip('Total number of completed crawl sessions recorded for this website.')}
+                        </div>
+                        <span class="badge badge-secondary" style="font-size: 10px;">History</span>
+                    </div>
+                    <div style="font-size: 28px; font-weight: 800; color: var(--text-primary);">${totalRuns}</div>
+                    <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Crawl snapshots recorded</div>
+                </div>
+
+                <!-- 4. Critical Problems -->
+                <div class="card" style="padding: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                        <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">
+                            Critical Problems ${renderTooltip('Critical severity problems found in the latest scan requiring urgent resolution.')}
+                        </div>
+                        ${renderSourceBadge('crawl')}
+                    </div>
+                    ${criticalIssues !== null && criticalIssues !== undefined ? `
+                        <div style="font-size: 28px; font-weight: 800; color: ${criticalIssues > 0 ? '#ef4444' : '#10b981'};">${criticalIssues}</div>
+                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">${criticalIssues > 0 ? 'Urgent issues detected' : 'Zero critical problems'}</div>
+                    ` : `
+                        <div style="font-size: 18px; font-weight: 700; color: var(--text-secondary); margin-top: 6px;">None recorded</div>
+                        <div style="font-size: 12px; color: var(--text-tertiary); margin-top: 4px;">Awaiting initial scan</div>
+                    `}
+                </div>
+            </div>
+
+            <!-- REQUIREMENT 7: TWO REAL DATA GRAPHS FOR SELECTED PROJECT -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 20px; margin-bottom: 28px;">
+                <!-- Graph 1: Health Score Over Time -->
+                <div class="card" style="padding: 24px;">
+                    <div style="margin-bottom: 16px;">
+                        <h2 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--text-primary);">Health Score Over Time</h2>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Canonical site health score across crawl history for ${this.escapeHtml(p.name)}.</div>
+                    </div>
+                    <div id="project-health-trend-container">
+                        ${this.renderSingleLineChart(healthTrend, 'health_score', '#10b981', 'Health Score', 0, 100)}
+                    </div>
+                </div>
+
+                <!-- Graph 2: Issues / Crawl Trend -->
+                <div class="card" style="padding: 24px;">
+                    <div style="margin-bottom: 16px;">
+                        <h2 style="font-size: 16px; font-weight: 700; margin: 0; color: var(--text-primary);">Issues / Crawl Trend</h2>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">Pages crawled and critical issues detected across scan runs.</div>
+                    </div>
+                    <div id="project-issues-trend-container">
+                        ${this.renderDualBarChart(issuesTrend)}
+                    </div>
+                </div>
+            </div>
+
+            <!-- REQUIREMENT 8: PREVIEWS OF IMPORTANT PROJECT PAGES -->
+            <div style="margin-bottom: 28px;">
+                <div style="margin-bottom: 16px;">
+                    <h2 style="font-size: 18px; font-weight: 700; margin: 0; color: var(--text-primary);">Project Modules & Quick Navigation</h2>
+                    <div style="font-size: 12.5px; color: var(--text-secondary); margin-top: 2px;">Explore deeper SEO audit results, keyword ranks, and technical insights scoped to this website.</div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px;">
+                    <!-- Technical Audit Preview -->
+                    <a href="/technical" data-link class="card" style="padding: 20px; text-decoration: none; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s, box-shadow 0.2s; border-top: 3px solid #3b82f6;">
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <span style="font-size: 13px; font-weight: 700; color: var(--text-primary);">Technical Audit</span>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                             </div>
-                        `;
-                    }
-                } catch (err) {
-                    if (outputBox) {
-                        outputBox.innerHTML = `
-                            <div style="padding: 14px; background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3); color: #ef4444; border-radius: 8px;">
-                                <strong>✕ Analysis Error:</strong> ${this.escapeHtml(err.message || 'Unable to complete AI analysis.')}
+                            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.4;">Evaluate HTTP status codes, missing meta tags, canonicals, robots.txt, and structured data.</p>
+                        </div>
+                        <div style="font-size: 12.5px; font-weight: 600; color: var(--primary);">
+                            ${previews.technical_audit?.health_score !== null && previews.technical_audit?.health_score !== undefined
+                                ? `Score: ${previews.technical_audit.health_score}/100 • ${previews.technical_audit.critical_issues || 0} critical`
+                                : 'Awaiting crawl audit'}
+                        </div>
+                    </a>
+
+                    <!-- Keywords Preview -->
+                    <a href="/keywords" data-link class="card" style="padding: 20px; text-decoration: none; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s, box-shadow 0.2s; border-top: 3px solid #10b981;">
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <span style="font-size: 13px; font-weight: 700; color: var(--text-primary);">Keyword Research</span>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                             </div>
-                        `;
-                    }
-                } finally {
-                    btnAnalyze.disabled = false;
-                    btnAnalyze.innerHTML = origText;
-                }
-            });
-        }
+                            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.4;">Track targeted search terms, discover keyword opportunities, and inspect on-page occurrence evidence.</p>
+                        </div>
+                        <div style="font-size: 12.5px; font-weight: 600; color: #10b981;">
+                            ${previews.keywords?.total_keywords || 0} tracked keywords
+                        </div>
+                    </a>
+
+                    <!-- Search Rankings Preview -->
+                    <a href="/rankings" data-link class="card" style="padding: 20px; text-decoration: none; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s, box-shadow 0.2s; border-top: 3px solid #8b5cf6;">
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <span style="font-size: 13px; font-weight: 700; color: var(--text-primary);">Search Rankings</span>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                            </div>
+                            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.4;">Monitor Google desktop and mobile positions, SERP features, and ranking fluctuations over time.</p>
+                        </div>
+                        <div style="font-size: 12.5px; font-weight: 600; color: #8b5cf6;">
+                            ${previews.rankings?.total_ranked || 0} keywords with rank positions
+                        </div>
+                    </a>
+
+                    <!-- Crawled Pages Preview -->
+                    <a href="/crawl-data" data-link class="card" style="padding: 20px; text-decoration: none; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s, box-shadow 0.2s; border-top: 3px solid #f59e0b;">
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <span style="font-size: 13px; font-weight: 700; color: var(--text-primary);">Crawled Pages</span>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                            </div>
+                            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.4;">Inspect complete URL inventory, response codes, page titles, word counts, and page-level issues.</p>
+                        </div>
+                        <div style="font-size: 12.5px; font-weight: 600; color: #f59e0b;">
+                            ${previews.pages?.total_pages || 0} pages discovered
+                        </div>
+                    </a>
+
+                    <!-- Internal Links Preview -->
+                    <a href="/internal-links" data-link class="card" style="padding: 20px; text-decoration: none; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s, box-shadow 0.2s; border-top: 3px solid #ec4899;">
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <span style="font-size: 13px; font-weight: 700; color: var(--text-primary);">Internal Links</span>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                            </div>
+                            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.4;">Analyze site architecture, inlink distributions, broken internal links, and redirect chains.</p>
+                        </div>
+                        <div style="font-size: 12.5px; font-weight: 600; color: #ec4899;">
+                            ${previews.internal_links?.total_links || 0} total links • ${previews.internal_links?.broken_links || 0} broken
+                        </div>
+                    </a>
+
+                    <!-- Reports Preview -->
+                    <a href="/reports" data-link class="card" style="padding: 20px; text-decoration: none; display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s, box-shadow 0.2s; border-top: 3px solid #6366f1;">
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <span style="font-size: 13px; font-weight: 700; color: var(--text-primary);">Audit Reports</span>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                            </div>
+                            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.4;">Generate and download professional executive client reports in PDF and CSV format.</p>
+                        </div>
+                        <div style="font-size: 12.5px; font-weight: 600; color: #6366f1;">
+                            ${previews.reports?.report_count || 0} generated reports
+                        </div>
+                    </a>
+                </div>
+            </div>
+        `;
     }
 
+    // ==========================================
+    // WORKSPACE TREND CONTROLS & CHARTS
+    // ==========================================
+    bindWorkspaceTrendPills() {
+        const container = this.element.querySelector('#ws-health-timeframe-pills');
+        if (!container) return;
+
+        const pills = container.querySelectorAll('.pill-btn');
+        pills.forEach(pill => {
+            pill.addEventListener('click', (e) => {
+                pills.forEach(p => p.classList.remove('active'));
+                e.currentTarget.classList.add('active');
+                this.trendTimeframe = e.currentTarget.getAttribute('data-tf');
+                this.renderWorkspaceHealthTrend();
+                this.renderWorkspaceCrawlIssuesTrend();
+            });
+        });
+    }
+
+    renderWorkspaceHealthTrend() {
+        const container = this.element.querySelector('#workspace-health-trend-container');
+        if (!container) return;
+
+        const rawTrend = this.aggregateHealthTrend.length > 0 ? this.aggregateHealthTrend : this.healthTrend;
+        const filtered = this.filterTrendByTimeframe(rawTrend);
+
+        if (filtered.length === 0) {
+            container.innerHTML = `
+                <div style="padding: 36px 20px; text-align: center; background: var(--bg-subtle); border-radius: 10px; color: var(--text-secondary); font-size: 13.5px; border: 1px dashed var(--border);">
+                    <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-primary);">Building scan history (${this.trendTimeframe})</div>
+                    <div>No scans recorded within the selected timeframe. Run website scans across your projects to populate health score trends.</div>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = this.renderSingleLineChart(
+            filtered,
+            filtered[0].average_health_score !== undefined ? 'average_health_score' : 'health_score',
+            '#10b981',
+            'Average Health Score',
+            0,
+            100
+        );
+    }
+
+    renderWorkspaceCrawlIssuesTrend() {
+        const container = this.element.querySelector('#workspace-crawl-issues-trend-container');
+        if (!container) return;
+
+        const rawTrend = this.crawlIssuesTrend || [];
+        const filtered = this.filterTrendByTimeframe(rawTrend);
+
+        if (filtered.length === 0) {
+            container.innerHTML = `
+                <div style="padding: 36px 20px; text-align: center; background: var(--bg-subtle); border-radius: 10px; color: var(--text-secondary); font-size: 13.5px; border: 1px dashed var(--border);">
+                    <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-primary);">Building crawl history (${this.trendTimeframe})</div>
+                    <div>No crawl snapshots found within the selected timeframe.</div>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = this.renderDualBarChart(filtered);
+    }
+
+    filterTrendByTimeframe(trendList) {
+        if (!trendList || trendList.length === 0) return [];
+        if (this.trendTimeframe === 'ALL') return trendList;
+
+        let daysCutoff = 30;
+        if (this.trendTimeframe === '7D') daysCutoff = 7;
+        else if (this.trendTimeframe === '90D') daysCutoff = 90;
+
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - daysCutoff);
+
+        return trendList.filter(t => {
+            if (!t.timestamp) return true;
+            const d = new Date(t.timestamp);
+            return isNaN(d.getTime()) || d >= cutoffDate;
+        });
+    }
+
+    // ==========================================
+    // REUSABLE REAL-DATA SVG CHARTS
+    // ==========================================
+    renderSingleLineChart(data, valueKey, strokeColor = '#10b981', label = 'Health Score', minVal = 0, maxVal = 100) {
+        if (!data || data.length === 0) {
+            return `
+                <div style="padding: 32px 20px; text-align: center; background: var(--bg-subtle); border-radius: 10px; color: var(--text-secondary); font-size: 13.5px; border: 1px dashed var(--border);">
+                    <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-primary);">No scan history available</div>
+                    <div>Run your first website scan to generate trend data.</div>
+                </div>
+            `;
+        }
+
+        const width = 600;
+        const height = 180;
+        const padding = { top: 20, right: 30, bottom: 30, left: 40 };
+        const chartW = width - padding.left - padding.right;
+        const chartH = height - padding.top - padding.bottom;
+
+        const values = data.map(d => d[valueKey] !== null && d[valueKey] !== undefined ? Number(d[valueKey]) : 0);
+        const yMin = minVal;
+        const yMax = maxVal;
+        const yRange = yMax - yMin || 1;
+
+        const getX = (idx) => {
+            if (data.length === 1) return padding.left + chartW / 2;
+            return padding.left + (idx / (data.length - 1)) * chartW;
+        };
+
+        const getY = (val) => {
+            const clamped = Math.max(yMin, Math.min(yMax, val));
+            return padding.top + chartH - ((clamped - yMin) / yRange) * chartH;
+        };
+
+        const points = data.map((d, i) => ({
+            x: getX(i),
+            y: getY(values[i]),
+            val: values[i],
+            date: d.timestamp ? d.timestamp.split('T')[0] : `Scan #${i + 1}`,
+            domain: d.domain || ''
+        }));
+
+        const polylinePoints = points.map(p => `${p.x},${p.y}`).join(' ');
+
+        // Area path
+        const firstPt = points[0];
+        const lastPt = points[points.length - 1];
+        const bottomY = padding.top + chartH;
+        const areaPath = `M ${firstPt.x},${bottomY} L ${polylinePoints} L ${lastPt.x},${bottomY} Z`;
+
+        const gridLines = [0, 50, 100].map(val => {
+            const y = getY(val);
+            return `
+                <line x1="${padding.left}" y1="${y}" x2="${width - padding.right}" y2="${y}" stroke="var(--border)" stroke-width="1" stroke-dasharray="3,3" />
+                <text x="${padding.left - 8}" y="${y + 4}" font-size="10" fill="var(--text-tertiary)" text-anchor="end">${val}</text>
+            `;
+        }).join('');
+
+        const dots = points.map(p => `
+            <g class="chart-point" data-tip="${p.date}: ${p.val}/100">
+                <circle cx="${p.x}" cy="${p.y}" r="4.5" fill="${strokeColor}" stroke="#ffffff" stroke-width="2" style="cursor: pointer; transition: transform 0.2s;" />
+                <text x="${p.x}" y="${p.y - 10}" font-size="10" font-weight="700" fill="${strokeColor}" text-anchor="middle">${p.val}</text>
+            </g>
+        `).join('');
+
+        const xLabels = points.map((p, i) => {
+            if (data.length > 6 && i % 2 !== 0 && i !== points.length - 1) return '';
+            return `<text x="${p.x}" y="${height - 8}" font-size="10" fill="var(--text-tertiary)" text-anchor="middle">${p.date}</text>`;
+        }).join('');
+
+        return `
+            <div style="width: 100%; overflow-x: auto;">
+                <svg viewBox="0 0 ${width} ${height}" style="width: 100%; max-height: ${height}px; overflow: visible;" preserveAspectRatio="none">
+                    <defs>
+                        <linearGradient id="grad-${strokeColor.replace('#', '')}" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stop-color="${strokeColor}" stop-opacity="0.28" />
+                            <stop offset="100%" stop-color="${strokeColor}" stop-opacity="0.0" />
+                        </linearGradient>
+                    </defs>
+                    ${gridLines}
+                    <path d="${areaPath}" fill="url(#grad-${strokeColor.replace('#', '')})" />
+                    <polyline points="${polylinePoints}" fill="none" stroke="${strokeColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+                    ${dots}
+                    ${xLabels}
+                </svg>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 11px; color: var(--text-tertiary);">
+                <span>Earliest: ${points[0].date}</span>
+                <span style="display: flex; align-items: center; gap: 6px;">
+                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: ${strokeColor};"></span>
+                    ${label}
+                </span>
+                <span>Latest: ${points[points.length - 1].date} (${points[points.length - 1].val}/100)</span>
+            </div>
+        `;
+    }
+
+    renderDualBarChart(data) {
+        if (!data || data.length === 0) {
+            return `
+                <div style="padding: 32px 20px; text-align: center; background: var(--bg-subtle); border-radius: 10px; color: var(--text-secondary); font-size: 13.5px; border: 1px dashed var(--border);">
+                    <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-primary);">No crawl snapshots available</div>
+                    <div>Perform scans to see pages audited and critical issues over time.</div>
+                </div>
+            `;
+        }
+
+        const width = 600;
+        const height = 180;
+        const padding = { top: 20, right: 30, bottom: 30, left: 45 };
+        const chartW = width - padding.left - padding.right;
+        const chartH = height - padding.top - padding.bottom;
+
+        const maxPages = Math.max(...data.map(d => d.pages_crawled || 0), 10);
+        const maxIssues = Math.max(...data.map(d => d.critical_issues || 0), 5);
+
+        const groupCount = data.length;
+        const groupWidth = chartW / groupCount;
+        const barWidth = Math.min(22, (groupWidth - 12) / 2);
+
+        const barsHtml = data.map((d, i) => {
+            const groupX = padding.left + i * groupWidth + (groupWidth - (barWidth * 2 + 4)) / 2;
+            const pagesH = ((d.pages_crawled || 0) / maxPages) * chartH;
+            const issuesH = ((d.critical_issues || 0) / maxIssues) * chartH;
+
+            const pagesY = padding.top + chartH - pagesH;
+            const issuesY = padding.top + chartH - issuesH;
+
+            const dateStr = d.timestamp ? d.timestamp.split('T')[0] : `#${i + 1}`;
+
+            return `
+                <g>
+                    <!-- Pages crawled bar (Blue) -->
+                    <rect x="${groupX}" y="${pagesY}" width="${barWidth}" height="${pagesH}" rx="3" fill="#3b82f6" />
+                    ${pagesH > 14 ? `<text x="${groupX + barWidth / 2}" y="${pagesY - 4}" font-size="9" font-weight="700" fill="#3b82f6" text-anchor="middle">${d.pages_crawled || 0}</text>` : ''}
+                    
+                    <!-- Critical issues bar (Red) -->
+                    <rect x="${groupX + barWidth + 4}" y="${issuesY}" width="${barWidth}" height="${issuesH}" rx="3" fill="#ef4444" />
+                    ${issuesH > 14 ? `<text x="${groupX + barWidth + 4 + barWidth / 2}" y="${issuesY - 4}" font-size="9" font-weight="700" fill="#ef4444" text-anchor="middle">${d.critical_issues || 0}</text>` : ''}
+
+                    <text x="${groupX + barWidth + 2}" y="${height - 8}" font-size="10" fill="var(--text-tertiary)" text-anchor="middle">${dateStr}</text>
+                </g>
+            `;
+        }).join('');
+
+        return `
+            <div style="width: 100%; overflow-x: auto;">
+                <svg viewBox="0 0 ${width} ${height}" style="width: 100%; max-height: ${height}px; overflow: visible;" preserveAspectRatio="none">
+                    <line x1="${padding.left}" y1="${padding.top + chartH}" x2="${width - padding.right}" y2="${padding.top + chartH}" stroke="var(--border)" stroke-width="1" />
+                    ${barsHtml}
+                </svg>
+            </div>
+            <div style="display: flex; justify-content: center; gap: 24px; margin-top: 10px; font-size: 11px;">
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: #3b82f6;"></span>
+                    <span style="color: var(--text-secondary); font-weight: 500;">Pages Crawled</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                    <span style="display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: #ef4444;"></span>
+                    <span style="color: var(--text-secondary); font-weight: 500;">Critical Problems</span>
+                </div>
+            </div>
+        `;
+    }
+
+    // ==========================================
+    // PORTFOLIO DIRECTORY CONTROLS
+    // ==========================================
     bindPortfolioControls() {
         const searchInput = this.element.querySelector('#website-search-input');
         const statusFilter = this.element.querySelector('#website-status-filter');
@@ -495,65 +811,6 @@ export class Dashboard {
                 this.renderPortfolioTable();
             });
         }
-    }
-
-    bindTrendPills() {
-        const container = this.element.querySelector('#trend-timeframe-pills');
-        if (!container) return;
-
-        const pills = container.querySelectorAll('.pill-btn');
-        pills.forEach(pill => {
-            pill.addEventListener('click', (e) => {
-                pills.forEach(p => p.classList.remove('active'));
-                e.currentTarget.classList.add('active');
-                this.trendTimeframe = e.currentTarget.getAttribute('data-tf');
-                const projectId = projectStore.getSelectedProjectId();
-                uiStateStore.save(projectId, 'Dashboard', { trendTimeframe: this.trendTimeframe });
-                this.renderTrendContent();
-            });
-        });
-        this.renderTrendContent();
-    }
-
-    renderTrendContent() {
-        const container = this.element.querySelector('#health-trend-content');
-        if (!container) return;
-
-        const rawTrend = this.healthTrend || [];
-        let daysCutoff = 30;
-        if (this.trendTimeframe === '7D') daysCutoff = 7;
-        else if (this.trendTimeframe === '90D') daysCutoff = 90;
-
-        const cutoffDate = new Date();
-        cutoffDate.setDate(cutoffDate.getDate() - daysCutoff);
-
-        const filteredTrend = rawTrend.filter(t => {
-            if (!t.timestamp) return true;
-            const d = new Date(t.timestamp);
-            return isNaN(d.getTime()) || d >= cutoffDate;
-        });
-
-        if (filteredTrend.length < 1) {
-            container.innerHTML = `
-                <div style="padding: 32px 20px; text-align: center; background: var(--bg-subtle); border-radius: 10px; color: var(--text-secondary); font-size: 13.5px; border: 1px dashed var(--border);">
-                    <div style="font-weight: 600; margin-bottom: 4px; color: var(--text-primary);">Building scan history (${this.trendTimeframe})</div>
-                    <div>No scans recorded within the last ${daysCutoff} days. Run additional website scans over time to see health progress trends.</div>
-                </div>
-            `;
-            return;
-        }
-
-        container.innerHTML = `
-            <div style="display: flex; gap: 14px; overflow-x: auto; padding-bottom: 8px;">
-                ${filteredTrend.map(t => `
-                    <div style="padding: 14px 18px; background: var(--bg-subtle); border-radius: 10px; min-width: 160px; text-align: center; border: 1px solid var(--border);">
-                        <div style="font-size: 11px; color: var(--text-tertiary); text-transform: uppercase;">${t.timestamp ? t.timestamp.split('T')[0] : 'Saved Scan'}</div>
-                        <div style="font-size: 14px; font-weight: 700; color: var(--text-primary); margin: 6px 0;">${this.escapeHtml(t.domain || 'Domain')}</div>
-                        <div style="font-size: 12px; color: var(--primary); font-weight: 600;">${t.pages_crawled} pages • ${t.issues} problems</div>
-                    </div>
-                `).join('')}
-            </div>
-        `;
     }
 
     renderPortfolioTable() {

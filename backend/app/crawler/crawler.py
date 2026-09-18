@@ -631,6 +631,9 @@ class SEOCrawler:
         h3_tags = [h.get_text().strip() for h in soup.find_all("h3") if h.get_text()]
         h1 = h1_tags[0] if h1_tags else None
 
+        paragraphs = [p.get_text().strip() for p in soup.find_all("p") if p.get_text() and len(p.get_text().strip()) > 5]
+        first_paragraph = paragraphs[0] if paragraphs else None
+
         text = soup.get_text(separator=" ")
         words = [w for w in text.split() if len(w) > 1]
         word_count = len(words)
@@ -772,6 +775,9 @@ class SEOCrawler:
             "og_title": open_graph.get("og:title"),
             "og_description": open_graph.get("og:description"),
             "twitter_card": twitter_cards.get("twitter:card"),
+            "paragraphs": paragraphs[:20],
+            "first_paragraph": first_paragraph,
+            "body_text": text[:10000],
             "links": links,
             "link_records": link_records
         }

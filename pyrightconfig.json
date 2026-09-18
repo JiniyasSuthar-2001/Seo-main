@@ -1,0 +1,24 @@
+{
+  "include": [
+    "backend"
+  ],
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": [
+    "./backend",
+    "./.venv/Lib/site-packages",
+    "C:/Users/Jiniyas Suthar/AppData/Roaming/Python/Python314/site-packages",
+    "C:/Users/Jiniyas Suthar/AppData/Local/Python/pythoncore-3.14-64/Lib/site-packages"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "backend",
+      "extraPaths": [
+        ".",
+        "../.venv/Lib/site-packages",
+        "C:/Users/Jiniyas Suthar/AppData/Roaming/Python/Python314/site-packages",
+        "C:/Users/Jiniyas Suthar/AppData/Local/Python/pythoncore-3.14-64/Lib/site-packages"
+      ]
+    }
+  ]
+}

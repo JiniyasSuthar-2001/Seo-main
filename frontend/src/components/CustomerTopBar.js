@@ -106,32 +106,27 @@ export class CustomerTopBar {
     this.element.innerHTML = `
       <div style="height: 100%; padding: 0 28px; display: flex; align-items: center; justify-content: space-between; gap: 16px;">
         
-        <!-- LEFT: WORKSPACE / CATEGORIZED PROJECT SELECTOR DROPDOWN & (+) ADD BUTTON & GLOBAL SEARCH -->
-        <div style="display: flex; align-items: center; gap: 12px; flex: 1; max-width: 680px;">
+        <!-- LEFT: WORKSPACE / CATEGORIZED PROJECT SELECTOR CONTROLLED DROPDOWN & (+) ADD BUTTON -->
+        <div style="display: flex; align-items: center; gap: 8px; flex: 1;">
           
-          <!-- PROJECT SELECTOR CONTAINER -->
-          <div style="display: flex; align-items: center; gap: 6px;">
-            <div style="display: flex; align-items: center; gap: 8px; background: var(--bg-subtle); padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border);">
+          <!-- CUSTOM CONTROLLED PROJECT DROPDOWN CONTAINER (WORKS ACROSS MACOS AND WINDOWS) -->
+          <div id="header-project-dropdown-container" style="position: relative; display: inline-flex; align-items: center;">
+            <button id="header-project-dropdown-trigger" type="button" aria-haspopup="true" aria-expanded="false" style="display: flex; align-items: center; gap: 8px; background: var(--bg-subtle); padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); font-size: 13px; font-weight: 600; color: var(--text-primary); cursor: pointer; outline: none; transition: all 0.15s ease;">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="color: var(--primary); flex-shrink: 0;"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-              <select id="header-project-select" style="background: transparent; border: none; font-size: 13px; font-weight: 600; color: var(--text-primary); cursor: pointer; outline: none; max-width: 220px; text-overflow: ellipsis;">
-                <option value="">Loading projects...</option>
-              </select>
-            </div>
-
-            <!-- (+) ADD PROJECT BUTTON -->
-            <button onclick="window.showCreateProjectModal()" title="Add New Project" style="width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-subtle); color: var(--primary); font-weight: 700; font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s ease;">
-              +
+              <span id="header-project-selected-label" style="max-width: 240px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;">Loading projects...</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="color: var(--text-tertiary); margin-left: 2px; flex-shrink: 0;"><polyline points="6 9 12 15 18 9"></polyline></svg>
             </button>
+
+            <!-- CONTROLLED FLOATING DROPDOWN MENU -->
+            <div id="header-project-dropdown-menu" style="display: none; position: absolute; top: calc(100% + 6px); left: 0; min-width: 280px; max-width: 360px; max-height: 400px; overflow-y: auto; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 14px 30px rgba(0,0,0,0.3); z-index: 10000; padding: 6px;">
+              <!-- Populated dynamically by initProjectSelector -->
+            </div>
           </div>
 
-          <!-- COMMAND SEARCH INPUT -->
-          <div style="position: relative; flex: 1;">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary);">
-              <circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-            </svg>
-            <input type="text" id="global-search-input" placeholder="Search pages, keywords, backlinks..." style="width: 100%; padding: 7px 12px 7px 34px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: var(--bg-subtle); color: var(--text-primary); transition: all 0.15s ease;">
-            <span class="kbd" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); pointer-events: none;">Ctrl + K</span>
-          </div>
+          <!-- (+) ADD PROJECT BUTTON -->
+          <button onclick="window.showCreateProjectModal()" title="Add New Project" style="width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-subtle); color: var(--primary); font-weight: 700; font-size: 16px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s ease;">
+            +
+          </button>
         </div>
 
         <!-- RIGHT: HEALTH PILL, RUN CRAWL CTA, THEME TOGGLE, USER PROFILE -->
@@ -181,7 +176,6 @@ export class CustomerTopBar {
     this.initProjectSelector();
     this.initHealthPill();
     this.initThemeToggle();
-    this.initKeyboardShortcuts();
     this.initLogout();
     this.initPendingInvitations();
     return this.element;
@@ -222,19 +216,6 @@ export class CustomerTopBar {
 
       themeStore.subscribe((theme) => updateUI(theme));
     }, 50);
-  }
-
-  initKeyboardShortcuts() {
-    window.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        const searchInput = document.getElementById('global-search-input');
-        if (searchInput) {
-          searchInput.focus();
-          searchInput.select();
-        }
-      }
-    });
   }
 
   initHealthPill() {
@@ -282,74 +263,181 @@ export class CustomerTopBar {
   }
 
   async initProjectSelector() {
-    const updateSelect = () => {
-      const selectEl = this.element.querySelector('#header-project-select');
-      if (!selectEl) return;
+    const triggerBtn = this.element.querySelector('#header-project-dropdown-trigger');
+    const labelEl = this.element.querySelector('#header-project-selected-label');
+    const menuEl = this.element.querySelector('#header-project-dropdown-menu');
+    if (!triggerBtn || !labelEl || !menuEl) return;
 
+    const closeDropdown = () => {
+      menuEl.style.display = 'none';
+      triggerBtn.setAttribute('aria-expanded', 'false');
+    };
+
+    const toggleDropdown = () => {
+      const isHidden = menuEl.style.display === 'none' || !menuEl.style.display;
+      if (isHidden) {
+        menuEl.style.display = 'block';
+        triggerBtn.setAttribute('aria-expanded', 'true');
+        
+        // Viewport positioning guard for macOS & Windows
+        requestAnimationFrame(() => {
+          const rect = menuEl.getBoundingClientRect();
+          if (rect.right > window.innerWidth - 16) {
+            menuEl.style.left = 'auto';
+            menuEl.style.right = '0';
+          } else {
+            menuEl.style.left = '0';
+            menuEl.style.right = 'auto';
+          }
+        });
+      } else {
+        closeDropdown();
+      }
+    };
+
+    triggerBtn.onclick = (e) => {
+      e.stopPropagation();
+      toggleDropdown();
+    };
+
+    // Close on click outside
+    document.addEventListener('click', (e) => {
+      if (!this.element.contains(e.target)) {
+        closeDropdown();
+      }
+    });
+
+    // Close on Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeDropdown();
+      }
+    });
+
+    const updateDropdownUI = () => {
       const selectedId = projectStore.getSelectedProjectId();
       const myProjects = projectStore.getMyProjects();
       const memberProjects = projectStore.getMemberProjects();
+      const allProjects = projectStore.projects || [];
 
-      if ((!myProjects || myProjects.length === 0) && (!memberProjects || memberProjects.length === 0)) {
-        selectEl.innerHTML = `<option value="all">🌐 All Workspaces</option>`;
-        return;
+      // Determine active project label
+      if (!selectedId || selectedId === 'all') {
+        labelEl.innerText = '🌐 All Workspaces';
+      } else {
+        const found = allProjects.find(p => String(p.id) === String(selectedId));
+        if (found) {
+          const roleTag = found.user_role === 'OWNER' ? 'Lead' : 'Member';
+          labelEl.innerText = `${found.name} (${roleTag})`;
+        } else {
+          labelEl.innerText = '🌐 All Workspaces';
+        }
       }
 
-      let optionsHtml = `<option value="all" ${!selectedId || selectedId === 'all' ? 'selected' : ''}>🌐 All Workspaces</option>`;
+      // Build menu HTML
+      let html = '';
 
+      // 1. All Workspaces option
+      const isAllActive = !selectedId || selectedId === 'all';
+      html += `
+        <div class="custom-project-item" data-id="all" style="padding: 8px 12px; border-radius: 6px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; font-size: 13px; font-weight: 600; color: ${isAllActive ? 'var(--primary)' : 'var(--text-primary)'}; background: ${isAllActive ? 'var(--bg-subtle)' : 'transparent'}; transition: background 0.15s ease;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span>🌐</span>
+            <span>All Workspaces</span>
+          </div>
+          ${isAllActive ? '<span style="color: var(--primary); font-weight: 700;">✓</span>' : ''}
+        </div>
+      `;
+
+      // 2. MY WEBSITES (Lead/Owner)
       if (myProjects && myProjects.length > 0) {
-        optionsHtml += `<optgroup label="MY PROJECTS (Lead/Owner)">`;
-        optionsHtml += myProjects.map(p => {
-          const domStr = p.domain || p.url || '';
-          return `
-          <option value="${p.id}" ${String(p.id) === String(selectedId) ? 'selected' : ''}>
-            ${p.name}${domStr ? ' — ' + domStr : ''} (Lead)
-          </option>
+        html += `
+          <div style="padding: 10px 12px 4px 12px; font-size: 10.5px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em;">
+            MY WEBSITES (Lead/Owner)
+          </div>
         `;
-        }).join('');
-        optionsHtml += `</optgroup>`;
+        myProjects.forEach(p => {
+          const isActive = String(p.id) === String(selectedId);
+          const domStr = p.domain || p.url || '';
+          html += `
+            <div class="custom-project-item" data-id="${p.id}" style="padding: 8px 12px; border-radius: 6px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; font-size: 13px; color: ${isActive ? 'var(--primary)' : 'var(--text-primary)'}; background: ${isActive ? 'var(--bg-subtle)' : 'transparent'}; transition: background 0.15s ease;">
+              <div style="min-width: 0; flex: 1; padding-right: 8px;">
+                <div style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${this.escapeHtml(p.name)}</div>
+                ${domStr ? `<div style="font-size: 11px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: monospace;">${this.escapeHtml(domStr)}</div>` : ''}
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+                <span class="badge badge-secondary" style="font-size: 10px; padding: 2px 6px;">Lead</span>
+                ${isActive ? '<span style="color: var(--primary); font-weight: 700;">✓</span>' : ''}
+              </div>
+            </div>
+          `;
+        });
       }
 
+      // 3. PROJECTS I'M A MEMBER OF
       if (memberProjects && memberProjects.length > 0) {
-        optionsHtml += `<optgroup label="PROJECTS I'M A MEMBER OF">`;
-        optionsHtml += memberProjects.map(p => {
-          const domStr = p.domain || p.url || '';
-          return `
-          <option value="${p.id}" ${String(p.id) === String(selectedId) ? 'selected' : ''}>
-            ${p.name}${domStr ? ' — ' + domStr : ''} (Team Member)
-          </option>
+        html += `
+          <div style="padding: 10px 12px 4px 12px; font-size: 10.5px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em;">
+            PROJECTS I'M A MEMBER OF
+          </div>
         `;
-        }).join('');
-        optionsHtml += `</optgroup>`;
+        memberProjects.forEach(p => {
+          const isActive = String(p.id) === String(selectedId);
+          const domStr = p.domain || p.url || '';
+          html += `
+            <div class="custom-project-item" data-id="${p.id}" style="padding: 8px 12px; border-radius: 6px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; font-size: 13px; color: ${isActive ? 'var(--primary)' : 'var(--text-primary)'}; background: ${isActive ? 'var(--bg-subtle)' : 'transparent'}; transition: background 0.15s ease;">
+              <div style="min-width: 0; flex: 1; padding-right: 8px;">
+                <div style="font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${this.escapeHtml(p.name)}</div>
+                ${domStr ? `<div style="font-size: 11px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: monospace;">${this.escapeHtml(domStr)}</div>` : ''}
+              </div>
+              <div style="display: flex; align-items: center; gap: 6px; flex-shrink: 0;">
+                <span class="badge badge-secondary" style="font-size: 10px; padding: 2px 6px;">Member</span>
+                ${isActive ? '<span style="color: var(--primary); font-weight: 700;">✓</span>' : ''}
+              </div>
+            </div>
+          `;
+        });
       }
 
-      selectEl.innerHTML = optionsHtml;
+      menuEl.innerHTML = html;
 
-      if (selectedId) {
-        selectEl.value = selectedId;
-      }
+      // Add click listeners to items
+      menuEl.querySelectorAll('.custom-project-item').forEach(item => {
+        item.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const pId = item.getAttribute('data-id');
+          closeDropdown();
+          if (pId) {
+            projectStore.setSelectedProjectId(pId);
+            window.dispatchEvent(new CustomEvent('project:selected', { detail: { projectId: pId } }));
+          }
+        });
+        item.addEventListener('mouseenter', () => {
+          item.style.background = 'var(--bg-subtle)';
+        });
+        item.addEventListener('mouseleave', () => {
+          const pId = item.getAttribute('data-id');
+          const isItemActive = (!selectedId || selectedId === 'all') ? pId === 'all' : String(pId) === String(selectedId);
+          item.style.background = isItemActive ? 'var(--bg-subtle)' : 'transparent';
+        });
+      });
     };
 
     try {
       await projectStore.ensureInitialized();
-      updateSelect();
+      updateDropdownUI();
     } catch (e) {}
 
-    projectStore.subscribe(() => updateSelect());
+    projectStore.subscribe(() => updateDropdownUI());
+  }
 
-    setTimeout(() => {
-      const selectEl = this.element.querySelector('#header-project-select');
-      if (selectEl && !selectEl.dataset.bound) {
-        selectEl.dataset.bound = "true";
-        selectEl.addEventListener('change', (e) => {
-          const val = e.target.value;
-          if (val) {
-            projectStore.setSelectedProjectId(val);
-            window.dispatchEvent(new CustomEvent('project:selected', { detail: { projectId: val } }));
-          }
-        });
-      }
-    }, 100);
+  escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   async initPendingInvitations() {

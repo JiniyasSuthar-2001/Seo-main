@@ -149,87 +149,139 @@ def get_audit_issue_history(
         }
 
     if len(crawl_folders) == 1:
+        single_dir = os.path.join(crawls_dir, crawl_folders[0])
+        single_pages = []
+        pfile = os.path.join(single_dir, "pages.json")
+        if os.path.exists(pfile):
+            try:
+                with open(pfile, "r", encoding="utf-8") as f:
+                    single_pages = json.load(f)
+            except Exception:
+                pass
+        audit_res = evaluate_site_audit_rules(single_pages)
+        issues = audit_res.get("issues", [])
         return {
-            "has_history": False,
-            "message": "This is the first crawl. A comparison will be available after the next completed crawl.",
-            "current_snapshot": crawl_folders[0],
+            "has_history": True,
+            "crawls_count": 1,
+            "message": "Only 1 scan snapshot exists. A comparative timeline requires additional scans.",
+            "snapshots": [
+                {"label": "Latest", "folder": crawl_folders[0], "timestamp": crawl_folders[0]}
+            ],
             "resolved_issues_count": 0,
-            "new_issues_count": 0,
+            "new_issues_count": len(issues),
             "improved_issues_count": 0,
             "worsened_issues_count": 0,
-            "still_open_issues_count": 0,
-            "comparison_items": []
+            "persistent_issues_count": 0,
+            "comparison_items": [
+                {
+                    "title": i.get("title"),
+                    "rule_id": i.get("rule_id"),
+                    "category": i.get("category", "Website Check"),
+                    "severity": i.get("severity", "Notice"),
+                    "status": "INITIAL",
+                    "prev_prev_count": None,
+                    "prev_count": None,
+                    "latest_count": i.get("count", len(i.get("affected_urls", []))),
+                    "change_summary": f"Initial scan finding ({i.get('count', len(i.get('affected_urls', [])))} pages affected)"
+                }
+                for i in issues
+            ]
         }
 
-    curr_dir = os.path.join(crawls_dir, crawl_folders[0])
-    prev_dir = os.path.join(crawls_dir, crawl_folders[1])
-
-    def load_snapshot_pages(cdir):
+    # Helper to load crawl audit
+    def load_snapshot_data(folder_name):
+        cdir = os.path.join(crawls_dir, folder_name)
+        pages = []
         pfile = os.path.join(cdir, "pages.json")
         if os.path.exists(pfile):
             try:
-                with open(pfile, "r") as f:
-                    return json.load(f)
+                with open(pfile, "r", encoding="utf-8") as f:
+                    pages = json.load(f)
             except Exception:
                 pass
-        return []
+        audit = evaluate_site_audit_rules(pages)
+        meta = {}
+        mfile = os.path.join(cdir, "metadata.json")
+        if os.path.exists(mfile):
+            try:
+                with open(mfile, "r", encoding="utf-8") as f:
+                    meta = json.load(f)
+            except Exception:
+                pass
+        ts = meta.get("timestamp") or meta.get("crawl_timestamp") or folder_name
+        return {
+            "folder": folder_name,
+            "timestamp": ts,
+            "pages": pages,
+            "audit": audit,
+            "issues_map": {i.get("title"): i for i in audit.get("issues", [])}
+        }
 
-    curr_pages = load_snapshot_pages(curr_dir)
-    prev_pages = load_snapshot_pages(prev_dir)
+    # Select latest 3 if available, or latest 2
+    is_three_way = len(crawl_folders) >= 3
+    latest_snap = load_snapshot_data(crawl_folders[0])
+    prev_snap = load_snapshot_data(crawl_folders[1])
+    prev_prev_snap = load_snapshot_data(crawl_folders[2]) if is_three_way else None
 
-    curr_audit = evaluate_site_audit_rules(curr_pages)
-    prev_audit = evaluate_site_audit_rules(prev_pages)
+    snapshots_meta = []
+    if is_three_way:
+        snapshots_meta.append({"label": "Previous-Previous", "folder": prev_prev_snap["folder"], "timestamp": prev_prev_snap["timestamp"]})
+    snapshots_meta.append({"label": "Previous", "folder": prev_snap["folder"], "timestamp": prev_snap["timestamp"]})
+    snapshots_meta.append({"label": "Latest", "folder": latest_snap["folder"], "timestamp": latest_snap["timestamp"]})
 
-    curr_issues_map = {i.get("title"): i for i in curr_audit.get("issues", [])}
-    prev_issues_map = {i.get("title"): i for i in prev_audit.get("issues", [])}
-
-    all_titles = set(curr_issues_map.keys()).union(set(prev_issues_map.keys()))
+    all_titles = set(latest_snap["issues_map"].keys()) | set(prev_snap["issues_map"].keys())
+    if prev_prev_snap:
+        all_titles |= set(prev_prev_snap["issues_map"].keys())
 
     comparison_items = []
     resolved_count = 0
     new_count = 0
     improved_count = 0
     worsened_count = 0
-    still_open_count = 0
+    persistent_count = 0
 
     for title in sorted(all_titles):
-        curr_i = curr_issues_map.get(title)
-        prev_i = prev_issues_map.get(title)
+        latest_i = latest_snap["issues_map"].get(title)
+        prev_i = prev_snap["issues_map"].get(title)
+        prev_prev_i = prev_prev_snap["issues_map"].get(title) if prev_prev_snap else None
 
-        curr_urls = set(curr_i.get("affected_urls", [])) if curr_i else set()
-        prev_urls = set(prev_i.get("affected_urls", [])) if prev_i else set()
+        latest_cnt = latest_i.get("count", len(latest_i.get("affected_urls", []))) if latest_i else 0
+        prev_cnt = prev_i.get("count", len(prev_i.get("affected_urls", []))) if prev_i else 0
+        prev_prev_cnt = (prev_prev_i.get("count", len(prev_prev_i.get("affected_urls", []))) if prev_prev_i else 0) if is_three_way else None
 
-        curr_count = curr_i.get("count", len(curr_urls)) if curr_i else 0
-        prev_count = prev_i.get("count", len(prev_urls)) if prev_i else 0
+        ref_i = latest_i or prev_i or prev_prev_i
+        category = ref_i.get("category", "Website Check")
+        severity = ref_i.get("severity", "Notice")
+        rule_id = ref_i.get("rule_id")
 
-        category = (curr_i or prev_i).get("category", "Website Check")
-        severity = (curr_i or prev_i).get("severity", "Notice")
-        rule_id = (curr_i or prev_i).get("rule_id")
-
-        if prev_count > 0 and curr_count == 0:
+        # Classification based on comparison between latest and immediately previous
+        if prev_cnt > 0 and latest_cnt == 0:
             status = "RESOLVED"
             resolved_count += 1
-            s_suffix = "s" if prev_count != 1 else ""
-            change_text = f"Resolved ({prev_count} page{s_suffix} fixed)"
-        elif prev_count == 0 and curr_count > 0:
+            s_suffix = "s" if prev_cnt != 1 else ""
+            change_text = f"Resolved ({prev_cnt} page{s_suffix} fixed)"
+        elif prev_cnt == 0 and latest_cnt > 0:
             status = "NEW"
             new_count += 1
-            s_suffix = "s" if curr_count != 1 else ""
-            change_text = f"New problem ({curr_count} page{s_suffix} affected)"
-        elif curr_count < prev_count:
+            s_suffix = "s" if latest_cnt != 1 else ""
+            change_text = f"New issue ({latest_cnt} page{s_suffix} affected)"
+        elif latest_cnt < prev_cnt:
             status = "IMPROVED"
             improved_count += 1
-            diff = prev_count - curr_count
-            change_text = f"Improved ({diff} fixed, {curr_count} still affected)"
-        elif curr_count > prev_count:
+            diff = prev_cnt - latest_cnt
+            change_text = f"Improved ({diff} fixed, {latest_cnt} remaining)"
+        elif latest_cnt > prev_cnt:
             status = "WORSENED"
             worsened_count += 1
-            diff = curr_count - prev_count
-            change_text = f"Worsened (+{diff} affected, total {curr_count})"
+            diff = latest_cnt - prev_cnt
+            change_text = f"Worsened (+{diff} affected, total {latest_cnt})"
+        elif latest_cnt > 0 and latest_cnt == prev_cnt:
+            status = "PERSISTENT"
+            persistent_count += 1
+            change_text = f"Persistent ({latest_cnt} affected)"
         else:
-            status = "STILL OPEN"
-            still_open_count += 1
-            change_text = f"Unchanged ({curr_count} affected)"
+            status = "RESOLVED"
+            change_text = "Previously resolved"
 
         comparison_items.append({
             "title": title,
@@ -237,26 +289,28 @@ def get_audit_issue_history(
             "category": category,
             "severity": severity,
             "status": status,
-            "previous_affected_count": prev_count,
-            "current_affected_count": curr_count,
-            "change_summary": change_text,
-            "resolved_urls": list(prev_urls - curr_urls),
-            "new_urls": list(curr_urls - prev_urls),
-            "still_affected_urls": list(curr_urls.intersection(prev_urls))
+            "prev_prev_count": prev_prev_cnt,
+            "previous_affected_count": prev_cnt,
+            "current_affected_count": latest_cnt,
+            "latest_count": latest_cnt,
+            "change_summary": change_text
         })
 
     return {
         "has_history": True,
+        "crawls_count": 3 if is_three_way else 2,
+        "snapshots": snapshots_meta,
         "current_snapshot": crawl_folders[0],
         "previous_snapshot": crawl_folders[1],
         "resolved_issues_count": resolved_count,
         "new_issues_count": new_count,
         "improved_issues_count": improved_count,
         "worsened_issues_count": worsened_count,
-        "still_open_issues_count": still_open_count,
+        "persistent_issues_count": persistent_count,
+        "still_open_issues_count": persistent_count + worsened_count + improved_count,
         "total_compared_rules": len(all_titles),
         "comparison_items": comparison_items,
-        "message": f"Comparing current scan ({crawl_folders[0]}) against previous scan ({crawl_folders[1]})."
+        "message": f"Comparing latest 3 scans across crawl history." if is_three_way else f"Comparing latest 2 scans across crawl history."
     }
 
 
